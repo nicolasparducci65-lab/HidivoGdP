@@ -1,0 +1,147 @@
+name: Email Diario Registro Obra
+
+on:
+  schedule:
+    - cron: '15 21 * * *'  # 21:15 UTC = 16:15 ECT (UTC-5)
+  workflow_dispatch:  # Permite ejecutar manualmente para probar
+
+jobs:
+  enviar-recordatorio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar recordatorio diario
+        run: |
+          node << 'SCRIPT'
+          const https = require('https');
+
+          const SUPABASE_URL = process.env.SUPABASE_URL;
+          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+          const RESEND_KEY = process.env.RESEND_API_KEY;
+          const BASE_URL = 'https://nicolasparducci65-lab.github.io/HidivoGdP';
+
+          async function fetch(url, options) {
+            return new Promise((resolve, reject) => {
+              const urlObj = new URL(url);
+              const req = https.request({
+                hostname: urlObj.hostname,
+                path: urlObj.pathname + urlObj.search,
+                method: options.method || 'GET',
+                headers: options.headers || {}
+              }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve({ ok: res.statusCode < 300, json: () => JSON.parse(data), status: res.statusCode }));
+              });
+              req.on('error', reject);
+              if(options.body) req.write(options.body);
+              req.end();
+            });
+          }
+
+          async function main() {
+            // Obtener proyectos en ejecución
+            const proyRes = await fetch(`${SUPABASE_URL}/rest/v1/proyectos?estado=eq.ejecucion&select=id,nombre,contratista,ubicacion`, {
+              headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            const proyectos = await proyRes.json();
+            console.log(`Proyectos en ejecución: ${proyectos.length}`);
+
+            const hoy = new Date().toISOString().split('T')[0];
+            const fechaTexto = new Date().toLocaleDateString('es-EC', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+
+            for (const proyecto of proyectos) {
+              // Obtener miembros residentes y directores
+              const miembRes = await fetch(`${SUPABASE_URL}/rest/v1/proyecto_miembros?proyecto_id=eq.${proyecto.id}&rol=in.(residente,director)&select=perfil_id,rol`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+              });
+              const miembros = await miembRes.json();
+
+              // También obtener emails desde libro_obra_registros recientes
+              const emailsRes = await fetch(`${SUPABASE_URL}/rest/v1/libro_obra?proyecto_id=eq.${proyecto.id}&residente_email=not.is.null&select=residente_email,residente_nombre&order=created_at.desc&limit=1`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+              });
+              const ultimoRegistro = await emailsRes.json();
+
+              // Verificar si ya hay registro hoy
+              const hoyRes = await fetch(`${SUPABASE_URL}/rest/v1/libro_obra?proyecto_id=eq.${proyecto.id}&fecha=eq.${hoy}&select=id`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+              });
+              const registrosHoy = await hoyRes.json();
+              const yaRegistro = registrosHoy.length > 0;
+
+              const formUrl = `${BASE_URL}/registro-obra.html?proyecto=${proyecto.id}`;
+
+              // Enviar a email del último residente registrado
+              if (ultimoRegistro.length > 0 && ultimoRegistro[0].residente_email) {
+                const email = ultimoRegistro[0].residente_email;
+                const nombre = ultimoRegistro[0].residente_nombre || 'Residente';
+
+                const html = yaRegistro ? `
+                  <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+                    <div style="background:#1a1a2e;padding:20px;border-radius:12px 12px 0 0;text-align:center">
+                      <h2 style="color:#fff;margin:0">HIDIVO</h2>
+                      <p style="color:rgba(255,255,255,.5);margin:4px 0 0;font-size:12px">Gestión de obras civiles</p>
+                    </div>
+                    <div style="background:#fff;padding:28px;border:1px solid #e6e9ef">
+                      <div style="text-align:center;margin-bottom:20px">
+                        <div style="font-size:48px">✅</div>
+                        <h3 style="color:#00c875;margin:8px 0">¡Registro completado!</h3>
+                        <p style="color:#676879;font-size:13px">El registro de hoy para <strong>${proyecto.nombre}</strong> ya fue guardado.</p>
+                        <p style="color:#676879;font-size:12px">${fechaTexto}</p>
+                      </div>
+                    </div>
+                    <div style="background:#f5f6f8;padding:12px;text-align:center;border-radius:0 0 12px 12px;font-size:11px;color:#676879">© 2026 HIDIVO</div>
+                  </div>` : `
+                  <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+                    <div style="background:#1a1a2e;padding:20px;border-radius:12px 12px 0 0;text-align:center">
+                      <h2 style="color:#fff;margin:0">HIDIVO</h2>
+                      <p style="color:rgba(255,255,255,.5);margin:4px 0 0;font-size:12px">Gestión de obras civiles</p>
+                    </div>
+                    <div style="background:#fff;padding:28px;border:1px solid #e6e9ef">
+                      <p style="font-size:15px;color:#323338">Hola, <strong>${nombre}</strong> 👋</p>
+                      <p style="font-size:13px;color:#676879">${fechaTexto}</p>
+                      <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin:16px 0">
+                        <strong style="color:#856404">📋 Registro pendiente</strong>
+                        <p style="color:#856404;font-size:12px;margin:4px 0 0">Aún no has registrado las actividades de hoy para <strong>${proyecto.nombre}</strong>.</p>
+                      </div>
+                      <div style="background:#f5f6f8;border-radius:8px;padding:12px;margin-bottom:20px">
+                        <div style="font-size:11px;color:#676879;text-transform:uppercase;font-weight:600">Proyecto</div>
+                        <div style="font-size:15px;font-weight:700">${proyecto.nombre}</div>
+                        <div style="font-size:12px;color:#676879">${proyecto.contratista||''} · ${proyecto.ubicacion||''}</div>
+                      </div>
+                      <div style="text-align:center">
+                        <a href="${formUrl}" style="display:inline-block;background:#0073ea;color:#fff;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none">
+                          📝 Llenar registro de obra
+                        </a>
+                      </div>
+                    </div>
+                    <div style="background:#f5f6f8;padding:12px;text-align:center;border-radius:0 0 12px 12px;font-size:11px;color:#676879">
+                      Este email fue enviado automáticamente por HIDIVO a las 4:15 PM · © 2026 HIDIVO
+                    </div>
+                  </div>`;
+
+                const emailRes = await fetch('https://api.resend.com/emails', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${RESEND_KEY}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    from: 'HIDIVO <onboarding@resend.dev>',
+                    to: [email],
+                    subject: yaRegistro ? `✅ Registro completado — ${proyecto.nombre}` : `📋 Recordatorio: Registro diario — ${proyecto.nombre}`,
+                    html
+                  })
+                });
+                const result = await emailRes.json();
+                console.log(`Email enviado a ${email}:`, result);
+              }
+            }
+          }
+
+          main().catch(console.error);
+          SCRIPT
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
