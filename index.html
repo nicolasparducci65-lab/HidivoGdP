@@ -1,0 +1,2441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HIDIVO — Gestión de Obras Civiles</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f6f8;color:#323338;font-size:14px;min-height:100vh}
+/* Layout */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:240px;background:#1a1a2e;color:#fff;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e6e9ef;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.content{flex:1;overflow-y:auto;padding:24px}
+
+/* Sidebar */
+.sidebar-logo{padding:20px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar-logo img{height:32px;filter:brightness(0) invert(1);opacity:.9}
+.sidebar-logo-text{font-size:13px;color:rgba(255,255,255,.5);margin-top:4px}
+.nav-section{padding:16px 0 8px}
+.nav-label{font-size:10px;font-weight:600;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.8px;padding:0 16px;margin-bottom:4px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:rgba(255,255,255,.7);font-size:13px;border-radius:6px;margin:1px 8px;transition:all .15s}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-item.active{background:#0073ea;color:#fff}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-bottom{margin-top:auto;padding:16px;border-top:1px solid rgba(255,255,255,.1)}
+.user-pill{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;cursor:pointer}
+.user-pill:hover{background:rgba(255,255,255,.08)}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:#0073ea;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0}
+.user-name{font-size:12px;color:rgba(255,255,255,.8);font-weight:500}
+.user-role{font-size:11px;color:rgba(255,255,255,.4)}
+
+/* Topbar */
+.topbar-title{font-size:16px;font-weight:600;color:#323338;flex:1}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.btn{font-size:13px;padding:7px 14px;border-radius:7px;border:1px solid #c5c7d4;background:#fff;color:#323338;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
+.btn:hover{background:#f5f6f8}
+.btn.primary{background:#0073ea;color:#fff;border-color:#0073ea}
+.btn.primary:hover{background:#0060c0}
+.btn.danger{background:#e2445c;color:#fff;border-color:#e2445c}
+.btn svg{width:14px;height:14px}
+
+/* Cards métricas */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.metric-card{background:#fff;border-radius:12px;border:1px solid #e6e9ef;padding:20px;display:flex;align-items:flex-start;gap:14px}
+.metric-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.metric-icon.blue{background:#e8f4ff}
+.metric-icon.green{background:#e8f5e9}
+.metric-icon.orange{background:#fff3e0}
+.metric-icon.purple{background:#f3e8ff}
+.metric-icon svg{width:20px;height:20px}
+.metric-icon.blue svg{stroke:#0073ea}
+.metric-icon.green svg{stroke:#00c875}
+.metric-icon.orange svg{stroke:#ff9f00}
+.metric-icon.purple svg{stroke:#6c3eb2}
+.metric-value{font-size:28px;font-weight:700;color:#323338;line-height:1}
+.metric-label{font-size:12px;color:#676879;margin-top:4px}
+.metric-change{font-size:11px;margin-top:6px;display:flex;align-items:center;gap:3px}
+.metric-change.up{color:#00c875}
+.metric-change.down{color:#e2445c}
+
+/* Tabla proyectos */
+.card{background:#fff;border-radius:12px;border:1px solid #e6e9ef;overflow:hidden;margin-bottom:20px}
+.card-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f5f6f8}
+.card-title{font-size:14px;font-weight:600;color:#323338}
+.card-subtitle{font-size:12px;color:#676879;margin-top:2px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;font-weight:600;color:#676879;padding:10px 16px;border-bottom:1px solid #e6e9ef;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}
+td{padding:12px 16px;border-bottom:1px solid #f5f6f8;vertical-align:middle;font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8f9ff;cursor:pointer}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;white-space:nowrap}
+.badge.planificacion{background:#e8f5ff;color:#0060c0}
+.badge.ejecucion{background:#fff0cc;color:#c07000}
+.badge.finalizado{background:#e8f5e9;color:#2e7d32}
+.badge.pausado{background:#f5f6f8;color:#676879}
+.badge.cancelado{background:#fce4ec;color:#b71c1c}
+.progress-wrap{min-width:120px}
+.progress-label{font-size:11px;color:#676879;margin-bottom:3px;display:flex;justify-content:space-between}
+.progress-bg{background:#f5f6f8;border-radius:4px;height:6px;overflow:hidden}
+.progress-fill{height:6px;border-radius:4px;transition:width .4s}
+.avatar-stack{display:flex}
+.avatar-small{width:26px;height:26px;border-radius:50%;background:#0073ea;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;margin-left:-6px}
+.avatar-small:first-child{margin-left:0}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:14px;width:560px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.15)}
+.modal-header{padding:20px 24px;border-bottom:1px solid #e6e9ef;display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:16px;font-weight:600}
+.modal-body{padding:24px;overflow-y:auto;flex:1}
+.modal-footer{padding:16px 24px;border-top:1px solid #e6e9ef;display:flex;gap:8px;justify-content:flex-end}
+.form-group{margin-bottom:16px}
+.form-label{font-size:12px;font-weight:600;color:#676879;margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.4px}
+.form-control{width:100%;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid #c5c7d4;background:#fff;color:#323338;transition:border .15s}
+.form-control:focus{outline:none;border-color:#0073ea;box-shadow:0 0 0 3px rgba(0,115,234,.1)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+textarea.form-control{resize:vertical;min-height:80px}
+select.form-control{appearance:none}
+
+/* Auth screen */
+.auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)}
+.auth-card{background:#fff;border-radius:16px;padding:40px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.auth-logo{text-align:center;margin-bottom:28px}
+.auth-logo img{height:40px}
+.auth-title{font-size:22px;font-weight:700;color:#323338;margin-bottom:6px;text-align:center}
+.auth-sub{font-size:13px;color:#676879;text-align:center;margin-bottom:28px}
+.auth-divider{text-align:center;color:#676879;font-size:12px;margin:16px 0;position:relative}
+.auth-divider::before,.auth-divider::after{content:'';position:absolute;top:50%;width:42%;height:1px;background:#e6e9ef}
+.auth-divider::before{left:0}
+.auth-divider::after{right:0}
+.auth-footer{text-align:center;font-size:12px;color:#676879;margin-top:20px}
+.auth-footer a{color:#0073ea;text-decoration:none}
+.error-msg{background:#fce4ec;color:#b71c1c;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+.success-msg{background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;background:#323338;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
+.toast.show{opacity:1}
+.toast.success{background:#00c875}
+.toast.error{background:#e2445c}
+
+/* Loading */
+.spinner{width:20px;height:20px;border:2px solid #e6e9ef;border-top-color:#0073ea;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.page-loader{display:flex;align-items:center;justify-content:center;height:200px;color:#676879;gap:12px}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 20px;color:#676879}
+.empty-icon{font-size:48px;margin-bottom:12px}
+.empty-title{font-size:16px;font-weight:600;color:#323338;margin-bottom:6px}
+.empty-sub{font-size:13px;color:#676879;margin-bottom:20px}
+
+/* Secciones */
+.page{display:none}.page.active{display:block}
+
+/* Chart container */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.chart-card{background:#fff;border-radius:12px;border:1px solid #e6e9ef;padding:20px}
+.chart-title{font-size:13px;font-weight:600;color:#676879;margin-bottom:14px;text-transform:uppercase;letter-spacing:.4px}
+
+/* Detail panel */
+.detail-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.detail-title{font-size:20px;font-weight:700;color:#323338}
+.detail-meta{font-size:13px;color:#676879;margin-top:4px}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.info-item{background:#fff;border-radius:10px;border:1px solid #e6e9ef;padding:14px}
+.info-label{font-size:11px;font-weight:600;color:#676879;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.info-value{font-size:14px;font-weight:500;color:#323338}
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HIDIVO" onerror="this.style.display='none'"/>
+    </div>
+    <div class="auth-title">Bienvenido a HIDIVO</div>
+    <div class="auth-sub">Plataforma de gestión de obras civiles</div>
+    <div class="error-msg" id="authError"></div>
+    <div class="success-msg" id="authSuccess"></div>
+    <div id="loginForm">
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input type="email" class="form-control" id="loginEmail" placeholder="tu@hidivo.com"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" class="form-control" id="loginPassword" placeholder="••••••••"/>
+      </div>
+      <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="login()">Ingresar</button>
+      <div class="auth-divider">o</div>
+      <button class="btn" style="width:100%;justify-content:center;padding:10px" onclick="showRegister()">Crear cuenta nueva</button>
+    </div>
+    <div id="registerForm" style="display:none">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nombre</label>
+          <input type="text" class="form-control" id="regNombre" placeholder="Nicolás"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Apellido</label>
+          <input type="text" class="form-control" id="regApellido" placeholder="Parducci"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input type="email" class="form-control" id="regEmail" placeholder="tu@hidivo.com"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" class="form-control" id="regPassword" placeholder="Mínimo 6 caracteres"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Empresa</label>
+        <input type="text" class="form-control" id="regEmpresa" placeholder="HIDIVO S.A.S." value="HIDIVO S.A.S."/>
+      </div>
+      <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="register()">Crear cuenta</button>
+      <div class="auth-divider">o</div>
+      <button class="btn" style="width:100%;justify-content:center;padding:10px" onclick="showLogin()">Ya tengo cuenta</button>
+    </div>
+    <div class="auth-footer">Al ingresar aceptas los términos de uso de HIDIVO</div>
+  </div>
+</div>
+
+<!-- APP PRINCIPAL -->
+<div id="appScreen" class="app" style="display:none">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HIDIVO" onerror="this.style.display='none'" style="height:28px;filter:brightness(0) invert(1);opacity:.9"/>
+      <div class="sidebar-logo-text">Gestión de obras civiles</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Principal</div>
+      <div class="nav-item active" onclick="navTo('dashboard',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="navTo('proyectos',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Proyectos
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Por proyecto</div>
+      <div class="nav-item" onclick="navTo('rubros',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Rubros
+      </div>
+      <div class="nav-item" onclick="navTo('libro',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Libro de obra
+      </div>
+      <div class="nav-item" onclick="navTo('curvaS',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Curva S
+      </div>
+      <div class="nav-item" onclick="navTo('fiscalizacion',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Fiscalización
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Equipo</div>
+      <div class="nav-item" onclick="navTo('chat',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Chat
+      </div>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="user-pill" onclick="logout()">
+        <div class="user-avatar" id="sidebarAvatar">N</div>
+        <div>
+          <div class="user-name" id="sidebarNombre">Usuario</div>
+          <div class="user-role" id="sidebarRol">Ingeniero</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      <div class="topbar-actions">
+        <div id="proyectoSelector" style="display:none">
+          <select class="form-control" id="selectProyecto" onchange="cambiarProyecto(this.value)" style="min-width:220px">
+            <option value="">Selecciona un proyecto...</option>
+          </select>
+        </div>
+        <button class="btn primary" id="btnAccionPrincipal" style="display:none" onclick="accionPrincipal()">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span id="btnAccionTexto">Nuevo</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="metrics" id="dashMetrics">
+          <div class="metric-card">
+            <div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+            <div><div class="metric-value" id="mProyectos">—</div><div class="metric-label">Proyectos activos</div></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+            <div><div class="metric-value" id="mAvance">—</div><div class="metric-label">Avance promedio</div></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+            <div><div class="metric-value" id="mProduccion">—</div><div class="metric-label">Producción total</div></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon purple"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+            <div><div class="metric-value" id="mRegistros">—</div><div class="metric-label">Registros libro</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Mis proyectos</div><div class="card-subtitle">Vista general de todas las obras</div></div>
+            <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Nuevo proyecto
+            </button>
+          </div>
+          <div id="dashProyectosList"><div class="page-loader"><div class="spinner"></div>Cargando proyectos...</div></div>
+        </div>
+      </div>
+
+      <!-- PROYECTOS -->
+      <div class="page" id="page-proyectos">
+        <div id="proyectosList">
+          <div class="page-loader"><div class="spinner"></div>Cargando...</div>
+        </div>
+      </div>
+
+      <!-- RUBROS -->
+      <div class="page" id="page-rubros">
+        <div id="rubrosContent"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto en el selector de arriba para ver sus rubros</div></div></div>
+        <div id="archivosPanel-rubros" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- LIBRO DE OBRA -->
+      <div class="page" id="page-libro">
+        <div id="libroContent"><div class="empty-state"><div class="empty-icon">📖</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver el libro de obra</div></div></div>
+        <div id="archivosPanel-libro" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- CURVA S -->
+      <div class="page" id="page-curvaS">
+        <div id="curvaSContent"><div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver la curva S</div></div></div>
+        <div id="archivosPanel-curvaS" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- FISCALIZACIÓN -->
+      <div class="page" id="page-fiscalizacion">
+        <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
+        <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="page" id="page-chat">
+        <div class="empty-state"><div class="empty-icon">💬</div><div class="empty-title">Chat por obra</div><div class="empty-sub">Próximamente — comunicación en tiempo real con tu equipo</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO PROYECTO -->
+<div class="modal-overlay" id="modalProyecto">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalProyectoTitle">Nuevo proyecto</div>
+      <button class="btn" onclick="cerrarModal('modalProyecto')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProyectoId"/>
+      <div class="form-group">
+        <label class="form-label">Nombre del proyecto *</label>
+        <input type="text" class="form-control" id="pNombre" placeholder="Ej: Construcción parqueadero PTAR"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Contratante</label>
+          <input type="text" class="form-control" id="pContratante" placeholder="Municipio de..."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contratista</label>
+          <input type="text" class="form-control" id="pContratista" placeholder="Empresa constructora"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Monto del contrato ($)</label>
+          <input type="number" class="form-control" id="pMonto" placeholder="0.00" step="0.01"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estado</label>
+          <select class="form-control" id="pEstado">
+            <option value="planificacion">Planificación</option>
+            <option value="ejecucion">En ejecución</option>
+            <option value="pausado">Pausado</option>
+            <option value="finalizado">Finalizado</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Fecha de inicio</label>
+          <input type="date" class="form-control" id="pFechaInicio"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha fin planificada</label>
+          <input type="date" class="form-control" id="pFechaFin"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ubicación</label>
+        <input type="text" class="form-control" id="pUbicacion" placeholder="Ciudad, Provincia"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <textarea class="form-control" id="pDescripcion" placeholder="Descripción general del proyecto..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalProyecto')">Cancelar</button>
+      <button class="btn primary" onclick="guardarProyecto()">Guardar proyecto</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO REGISTRO LIBRO DE OBRA -->
+<div class="modal-overlay" id="modalLibro">
+  <div class="modal" style="width:680px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">📖 Nuevo registro — Libro de Obra</div>
+      <button class="btn" onclick="cerrarModal('modalLibro')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <!-- Fila 1: fecha, número, clima -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha *</label>
+          <input type="date" class="form-control" id="lFecha"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">N° Registro</label>
+          <input type="number" class="form-control" id="lNumRegistro" min="1"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Clima</label>
+          <select class="form-control" id="lClima">
+            <option>Soleado</option>
+            <option>Parcialmente nublado</option>
+            <option>Nublado</option>
+            <option>Lluvioso</option>
+            <option>Tormenta</option>
+          </select>
+        </div>
+      </div>
+      <!-- Fila 2: temperaturas y personal -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Temp. mín (°C)</label>
+          <input type="number" class="form-control" id="lTempMin" placeholder="18" step="0.1"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Temp. máx (°C)</label>
+          <input type="number" class="form-control" id="lTempMax" placeholder="30" step="0.1"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Personal en obra</label>
+          <input type="number" class="form-control" id="lPersonal" placeholder="0" min="0"/>
+        </div>
+      </div>
+      <!-- Actividades -->
+      <div class="form-group">
+        <label class="form-label">Actividades ejecutadas *</label>
+        <textarea class="form-control" id="lActividades" rows="3" placeholder="Describe las actividades realizadas durante el día..."></textarea>
+      </div>
+      <!-- Equipos y materiales -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Equipos y maquinaria</label>
+          <div id="libroEquiposLista" style="border:1px solid #e6e9ef;border-radius:8px;padding:8px;max-height:180px;overflow-y:auto;background:#fafafa"></div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <select id="equipoSelector" class="form-control" style="flex:1;min-width:0">
+              <option value="">+ Seleccionar equipo...</option>
+            </select>
+            <input type="number" id="equipoCantidad" placeholder="Cant." step="0.1" min="0" style="width:70px;flex-shrink:0;padding:8px;border:1px solid #c5c7d4;border-radius:8px;font-size:13px"/>
+            <button type="button" onclick="agregarItemLibro('equipo')" class="btn primary" style="padding:8px 12px;flex-shrink:0">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Materiales utilizados</label>
+          <div id="libroMaterialesLista" style="border:1px solid #e6e9ef;border-radius:8px;padding:8px;max-height:180px;overflow-y:auto;background:#fafafa"></div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <select id="materialSelector" class="form-control" style="flex:1;min-width:0">
+              <option value="">+ Seleccionar material...</option>
+            </select>
+            <input type="number" id="materialCantidad" placeholder="Cant." step="0.1" min="0" style="width:70px;flex-shrink:0;padding:8px;border:1px solid #c5c7d4;border-radius:8px;font-size:13px"/>
+            <button type="button" onclick="agregarItemLibro('material')" class="btn primary" style="padding:8px 12px;flex-shrink:0">
+              <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- Novedades y resoluciones -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Novedades</label>
+          <textarea class="form-control" id="lNovedades" rows="2" placeholder="Incidentes, observaciones..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Resoluciones</label>
+          <textarea class="form-control" id="lResoluciones" rows="2" placeholder="Decisiones tomadas..."></textarea>
+        </div>
+      </div>
+      <!-- Rubros trabajados -->
+      <div class="form-group">
+        <label class="form-label">Rubros trabajados hoy</label>
+        <div id="libroRubrosLista" style="max-height:200px;overflow-y:auto;border:1px solid #e6e9ef;border-radius:8px;padding:8px 12px"></div>
+      </div>
+      <!-- Fotos -->
+      <div class="form-group">
+        <label class="form-label">Fotos (máx. 10)</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px dashed #c5c7d4;border-radius:8px;cursor:pointer;color:#676879;font-size:13px;transition:border .15s" onmouseover="this.style.borderColor='#0073ea'" onmouseout="this.style.borderColor='#c5c7d4'">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Seleccionar fotos...
+          <input type="file" accept="image/*" multiple style="display:none" onchange="manejarFotosLibro(this)"/>
+        </label>
+        <div id="libroFotosPreview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalLibro')">Cancelar</button>
+      <button id="btnGuardarLibro" class="btn primary" onclick="guardarRegistroLibro()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Guardar registro
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETALLE REGISTRO -->
+<div class="modal-overlay" id="modalDetalleLibro">
+  <div class="modal" style="width:700px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📋 Detalle del registro</div>
+      <button class="btn" onclick="cerrarModal('modalDetalleLibro')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" id="detalleLibroBody"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn danger" id="btnEliminarDetalle" onclick="confirmarEliminarRegistro(window._detalleRegistroId, window._detalleRegistroNum)">
+        🗑️ Eliminar
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="abrirEditarRegistro(window._detalleRegistroId)">✏️ Editar</button>
+        <button class="btn" onclick="cerrarModal('modalDetalleLibro')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REPORTE LIBRO DE OBRA -->
+<div class="modal-overlay" id="modalReporte">
+  <div class="modal" style="width:480px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📄 Reporte Consolidado — Libro de Obra</div>
+      <button class="btn" onclick="cerrarModal('modalReporte')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f0f7ff;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#0060c0">
+        Genera un reporte PDF con todos los registros del período seleccionado.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha inicio</label>
+          <input type="date" class="form-control" id="reporteFechaInicio"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha fin</label>
+          <input type="date" class="form-control" id="reporteFechaFin"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Incluir en el reporte</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptActividades" checked style="width:16px;height:16px;accent-color:#0073ea"/> Actividades ejecutadas
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptEquipos" checked style="width:16px;height:16px;accent-color:#0073ea"/> Equipos y maquinaria
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptMateriales" checked style="width:16px;height:16px;accent-color:#0073ea"/> Materiales utilizados
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptNovedades" checked style="width:16px;height:16px;accent-color:#0073ea"/> Novedades y resoluciones
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptRubros" checked style="width:16px;height:16px;accent-color:#0073ea"/> Rubros trabajados
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptFotos" checked style="width:16px;height:16px;accent-color:#0073ea"/> Fotos de avance
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalReporte')">Cancelar</button>
+      <button class="btn primary" onclick="verReportePantalla()" id="btnGenerarPDF">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Vista previa
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VISTA PREVIA REPORTE -->
+<div class="modal-overlay" id="modalVistaReporte" style="align-items:flex-start;padding:20px;overflow-y:auto">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:820px;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <div style="background:#1a1a2e;border-radius:14px 14px 0 0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div style="color:#fff;font-weight:600;font-size:14px">📄 Vista previa del reporte</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="imprimirReporte()" style="background:#0073ea;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar PDF
+        </button>
+        <button onclick="cerrarModal('modalVistaReporte')" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer">✕ Cerrar</button>
+      </div>
+    </div>
+    <div style="padding:4px;background:#f5f6f8">
+      <div style="background:#fff;border-radius:0 0 10px 10px;padding:0" id="reporteContenido"></div>
+    </div>
+    <div style="background:#f0f7ff;border-radius:0 0 14px 14px;padding:12px 20px;font-size:12px;color:#0060c0;display:flex;align-items:center;gap:8px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Puedes editar cualquier texto directamente haciendo clic sobre él antes de descargar el PDF.
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CRONOGRAMA CURVA S -->
+<div class="modal-overlay" id="modalCronograma">
+  <div class="modal" style="width:780px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">📅 Cronograma planificado</div>
+      <button class="btn" onclick="cerrarModal('modalCronograma')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;padding:0">
+      <div style="padding:12px 20px;background:#f0f7ff;border-bottom:1px solid #cce4ff;font-size:12px;color:#0060c0;display:flex;align-items:center;gap:8px">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Ingresa las fechas de inicio y fin planificadas para cada rubro. El peso (%) se calcula automáticamente por monto si lo dejas en blanco.
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Rubro</th>
+            <th style="text-align:center;width:90px">Peso %</th>
+            <th style="text-align:center;width:140px">Inicio plan.</th>
+            <th style="text-align:center;width:140px">Fin plan.</th>
+          </tr></thead>
+          <tbody id="cronogramaTablaBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalCronograma')">Cancelar</button>
+      <button id="btnGuardarCronograma" class="btn primary" onclick="guardarCronograma()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Guardar cronograma
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const SUPABASE_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_KofUOOKhYd2a6g6O1_4g0w_LYAgjebm';
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let currentPerfil = null;
+let currentPage = 'dashboard';
+let currentProyecto = null;
+let proyectos = [];
+
+// ── AUTH ──
+async function checkAuth(){
+  const { data: { session } } = await sb.auth.getSession();
+  if(session){
+    currentUser = session.user;
+    await cargarPerfil();
+    mostrarApp();
+  } else {
+    document.getElementById('authScreen').style.display='flex';
+    document.getElementById('appScreen').style.display='none';
+  }
+}
+
+async function cargarPerfil(){
+  const { data } = await sb.from('perfiles').select('*').eq('id', currentUser.id).single();
+  currentPerfil = data;
+  if(data){
+    document.getElementById('sidebarAvatar').textContent = data.nombre[0].toUpperCase();
+    document.getElementById('sidebarNombre').textContent = data.nombre + ' ' + data.apellido;
+    document.getElementById('sidebarRol').textContent = data.cargo || data.rol;
+  }
+}
+
+async function login(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPassword').value;
+  if(!email||!pass){ showAuthError('Completa todos los campos'); return; }
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if(error){ showAuthError(error.message); return; }
+  currentUser = data.user;
+  await cargarPerfil();
+  mostrarApp();
+}
+
+async function register(){
+  const nombre = document.getElementById('regNombre').value.trim();
+  const apellido = document.getElementById('regApellido').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const pass = document.getElementById('regPassword').value;
+  const empresa = document.getElementById('regEmpresa').value.trim();
+  if(!nombre||!apellido||!email||!pass){ showAuthError('Completa todos los campos'); return; }
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  if(error){ showAuthError(error.message); return; }
+  // Crear empresa y perfil
+  const { data: emp } = await sb.from('empresas').insert({ nombre: empresa }).select().single();
+  await sb.from('perfiles').insert({ id: data.user.id, nombre, apellido, empresa_id: emp?.id, rol: 'admin' });
+  showAuthSuccess('Cuenta creada. Revisa tu email para confirmar.');
+  setTimeout(()=>showLogin(), 2000);
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  currentUser = null; currentPerfil = null;
+  document.getElementById('appScreen').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+}
+
+function showAuthError(msg){ const el=document.getElementById('authError'); el.textContent=msg; el.style.display='block'; document.getElementById('authSuccess').style.display='none'; }
+function showAuthSuccess(msg){ const el=document.getElementById('authSuccess'); el.textContent=msg; el.style.display='block'; document.getElementById('authError').style.display='none'; }
+function showLogin(){ document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; }
+function showRegister(){ document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; }
+
+// ── APP ──
+function mostrarApp(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('appScreen').style.display='flex';
+  cargarDashboard();
+  cargarProyectosSelector();
+}
+
+function navTo(page, btn){
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  currentPage = page;
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Fiscalización', chat:'Chat' };
+  document.getElementById('topbarTitle').textContent = titles[page]||page;
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion'].includes(page);
+  document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
+  const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
+  const accion = acciones[page];
+  document.getElementById('btnAccionPrincipal').style.display = accion?.show ? 'flex' : 'none';
+  if(accion) document.getElementById('btnAccionTexto').textContent = accion.texto;
+  if(page==='proyectos') cargarProyectosLista();
+  if(page==='rubros'&&currentProyecto) cargarRubros();
+  if(page==='libro'&&currentProyecto) cargarLibroObra();
+  if(page==='curvaS'&&currentProyecto) cargarCurvaS();
+}
+
+function accionPrincipal(){
+  if(currentPage==='proyectos') abrirModalProyecto();
+  else if(currentPage==='rubros') toast('Próximamente: agregar rubro','info');
+  else if(currentPage==='libro') abrirModalLibro();
+}
+
+// ── DASHBOARD ──
+async function cargarDashboard(){
+  const { data: proy } = await sb.from('proyectos').select('*');
+  proyectos = proy || [];
+  const enEjecucion = proyectos.filter(p=>p.estado==='ejecucion');
+  document.getElementById('mProyectos').textContent = enEjecucion.length;
+
+  // Calcular métricas reales
+  const ids = proyectos.map(p=>p.id);
+  if(ids.length){
+    // Total registros libro de obra
+    const { count: totalRegistros } = await sb.from('libro_obra')
+      .select('id',{count:'exact',head:true})
+      .in('proyecto_id', ids);
+    document.getElementById('mRegistros').textContent = totalRegistros||0;
+
+    // Producción total ejecutada y avance
+    const { data: rubros } = await sb.from('rubros')
+      .select('cantidad_ejecutada, precio_unitario, monto_contrato')
+      .in('proyecto_id', ids);
+
+    if(rubros && rubros.length){
+      const produccionTotal = rubros.reduce((acc,r)=> acc + ((r.cantidad_ejecutada||0)*(r.precio_unitario||0)), 0);
+      const montoTotal = rubros.reduce((acc,r)=> acc + (r.monto_contrato||0), 0);
+      const avance = montoTotal > 0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
+      document.getElementById('mProduccion').textContent = '$'+produccionTotal.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+      document.getElementById('mAvance').textContent = avance+'%';
+    } else {
+      document.getElementById('mProduccion').textContent = '$0,00';
+      document.getElementById('mAvance').textContent = '0%';
+    }
+  } else {
+    document.getElementById('mRegistros').textContent = '0';
+    document.getElementById('mProduccion').textContent = '$0,00';
+    document.getElementById('mAvance').textContent = '0%';
+  }
+
+  renderProyectosTabla('dashProyectosList', proyectos);
+}
+
+async function renderProyectosTabla(containerId, lista){
+  const container = document.getElementById(containerId);
+  if(!lista||!lista.length){
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">Crea tu primer proyecto para comenzar</div><button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button></div>`;
+    return;
+  }
+  const avances = {};
+  for(const p of lista){
+    const { data: rubros } = await sb.from('rubros').select('cantidad_ejecutada,precio_unitario,monto_contrato').eq('proyecto_id',p.id);
+    if(rubros&&rubros.length){
+      const prod = rubros.reduce((a,r)=>a+((r.cantidad_ejecutada||0)*(r.precio_unitario||0)),0);
+      const total = rubros.reduce((a,r)=>a+(r.monto_contrato||0),0);
+      avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
+    } else { avances[p.id] = 0; }
+  }
+  container.innerHTML = `<table>
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th></tr></thead>
+    <tbody>${lista.map(p=>`
+      <tr onclick="abrirProyecto('${p.id}')">
+        <td><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
+        <td>${p.contratante||'—'}</td>
+        <td>${p.monto_contrato ? '$'+Number(p.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
+        <td><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function estadoLabel(e){ return {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'}[e]||e; }
+
+// ── PROYECTOS ──
+async function cargarProyectosLista(){
+  const { data } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
+  proyectos = data||[];
+  renderProyectosTabla('proyectosList', proyectos);
+}
+
+async function cargarProyectosSelector(){
+  const { data } = await sb.from('proyectos').select('id,nombre');
+  const sel = document.getElementById('selectProyecto');
+  sel.innerHTML = '<option value="">Selecciona un proyecto...</option>' + (data||[]).map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
+}
+
+function cambiarProyecto(id){
+  currentProyecto = id;
+  if(!id) return;
+  if(currentPage==='rubros') cargarRubros();
+  if(currentPage==='libro') cargarLibroObra();
+  if(currentPage==='curvaS') cargarCurvaS();
+  if(currentPage==='fiscalizacion') cargarFiscalizacion();
+}
+
+function abrirProyecto(id){ navTo('rubros', document.querySelector('.nav-item:nth-child(3)')); document.getElementById('selectProyecto').value=id; cambiarProyecto(id); }
+
+// ── MODAL PROYECTO ──
+function abrirModalProyecto(proyecto=null){
+  document.getElementById('editProyectoId').value = proyecto?.id||'';
+  document.getElementById('modalProyectoTitle').textContent = proyecto ? 'Editar proyecto' : 'Nuevo proyecto';
+  document.getElementById('pNombre').value = proyecto?.nombre||'';
+  document.getElementById('pContratante').value = proyecto?.contratante||'';
+  document.getElementById('pContratista').value = proyecto?.contratista||'';
+  document.getElementById('pMonto').value = proyecto?.monto_contrato||'';
+  document.getElementById('pEstado').value = proyecto?.estado||'planificacion';
+  document.getElementById('pFechaInicio').value = proyecto?.fecha_inicio||'';
+  document.getElementById('pFechaFin').value = proyecto?.fecha_fin_planificada||'';
+  document.getElementById('pUbicacion').value = proyecto?.ubicacion||'';
+  document.getElementById('pDescripcion').value = proyecto?.descripcion||'';
+  document.getElementById('modalProyecto').classList.add('show');
+}
+
+async function guardarProyecto(){
+  const id = document.getElementById('editProyectoId').value;
+  const data = {
+    nombre: document.getElementById('pNombre').value.trim(),
+    contratante: document.getElementById('pContratante').value.trim(),
+    contratista: document.getElementById('pContratista').value.trim(),
+    monto_contrato: parseFloat(document.getElementById('pMonto').value)||null,
+    estado: document.getElementById('pEstado').value,
+    fecha_inicio: document.getElementById('pFechaInicio').value||null,
+    fecha_fin_planificada: document.getElementById('pFechaFin').value||null,
+    ubicacion: document.getElementById('pUbicacion').value.trim(),
+    descripcion: document.getElementById('pDescripcion').value.trim(),
+  };
+  if(!data.nombre){ toast('El nombre es obligatorio','error'); return; }
+  let error;
+  if(id){
+    ({ error } = await sb.from('proyectos').update(data).eq('id',id));
+  } else {
+    const { data: nuevo, error: errIns } = await sb.from('proyectos')
+      .insert({...data, created_by: currentUser?.id})
+      .select()
+      .single();
+    error = errIns;
+    // Auto-agregar al creador como director del proyecto
+    if(!error && nuevo){
+      await sb.from('proyecto_miembros').insert({
+        proyecto_id: nuevo.id,
+        perfil_id: currentUser.id,
+        rol: 'director'
+      });
+    }
+  }
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Proyecto actualizado':'Proyecto creado con éxito','success');
+  cerrarModal('modalProyecto');
+  cargarDashboard();
+  cargarProyectosSelector();
+  if(currentPage==='proyectos') cargarProyectosLista();
+}
+
+// ── RUBROS ──
+async function cargarRubros(){
+  if(!currentProyecto){ return; }
+  document.getElementById('rubrosContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando rubros...</div>';
+  const { data } = await sb.from('rubros').select('*').eq('proyecto_id',currentProyecto).order('orden');
+  renderRubros(data||[]);
+  cargarArchivos('rubros');
+}
+
+function renderRubros(rubros){
+  const totalContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const totalProd = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
+  const avanceGeneral = totalContrato>0 ? (totalProd/totalContrato*100) : 0;
+  document.getElementById('rubrosContent').innerHTML = `
+    <div class="metrics" style="margin-bottom:20px">
+      <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div><div class="metric-value">${rubros.length}</div><div class="metric-label">Total rubros</div></div></div>
+      <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div><div class="metric-value">${avanceGeneral.toFixed(2)}%</div><div class="metric-label">Avance general</div></div></div>
+      <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="metric-value">$${totalProd.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Producción ejecutada</div></div></div>
+      <div class="metric-card"><div class="metric-icon purple"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="metric-value">$${totalContrato.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Monto contratado</div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
+      ${rubros.length ? `<table><thead><tr><th>Descripción</th><th>Unidad</th><th>Cantidad</th><th>P. Unitario</th><th>Contratado</th><th>Ejecutado</th><th>Total Prod.</th><th>% Rubro</th><th>Estado</th></tr></thead><tbody>
+        ${rubros.map(r=>{
+          const pct = r.cantidad_contrato>0 ? Math.min((r.cantidad_ejecutada||0)/r.cantidad_contrato*100,100) : 0;
+          const color = pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
+          return `<tr>
+            <td style="max-width:200px;font-weight:500">${r.descripcion}</td>
+            <td>${r.unidad||'—'}</td>
+            <td style="text-align:right">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+            <td style="text-align:right">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+            <td style="text-align:right">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+            <td style="text-align:right">${Number(r.cantidad_ejecutada||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+            <td style="text-align:right">$${Number(r.total_produccion||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+            <td style="min-width:80px"><span style="font-size:12px;font-weight:600;color:${color}">${pct.toFixed(1)}%</span><div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div></td>
+            <td>
+              <select onchange="cambiarEstadoRubro('${r.id}',this.value)" style="font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid #c5c7d4;cursor:pointer;background:${r.estado==='terminado'?'#e8f5e9':r.estado==='trabajando'?'#e8f4ff':r.estado==='suspendido'?'#fff3e0':'#f5f6f8'};color:${r.estado==='terminado'?'#2e7d32':r.estado==='trabajando'?'#0060c0':r.estado==='suspendido'?'#e65100':'#676879'};font-weight:600">
+                <option value="planificado" ${r.estado==='planificado'?'selected':''}>📋 Planificado</option>
+                <option value="trabajando" ${r.estado==='trabajando'?'selected':''}>🔨 Trabajando</option>
+                <option value="terminado" ${r.estado==='terminado'?'selected':''}>✅ Terminado</option>
+                <option value="suspendido" ${r.estado==='suspendido'?'selected':''}>⏸️ Suspendido</option>
+              </select>
+            </td>
+          </tr>`;}).join('')}
+      </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega los rubros del contrato para este proyecto</div><button class="btn primary" onclick="toast('Próximamente','info')">Agregar rubro</button></div>`}
+    </div>`;
+}
+
+// ── LIBRO DE OBRA ──
+let libroFotosSeleccionadas = [];
+let libroEquiposSeleccionados = [];
+let libroMaterialesSeleccionados = [];
+let libroRubrosSeleccionados = [];
+
+async function cargarLibroObra(){
+  if(!currentProyecto) return;
+  document.getElementById('libroContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando libro de obra...</div>';
+  const { data } = await sb.from('libro_obra').select('*').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false});
+  renderLibroObra(data||[]);
+  cargarArchivos('libro');
+}
+
+function renderLibroObra(registros){
+  const header = `<div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div><div class="card-title">Libro de Obra</div><div class="card-subtitle">${registros.length} registro(s)</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="abrirModalReporte()" style="gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Reporte PDF
+        </button>
+        <button class="btn primary" onclick="abrirModalLibro()">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nuevo registro
+        </button>
+      </div>
+    </div>`;
+
+  if(!registros.length){
+    document.getElementById('libroContent').innerHTML = header + `
+      <div class="empty-state"><div class="empty-icon">📖</div><div class="empty-title">Sin registros</div>
+      <div class="empty-sub">Comienza a registrar el diario de obra</div>
+      <button class="btn primary" onclick="abrirModalLibro()">Nuevo registro</button></div></div>`;
+    return;
+  }
+
+  document.getElementById('libroContent').innerHTML = header + `
+    <table><thead><tr><th>#</th><th>Fecha</th><th>Clima</th><th>Temp.</th><th>Personal</th><th>Actividades</th><th>Novedades</th><th>Fotos</th><th></th></tr></thead><tbody>
+    ${registros.map(r=>`<tr>
+      <td style="font-weight:600;color:#0073ea;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.numero_registro||'—'}</td>
+      <td style="font-weight:600;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'})}</td>
+      <td style="cursor:pointer" onclick="verDetalleLibro('${r.id}')">${climaIcon(r.clima)} ${r.clima||'—'}</td>
+      <td style="white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.temperatura_min!=null?r.temperatura_min+'°':'—'} / ${r.temperatura_max!=null?r.temperatura_max+'°':'—'}</td>
+      <td style="text-align:center;cursor:pointer" onclick="verDetalleLibro('${r.id}')"><span style="background:#e8f4ff;color:#0060c0;padding:2px 8px;border-radius:12px;font-weight:600">${r.personal_total||0}</span></td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.actividades_ejecutadas||'—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.novedades||'—'}</td>
+      <td id="fotos-count-${r.id}" style="cursor:pointer" onclick="verDetalleLibro('${r.id}')"><span style="color:#676879">—</span></td>
+      <td onclick="event.stopPropagation()"><button onclick="confirmarEliminarRegistro('${r.id}',${r.numero_registro||0})" style="background:none;border:1px solid #e2445c;color:#e2445c;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#e2445c';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#e2445c'">🗑️</button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+
+  // Cargar conteo de fotos async
+  registros.forEach(async r => {
+    const { count } = await sb.from('libro_obra_fotos').select('id',{count:'exact',head:true}).eq('registro_id',r.id);
+    const el = document.getElementById('fotos-count-'+r.id);
+    if(el) el.innerHTML = count>0 ? `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:12px;font-weight:600">📷 ${count}</span>` : '<span style="color:#c5c7d4">0</span>';
+  });
+}
+
+async function cargarCatalogoItems(){
+  if(!currentProyecto) return;
+  const { data: items } = await sb.from('catalogo_items')
+    .select('*')
+    .or(`es_base.eq.true,proyecto_id.eq.${currentProyecto}`)
+    .order('nombre');
+
+  const equipos = (items||[]).filter(i=>i.tipo==='equipo');
+  const materiales = (items||[]).filter(i=>i.tipo==='material');
+
+  const equipoSel = document.getElementById('equipoSelector');
+  const materialSel = document.getElementById('materialSelector');
+  if(!equipoSel || !materialSel) return;
+
+  equipoSel.innerHTML = '<option value="">+ Seleccionar equipo...</option>' +
+    equipos.map(i=>`<option value="${i.id}" data-nombre="${i.nombre}" data-unidad="${i.unidad||''}">${i.nombre}${i.unidad?' ('+i.unidad+')':''}</option>`).join('') +
+    '<option value="__nuevo__">✏️ Escribir otro...</option>';
+
+  materialSel.innerHTML = '<option value="">+ Seleccionar material...</option>' +
+    materiales.map(i=>`<option value="${i.id}" data-nombre="${i.nombre}" data-unidad="${i.unidad||''}">${i.nombre}${i.unidad?' ('+i.unidad+')':''}</option>`).join('') +
+    '<option value="__nuevo__">✏️ Escribir otro...</option>';
+}
+
+function agregarItemLibro(tipo){
+  const sel = document.getElementById(tipo==='equipo' ? 'equipoSelector' : 'materialSelector');
+  const cantInput = document.getElementById(tipo==='equipo' ? 'equipoCantidad' : 'materialCantidad');
+  const lista = tipo==='equipo' ? libroEquiposSeleccionados : libroMaterialesSeleccionados;
+  const listaEl = document.getElementById(tipo==='equipo' ? 'libroEquiposLista' : 'libroMaterialesLista');
+
+  let nombre = '', itemId = null;
+
+  if(sel.value === '__nuevo__'){
+    nombre = prompt(`Nombre del ${tipo==='equipo'?'equipo':'material'}:`);
+    if(!nombre) return;
+  } else if(sel.value){
+    const opt = sel.options[sel.selectedIndex];
+    nombre = opt.dataset.nombre;
+    itemId = sel.value;
+  } else {
+    toast('Selecciona un item primero','error');
+    return;
+  }
+
+  const cantidad = parseFloat(cantInput.value)||1;
+  if(lista.find(i=>i.nombre===nombre)){ toast('Ya está en la lista','error'); return; }
+  const unidad = itemId && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].dataset.unidad||'' : '';
+  lista.push({item_id: itemId, nombre, cantidad, tipo, unidad});
+  cantInput.value = '';
+  sel.value = '';
+  renderItemsLista(tipo);
+}
+
+function renderItemsLista(tipo){
+  const lista = tipo==='equipo' ? libroEquiposSeleccionados : libroMaterialesSeleccionados;
+  const listaEl = document.getElementById(tipo==='equipo' ? 'libroEquiposLista' : 'libroMaterialesLista');
+  if(!lista.length){
+    listaEl.innerHTML = `<div style="color:#676879;font-size:12px;padding:4px">Sin ${tipo==='equipo'?'equipos':'materiales'} agregados</div>`;
+    return;
+  }
+  listaEl.innerHTML = lista.map((item,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f5">
+      <span style="font-size:18px">${tipo==='equipo'?'🔧':'🏗️'}</span>
+      <span style="flex:1;font-size:13px">${item.nombre}</span>
+      <input type="number" value="${item.cantidad}" step="0.1" min="0" 
+        onchange="${tipo==='equipo'?'libroEquiposSeleccionados':'libroMaterialesSeleccionados'}[${i}].cantidad=parseFloat(this.value)||0"
+        style="width:65px;padding:3px 6px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;text-align:right"/>
+      <span style="font-size:11px;color:#676879;min-width:30px">${item.unidad||''}</span>
+      <button onclick="${tipo==='equipo'?'libroEquiposSeleccionados':'libroMaterialesSeleccionados'}.splice(${i},1);renderItemsLista('${tipo}')" 
+        style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:16px;padding:2px">✕</button>
+    </div>`).join('');
+}
+
+function climaIcon(clima){
+  const map = {'Soleado':'☀️','Nublado':'☁️','Lluvioso':'🌧️','Parcialmente nublado':'⛅','Tormenta':'⛈️'};
+  return map[clima]||'🌤️';
+}
+
+async function verDetalleLibro(id){
+  const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
+  const { data: fotos } = await sb.from('libro_obra_fotos').select('*').eq('registro_id',id).order('orden');
+  const { data: rubros } = await sb.from('libro_obra_rubros').select('*, rubros(codigo,descripcion,unidad)').eq('registro_id',id);
+
+  const fotosHtml = fotos&&fotos.length ? fotos.map(f=>`
+    <div style="position:relative">
+      <img src="${f.url}" alt="${f.descripcion||''}" style="width:100%;height:120px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="window.open('${f.url}','_blank')"/>
+      ${f.descripcion?`<div style="font-size:11px;color:#676879;margin-top:4px;text-align:center">${f.descripcion}</div>`:''}
+    </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin fotos</div>';
+
+  const rubrosHtml = rubros&&rubros.length ? rubros.map(rv=>`
+    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f6f8">
+      <span style="font-size:13px">${rv.rubros?.codigo||''} — ${rv.rubros?.descripcion||''}</span>
+      <span style="font-weight:600;color:#0073ea">${rv.cantidad_dia} ${rv.rubros?.unidad||''}</span>
+    </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin rubros registrados</div>';
+
+  document.getElementById('detalleLibroBody').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div class="info-item"><div class="info-label">Fecha</div><div class="info-value">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</div></div>
+      <div class="info-item"><div class="info-label">Registro N°</div><div class="info-value">${r.numero_registro||'—'}</div></div>
+      <div class="info-item"><div class="info-label">Clima</div><div class="info-value">${climaIcon(r.clima)} ${r.clima||'—'}</div></div>
+      <div class="info-item"><div class="info-label">Temperatura</div><div class="info-value">${r.temperatura_min!=null?r.temperatura_min+'°C':''} — ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</div></div>
+      <div class="info-item"><div class="info-label">Personal en obra</div><div class="info-value" style="font-size:20px;font-weight:700;color:#0073ea">${r.personal_total||0} personas</div></div>
+    </div>
+    <div class="info-item" style="margin-bottom:12px"><div class="info-label">Actividades ejecutadas</div><div class="info-value" style="white-space:pre-wrap;line-height:1.6">${r.actividades_ejecutadas||'—'}</div></div>
+    <div class="info-item" style="margin-bottom:12px"><div class="info-label">Equipos y maquinaria</div><div class="info-value" style="white-space:pre-wrap;line-height:1.6">${r.equipos_maquinaria||'—'}</div></div>
+    <div class="info-item" style="margin-bottom:12px"><div class="info-label">Materiales utilizados</div><div class="info-value" style="white-space:pre-wrap;line-height:1.6">${r.materiales_utilizados||'—'}</div></div>
+    <div class="info-item" style="margin-bottom:12px"><div class="info-label">Novedades</div><div class="info-value" style="white-space:pre-wrap;line-height:1.6;color:${r.novedades?'#e2445c':'#676879'}">${r.novedades||'Sin novedades'}</div></div>
+    <div class="info-item" style="margin-bottom:16px"><div class="info-label">Resoluciones</div><div class="info-value" style="white-space:pre-wrap;line-height:1.6">${r.resoluciones||'—'}</div></div>
+    <div style="margin-bottom:16px"><div class="info-label" style="font-size:11px;font-weight:600;color:#676879;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Rubros trabajados</div>${rubrosHtml}</div>
+    <div><div class="info-label" style="font-size:11px;font-weight:600;color:#676879;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Fotos (${fotos?.length||0})</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">${fotosHtml}</div></div>`;
+
+  window._detalleRegistroId = id;
+  window._detalleRegistroNum = r.numero_registro||'';
+  document.getElementById('modalDetalleLibro').classList.add('show');
+}
+
+async function abrirModalLibro(){
+  if(!currentProyecto){ toast('Selecciona un proyecto primero','error'); return; }
+  libroFotosSeleccionadas = [];
+  libroRubrosSeleccionados = [];
+
+  // Número de registro
+  const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
+  document.getElementById('lNumRegistro').value = (count||0)+1;
+  document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('lClima').value = 'Soleado';
+  document.getElementById('lTempMin').value = '';
+  document.getElementById('lTempMax').value = '';
+  document.getElementById('lPersonal').value = '';
+  document.getElementById('lActividades').value = '';
+  document.getElementById('lEquipos').value = '';
+  document.getElementById('lMateriales').value = '';
+  document.getElementById('lNovedades').value = '';
+  document.getElementById('lResoluciones').value = '';
+  document.getElementById('libroFotosPreview').innerHTML = '';
+  document.getElementById('libroRubrosLista').innerHTML = '<div style="color:#676879;font-size:13px">Cargando rubros...</div>';
+  libroEquiposSeleccionados = [];
+  libroMaterialesSeleccionados = [];
+  document.getElementById('libroEquiposLista').innerHTML = '<div style="color:#676879;font-size:12px;padding:4px">Sin equipos agregados</div>';
+  document.getElementById('libroMaterialesLista').innerHTML = '<div style="color:#676879;font-size:12px;padding:4px">Sin materiales agregados</div>';
+  await cargarCatalogoItems();
+
+  // Cargar rubros del proyecto
+  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id',currentProyecto).order('orden');
+  renderRubrosLibroModal(rubros||[]);
+
+  document.getElementById('modalLibro').classList.add('show');
+}
+
+function renderRubrosLibroModal(rubros){
+  if(!rubros.length){ document.getElementById('libroRubrosLista').innerHTML='<div style="color:#676879;font-size:13px">No hay rubros en este proyecto</div>'; return; }
+  document.getElementById('libroRubrosLista').innerHTML = rubros.map(r=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8" id="rubro-row-${r.id}">
+      <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${r.codigo}','${(r.descripcion||'').replace(/'/g,"\\'")}','${r.unidad||''}')" style="width:16px;height:16px;cursor:pointer"/>
+      <span style="font-size:12px;color:#676879;min-width:30px">${r.codigo}</span>
+      <span style="font-size:13px;flex:1">${r.descripcion}</span>
+      <span style="font-size:11px;color:#676879">${r.unidad||''}</span>
+      <input type="number" id="qty-${r.id}" placeholder="0" step="0.01" min="0" style="width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;display:none" onchange="actualizarCantidadRubro('${r.id}',this.value)"/>
+    </div>`).join('');
+}
+
+function toggleRubroLibro(id, codigo, descripcion, unidad){
+  const qtyEl = document.getElementById('qty-'+id);
+  const exists = libroRubrosSeleccionados.find(r=>r.id===id);
+  if(exists){
+    libroRubrosSeleccionados = libroRubrosSeleccionados.filter(r=>r.id!==id);
+    qtyEl.style.display='none'; qtyEl.value='';
+  } else {
+    libroRubrosSeleccionados.push({id, codigo, descripcion, unidad, cantidad:0});
+    qtyEl.style.display='block'; qtyEl.focus();
+  }
+}
+
+function actualizarCantidadRubro(id, val){
+  const r = libroRubrosSeleccionados.find(r=>r.id===id);
+  if(r) r.cantidad = parseFloat(val)||0;
+}
+
+function manejarFotosLibro(input){
+  const files = Array.from(input.files);
+  if(libroFotosSeleccionadas.length + files.length > 10){ toast('Máximo 10 fotos por registro','error'); return; }
+  files.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = e => {
+      libroFotosSeleccionadas.push({file, dataUrl: e.target.result, descripcion:''});
+      renderFotosPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderFotosPreview(){
+  document.getElementById('libroFotosPreview').innerHTML = libroFotosSeleccionadas.map((f,i)=>`
+    <div style="position:relative">
+      <img src="${f.dataUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:6px"/>
+      <button onclick="eliminarFotoLibro(${i})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+      <input type="text" placeholder="Descripción..." value="${f.descripcion}" onchange="libroFotosSeleccionadas[${i}].descripcion=this.value" style="width:100%;font-size:11px;padding:3px 6px;border:1px solid #e6e9ef;border-radius:4px;margin-top:4px"/>
+    </div>`).join('');
+}
+
+function eliminarFotoLibro(i){
+  libroFotosSeleccionadas.splice(i,1);
+  renderFotosPreview();
+}
+
+async function subirFotoSupabase(file, registroId, orden){
+  const ext = file.name.split('.').pop();
+  const path = `libro_obra/${registroId}/${Date.now()}_${orden}.${ext}`;
+  const { data, error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType: file.type});
+  if(error) return null;
+  const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+  return urlData.publicUrl;
+}
+
+async function guardarRegistroLibro(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const fecha = document.getElementById('lFecha').value;
+  if(!fecha){ toast('La fecha es obligatoria','error'); return; }
+
+  const btnGuardar = document.getElementById('btnGuardarLibro');
+  btnGuardar.disabled = true;
+  btnGuardar.innerHTML = 'Guardando...';
+
+  const payload = {
+    proyecto_id: currentProyecto,
+    fecha,
+    numero_registro: parseInt(document.getElementById('lNumRegistro').value)||null,
+    clima: document.getElementById('lClima').value||null,
+    temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
+    temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
+    personal_total: parseInt(document.getElementById('lPersonal').value)||null,
+    actividades_ejecutadas: document.getElementById('lActividades').value.trim()||null,
+    equipos_maquinaria: libroEquiposSeleccionados.length ? libroEquiposSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    materiales_utilizados: libroMaterialesSeleccionados.length ? libroMaterialesSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    novedades: document.getElementById('lNovedades').value.trim()||null,
+    resoluciones: document.getElementById('lResoluciones').value.trim()||null,
+    created_by: currentUser?.id
+  };
+
+  const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
+  if(error){ toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro'; return; }
+
+  // Guardar equipos y materiales en libro_obra_items
+  const todosItems = [...libroEquiposSeleccionados, ...libroMaterialesSeleccionados];
+  if(todosItems.length){
+    await sb.from('libro_obra_items').insert(todosItems.map(i=>({
+      registro_id: registro.id,
+      item_id: i.item_id || null,
+      nombre_libre: i.item_id ? null : i.nombre,
+      tipo: i.tipo,
+      cantidad: i.cantidad
+    })));
+  }
+
+  // Guardar rubros trabajados
+  if(libroRubrosSeleccionados.length){
+    const rubrosPayload = libroRubrosSeleccionados.filter(r=>r.cantidad>0).map(r=>({
+      registro_id: registro.id,
+      rubro_id: r.id,
+      cantidad_dia: r.cantidad
+    }));
+    if(rubrosPayload.length) await sb.from('libro_obra_rubros').insert(rubrosPayload);
+
+    // Actualizar cantidad ejecutada en rubros
+    for(const r of libroRubrosSeleccionados.filter(r=>r.cantidad>0)){
+      const { data: rub } = await sb.from('rubros').select('cantidad_ejecutada').eq('id',r.id).single();
+      await sb.from('rubros').update({ cantidad_ejecutada: (rub?.cantidad_ejecutada||0)+r.cantidad }).eq('id',r.id);
+    }
+  }
+
+  // Subir fotos si hay storage configurado
+  if(libroFotosSeleccionadas.length){
+    for(let i=0; i<libroFotosSeleccionadas.length; i++){
+      const f = libroFotosSeleccionadas[i];
+      try {
+        const url = await subirFotoSupabase(f.file, registro.id, i+1);
+        if(url) await sb.from('libro_obra_fotos').insert({ registro_id: registro.id, url, descripcion: f.descripcion||null, orden: i+1 });
+      } catch(e){ console.warn('Error subiendo foto:', e); }
+    }
+  }
+
+  toast('Registro guardado con éxito ✓','success');
+  cerrarModal('modalLibro');
+  btnGuardar.disabled=false;
+  btnGuardar.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
+  cargarLibroObra();
+}
+
+// ── CURVA S ──
+// ── CURVA S ──
+let curvaSGrafico = null;
+let curvaSModo = 'semanas'; // 'semanas' | 'meses'
+let cronogramaData = []; // [{rubro_id, descripcion, peso, fecha_inicio, fecha_fin, avance_real}]
+
+async function cargarCurvaS(){
+  if(!currentProyecto) return;
+  const { data: rubs } = await sb.from('rubros').select('*').eq('proyecto_id', currentProyecto).order('orden');
+  if(!rubs||!rubs.length){
+    document.getElementById('curvaSContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega rubros al proyecto para usar la Curva S</div></div>';
+    return;
+  }
+  // Cargar cronograma guardado
+  const { data: cron } = await sb.from('cronograma_rubros').select('*').eq('proyecto_id', currentProyecto);
+  const cronMap = {};
+  (cron||[]).forEach(c => cronMap[c.rubro_id] = c);
+
+  // Proyecto para fechas
+  const proy = proyectos.find(p=>p.id===currentProyecto)||{};
+
+  cronogramaData = rubs.map(r => {
+    const c = cronMap[r.id] || {};
+    const pesoDefault = (r.monto_contrato||0);
+    return {
+      rubro_id: r.id,
+      descripcion: r.descripcion,
+      unidad: r.unidad||'',
+      monto_contrato: r.monto_contrato||0,
+      peso: c.peso_pct !== undefined ? c.peso_pct : null,
+      fecha_inicio: c.fecha_inicio || null,
+      fecha_fin: c.fecha_fin || null,
+      avance_real: r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0
+    };
+  });
+
+  renderCurvaS(proy);
+  cargarArchivos('curvaS');
+}
+
+function renderCurvaS(proy){
+  const totalMonto = cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
+
+  // Calcular pesos automáticos para los que no tienen definido
+  const pesosDefinidos = cronogramaData.filter(r=>r.peso!==null);
+  const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+r.peso,0);
+  const sinPeso = cronogramaData.filter(r=>r.peso===null);
+  const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
+
+  const rubrosConPeso = cronogramaData.map(r=>({
+    ...r,
+    pesoEfectivo: r.peso!==null ? r.peso : pesoAuto
+  }));
+
+  // Verificar si hay cronograma ingresado
+  const tienenFechas = rubrosConPeso.filter(r=>r.fecha_inicio&&r.fecha_fin);
+  const hayCronograma = tienenFechas.length > 0;
+
+  document.getElementById('curvaSContent').innerHTML = `
+  <!-- TOOLBAR -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="setCurvaSModo('semanas')" id="btnSemanas" class="btn ${curvaSModo==='semanas'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">Semanas</button>
+      <button onclick="setCurvaSModo('meses')" id="btnMeses" class="btn ${curvaSModo==='meses'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">Meses</button>
+    </div>
+    <button onclick="abrirModalCronograma()" class="btn" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Ingresar cronograma
+    </button>
+    <label class="btn" style="gap:6px;cursor:pointer">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Importar Excel / MSProject
+      <input type="file" accept=".xlsx,.xls,.xml,.mpx" style="display:none" onchange="importarCronograma(this)"/>
+    </label>
+    ${!hayCronograma?'<span style="background:#fff3cd;color:#856404;font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #ffc107">⚠️ Sin cronograma — ingresa fechas para ver la curva planificada</span>':''}
+  </div>
+
+  <!-- INDICADORES -->
+  <div id="curvaSIndicadores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
+
+  <!-- GRÁFICO -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header">
+      <div class="card-title">Curva S — Avance acumulado</div>
+    </div>
+    <div style="padding:16px;height:340px">
+      <canvas id="chartCurvaS"></canvas>
+    </div>
+  </div>
+
+  <!-- TABLA -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Detalle por rubro</div>
+      <div class="card-subtitle">Avance planificado vs real</div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Descripción</th>
+          <th style="text-align:center">Peso %</th>
+          <th style="text-align:center">Inicio plan.</th>
+          <th style="text-align:center">Fin plan.</th>
+          <th style="text-align:center">Avance real</th>
+          <th style="text-align:center">Estado</th>
+        </tr></thead>
+        <tbody id="curvaSTabla"></tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // Render tabla
+  const tbody = document.getElementById('curvaSTabla');
+  tbody.innerHTML = rubrosConPeso.map(r=>{
+    const atraso = calcularAtraso(r);
+    const estadoColor = atraso==='atrasado'?'#e2445c':atraso==='adelantado'?'#00c875':'#676879';
+    const estadoLabel = atraso==='atrasado'?'⚠️ Atrasado':atraso==='adelantado'?'✅ Adelantado':'— Sin datos';
+    return `<tr>
+      <td style="font-size:12px;max-width:220px">${r.descripcion}</td>
+      <td style="text-align:center;font-weight:600">${r.pesoEfectivo.toFixed(1)}%</td>
+      <td style="text-align:center;font-size:12px">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
+      <td style="text-align:center;font-size:12px">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
+      <td style="text-align:center">
+        <span style="font-weight:600;color:#0073ea">${r.avance_real.toFixed(1)}%</span>
+        <div class="progress-bg" style="margin-top:3px"><div class="progress-fill" style="width:${r.avance_real}%;background:#0073ea"></div></div>
+      </td>
+      <td style="text-align:center;font-size:12px;font-weight:600;color:${estadoColor}">${estadoLabel}</td>
+    </tr>`;
+  }).join('');
+
+  // Calcular indicadores y gráfico
+  calcularIndicadores(rubrosConPeso, proy||{});
+  dibujarGraficoCurvaS(rubrosConPeso, proy||{});
+}
+
+function formatFecha(f){ const d=new Date(f+'T00:00:00'); return d.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'}); }
+
+function calcularAtraso(r){
+  if(!r.fecha_inicio||!r.fecha_fin) return 'sinDatos';
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const inicio = new Date(r.fecha_inicio+'T00:00:00');
+  const fin = new Date(r.fecha_fin+'T00:00:00');
+  if(hoy < inicio) return 'sinDatos';
+  const duracion = (fin-inicio)||1;
+  const transcurrido = Math.min(hoy-inicio, duracion);
+  const pctPlanHoy = Math.min((transcurrido/duracion)*100, 100);
+  if(r.avance_real >= pctPlanHoy - 2) return 'adelantado';
+  return 'atrasado';
+}
+
+function calcularIndicadores(rubros, proy){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
+
+  // BCWP = avance real × peso (valor ganado)
+  // BCWS = avance planificado × peso (valor planificado a hoy)
+  let BCWP=0, BCWS=0, totalPeso=0;
+  conFechas.forEach(r=>{
+    const inicio=new Date(r.fecha_inicio+'T00:00:00');
+    const fin=new Date(r.fecha_fin+'T00:00:00');
+    const duracion=(fin-inicio)||1;
+    const transcurrido=Math.min(Math.max(hoy-inicio,0),duracion);
+    const pctPlan=Math.min((transcurrido/duracion)*100,100);
+    BCWP += (r.avance_real/100)*r.pesoEfectivo;
+    BCWS += (pctPlan/100)*r.pesoEfectivo;
+    totalPeso += r.pesoEfectivo;
+  });
+
+  const SPI = BCWS>0 ? BCWP/BCWS : null;
+  const avanceRealTotal = rubros.reduce((s,r)=>s+(r.avance_real/100)*r.pesoEfectivo,0);
+  const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
+
+  const spiColor = SPI===null?'#676879':SPI>=0.95?'#00c875':SPI>=0.80?'#ff9f00':'#e2445c';
+  const spiLabel = SPI===null?'—':SPI>=0.95?'✅ En tiempo':SPI>=0.80?'⚠️ Leve atraso':'🔴 Atrasado';
+
+  document.getElementById('curvaSIndicadores').innerHTML = `
+    <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div><div class="metric-value">${avanceRealTotal.toFixed(1)}%</div><div class="metric-label">Avance real</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${SPI===null?'purple':SPI>=0.95?'green':SPI>=0.80?'orange':'purple'}">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div><div class="metric-value" style="color:${spiColor}">${SPI!==null?SPI.toFixed(2):'—'}</div><div class="metric-label">SPI ${spiLabel}</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${atrasados>0?'purple':'green'}">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div><div class="metric-value" style="color:${atrasados>0?'#e2445c':'#00c875'}">${atrasados}</div><div class="metric-label">Rubros atrasados</div></div></div>
+    <div class="metric-card"><div class="metric-icon orange">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <div><div class="metric-value">${conFechas.length}</div><div class="metric-label">Rubros con cronograma</div></div></div>`;
+}
+
+function dibujarGraficoCurvaS(rubros, proy){
+  if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
+  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
+  if(!conFechas.length){
+    // Sin cronograma: solo mostrar avance real acumulado
+    const labels = rubros.map((_,i)=>'R'+(i+1));
+    let acum=0;
+    const realArr = rubros.map(r=>{ acum+=(r.avance_real/100)*r.pesoEfectivo; return parseFloat(acum.toFixed(2)); });
+    curvaSGrafico = new Chart(document.getElementById('chartCurvaS'),{
+      type:'line',
+      data:{labels,datasets:[{label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom'}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{}}}
+    });
+    return;
+  }
+
+  // Calcular rango de fechas
+  const fechas = conFechas.flatMap(r=>[new Date(r.fecha_inicio+'T00:00:00'),new Date(r.fecha_fin+'T00:00:00')]);
+  let minFecha = new Date(Math.min(...fechas));
+  let maxFecha = new Date(Math.max(...fechas));
+
+  // Generar períodos
+  const periodos = [];
+  const cur = new Date(minFecha);
+  if(curvaSModo==='semanas'){
+    cur.setDate(cur.getDate() - cur.getDay() + 1); // lunes
+    while(cur<=maxFecha){
+      periodos.push(new Date(cur));
+      cur.setDate(cur.getDate()+7);
+    }
+  } else {
+    cur.setDate(1);
+    while(cur<=maxFecha){
+      periodos.push(new Date(cur));
+      cur.setMonth(cur.getMonth()+1);
+    }
+  }
+  if(!periodos.length) return;
+
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  const labels = periodos.map(p=>{
+    if(curvaSModo==='semanas') return 'S'+getNumSemana(p)+'\n'+p.toLocaleDateString('es-EC',{day:'2-digit',month:'short'});
+    return p.toLocaleDateString('es-EC',{month:'short',year:'2-digit'});
+  });
+
+  const planArr=[], realArr=[];
+  periodos.forEach(p=>{
+    const finPeriodo = curvaSModo==='semanas'
+      ? new Date(p.getTime()+6*86400000)
+      : new Date(p.getFullYear(),p.getMonth()+1,0);
+
+    let acumPlan=0, acumReal=0;
+    conFechas.forEach(r=>{
+      const ini=new Date(r.fecha_inicio+'T00:00:00');
+      const fin=new Date(r.fecha_fin+'T00:00:00');
+      const duracion=(fin-ini)||1;
+      // Planificado acumulado al fin del período
+      const tPlan=Math.min(Math.max(finPeriodo-ini,0),duracion);
+      acumPlan += Math.min(tPlan/duracion,1)*r.pesoEfectivo;
+      // Real acumulado al fin del período (si ya pasó)
+      if(finPeriodo<=hoy){
+        const tReal=Math.min(Math.max(finPeriodo-ini,0),duracion);
+        acumReal += (r.avance_real/100)*r.pesoEfectivo*(tReal>=duracion?1:tReal/duracion);
+      }
+    });
+    planArr.push(parseFloat(Math.min(acumPlan,100).toFixed(2)));
+    realArr.push(finPeriodo<=hoy ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
+  });
+
+  curvaSGrafico = new Chart(document.getElementById('chartCurvaS'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Planificado (%)',data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:3,borderDash:[6,3]},
+        {label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:4,spanGaps:false}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'bottom'},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y!==null?ctx.parsed.y+'%':'—'}`}}},
+      scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{ticks:{maxRotation:45,font:{size:10}}}}
+    }
+  });
+}
+
+function getNumSemana(d){
+  const onejan=new Date(d.getFullYear(),0,1);
+  return Math.ceil((((d-onejan)/86400000)+onejan.getDay()+1)/7);
+}
+
+function setCurvaSModo(modo){
+  curvaSModo=modo;
+  document.getElementById('btnSemanas').className='btn'+(modo==='semanas'?' primary':'');
+  document.getElementById('btnMeses').className='btn'+(modo==='meses'?' primary':'');
+  const proy=proyectos.find(p=>p.id===currentProyecto)||{};
+  const totalMonto=cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
+  const pesosDefinidos=cronogramaData.filter(r=>r.peso!==null);
+  const sumaPesosDefinidos=pesosDefinidos.reduce((s,r)=>s+r.peso,0);
+  const sinPeso=cronogramaData.filter(r=>r.peso===null);
+  const pesoAuto=sinPeso.length>0?Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length):0;
+  const rubrosConPeso=cronogramaData.map(r=>({...r,pesoEfectivo:r.peso!==null?r.peso:pesoAuto}));
+  dibujarGraficoCurvaS(rubrosConPeso,proy);
+}
+
+// ── MODAL CRONOGRAMA ──
+function abrirModalCronograma(){
+  const tbody = document.getElementById('cronogramaTablaBody');
+  if(!cronogramaData.length){ toast('Carga un proyecto primero','error'); return; }
+  const totalMonto=cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
+  const rows = cronogramaData.map((r,i)=>`
+    <tr>
+      <td style="font-size:11px;max-width:180px;padding:6px 8px">${r.descripcion}</td>
+      <td style="padding:4px"><input type="number" value="${r.peso!==null?r.peso.toFixed(1):(r.monto_contrato/totalMonto*100).toFixed(1)}" min="0" max="100" step="0.1"
+        style="width:70px;padding:5px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;text-align:right"
+        onchange="cronogramaData[${i}].peso=parseFloat(this.value)||0"/></td>
+      <td style="padding:4px"><input type="date" value="${r.fecha_inicio||''}"
+        style="padding:5px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px"
+        onchange="cronogramaData[${i}].fecha_inicio=this.value"/></td>
+      <td style="padding:4px"><input type="date" value="${r.fecha_fin||''}"
+        style="padding:5px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px"
+        onchange="cronogramaData[${i}].fecha_fin=this.value"/></td>
+    </tr>`).join('');
+  tbody.innerHTML = rows;
+  document.getElementById('modalCronograma').classList.add('show');
+}
+
+async function guardarCronograma(){
+  const btn = document.getElementById('btnGuardarCronograma');
+  btn.disabled=true; btn.textContent='Guardando...';
+  // Upsert por rubro_id
+  for(const r of cronogramaData){
+    await sb.from('cronograma_rubros').upsert({
+      rubro_id: r.rubro_id,
+      proyecto_id: currentProyecto,
+      peso_pct: r.peso,
+      fecha_inicio: r.fecha_inicio||null,
+      fecha_fin: r.fecha_fin||null
+    },{onConflict:'rubro_id'});
+  }
+  toast('Cronograma guardado ✓','success');
+  btn.disabled=false; btn.textContent='Guardar cronograma';
+  cerrarModal('modalCronograma');
+  cargarCurvaS();
+}
+
+async function importarCronograma(input){
+  const file = input.files[0];
+  if(!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext==='xml'||ext==='mpx'){
+    // MS Project XML
+    const text = await file.text();
+    parseMSProjectXML(text);
+  } else if(ext==='xlsx'||ext==='xls'){
+    toast('Para Excel: usa columnas "Descripcion", "FechaInicio", "FechaFin", "Peso"','info');
+    await parsearExcelCronograma(file);
+  }
+  input.value='';
+}
+
+async function parsearExcelCronograma(file){
+  // Leer como texto CSV-like usando FileReader y parseo manual básico
+  // Usamos SheetJS si está disponible, sino aviso
+  if(typeof XLSX==='undefined'){
+    toast('Carga el archivo en el modal de cronograma manualmente','error');
+    return;
+  }
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws);
+  let importados=0;
+  rows.forEach(row=>{
+    const desc=(row['Descripcion']||row['descripcion']||row['DESCRIPCION']||'').toString().trim();
+    const match = cronogramaData.find(r=>r.descripcion.toLowerCase().includes(desc.toLowerCase().substring(0,15)));
+    if(match){
+      if(row['FechaInicio']||row['fecha_inicio']) match.fecha_inicio=excelFechaToISO(row['FechaInicio']||row['fecha_inicio']);
+      if(row['FechaFin']||row['fecha_fin']) match.fecha_fin=excelFechaToISO(row['FechaFin']||row['fecha_fin']);
+      if(row['Peso']||row['peso']) match.peso=parseFloat(row['Peso']||row['peso'])||null;
+      importados++;
+    }
+  });
+  toast(`${importados} rubros importados del Excel`,'success');
+  abrirModalCronograma();
+}
+
+function excelFechaToISO(val){
+  if(!val) return null;
+  if(typeof val==='number'){ const d=new Date((val-25569)*86400000); return d.toISOString().split('T')[0]; }
+  const d=new Date(val);
+  if(!isNaN(d)) return d.toISOString().split('T')[0];
+  return null;
+}
+
+function parseMSProjectXML(xml){
+  try{
+    const parser=new DOMParser();
+    const doc=parser.parseFromString(xml,'text/xml');
+    const tasks=[...doc.querySelectorAll('Task')];
+    let importados=0;
+    tasks.forEach(t=>{
+      const name=(t.querySelector('Name')||{}).textContent||'';
+      const start=(t.querySelector('Start')||{}).textContent||'';
+      const finish=(t.querySelector('Finish')||{}).textContent||'';
+      if(!name||!start) return;
+      const match=cronogramaData.find(r=>r.descripcion.toLowerCase().includes(name.toLowerCase().substring(0,15)));
+      if(match){
+        if(start) match.fecha_inicio=start.split('T')[0];
+        if(finish) match.fecha_fin=finish.split('T')[0];
+        importados++;
+      }
+    });
+    toast(`${importados} tareas importadas de MS Project`,'success');
+    abrirModalCronograma();
+  }catch(e){ toast('Error al parsear XML de MSProject','error'); }
+}
+
+// ── FISCALIZACIÓN ──
+async function cargarFiscalizacion(){
+  document.getElementById('fiscalizacionContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Fiscalización</div><div class="empty-sub">Módulo próximamente — inspecciones y planillas de pago</div></div>';
+  if(currentProyecto) cargarArchivos('fiscalizacion');
+}
+
+// ── ARCHIVOS ──
+const TIPOS_PERMITIDOS = {
+  'application/pdf': '📄 PDF',
+  'application/msword': '📝 Word',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '📝 Word',
+  'application/vnd.ms-excel': '📊 Excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📊 Excel',
+  'image/vnd.dwg': '📐 DWG',
+  'application/acad': '📐 DWG',
+  'image/x-dwg': '📐 DWG',
+  'application/octet-stream': '📐 Archivo'
+};
+
+function tipoIcono(tipo, nombre){
+  if(tipo && TIPOS_PERMITIDOS[tipo]) return TIPOS_PERMITIDOS[tipo];
+  if(nombre){
+    const ext = nombre.split('.').pop().toLowerCase();
+    if(ext==='pdf') return '📄 PDF';
+    if(['doc','docx'].includes(ext)) return '📝 Word';
+    if(['xls','xlsx'].includes(ext)) return '📊 Excel';
+    if(ext==='dwg') return '📐 DWG';
+  }
+  return '📎 Archivo';
+}
+
+function formatBytes(bytes){
+  if(!bytes) return '';
+  if(bytes < 1024) return bytes+' B';
+  if(bytes < 1048576) return (bytes/1024).toFixed(1)+' KB';
+  return (bytes/1048576).toFixed(1)+' MB';
+}
+
+async function cargarArchivos(modulo){
+  if(!currentProyecto) return;
+  const panelId = 'archivosPanel-'+modulo;
+  let panel = document.getElementById(panelId);
+  if(!panel) return;
+  panel.style.display = 'block';
+
+  const { data: archivos } = await sb.from('archivos')
+    .select('*')
+    .eq('proyecto_id', currentProyecto)
+    .eq('modulo', modulo === 'libro' ? 'libro_obra' : modulo)
+    .order('created_at', {ascending: false});
+
+  const lista = (archivos||[]).map(a=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f5f6f8">
+      <span style="font-size:20px">${tipoIcono(a.tipo, a.nombre).split(' ')[0]}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.nombre}</div>
+        <div style="font-size:11px;color:#676879">${tipoIcono(a.tipo, a.nombre).split(' ').slice(1).join(' ')} · ${formatBytes(a.tamanio)} · ${new Date(a.created_at).toLocaleDateString('es-EC')}</div>
+      </div>
+      <a href="${a.url}" target="_blank" style="font-size:12px;color:#0073ea;text-decoration:none;white-space:nowrap">⬇️ Abrir</a>
+      <button onclick="eliminarArchivo('${a.id}','${a.url}','${modulo}')" style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:16px;padding:4px">🗑️</button>
+    </div>`).join('');
+
+  panel.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">📎 Archivos adjuntos</div><div class="card-subtitle">${(archivos||[]).length} archivo(s)</div></div>
+        <label style="cursor:pointer">
+          <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg" multiple style="display:none" onchange="subirArchivos(this,'${modulo === 'libro' ? 'libro_obra' : modulo}','${modulo}')"/>
+          <span class="btn primary" style="display:flex;align-items:center;gap:6px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Subir archivos
+          </span>
+        </label>
+      </div>
+      <div style="padding:0 20px">
+        ${lista || '<div style="padding:20px 0;text-align:center;color:#676879;font-size:13px">Sin archivos adjuntos</div>'}
+      </div>
+    </div>`;
+}
+
+async function subirArchivos(input, moduloDB, moduloUI){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const files = Array.from(input.files);
+  if(!files.length) return;
+
+  toast(`Subiendo ${files.length} archivo(s)...`, 'info');
+
+  for(const file of files){
+    const ext = file.name.split('.').pop();
+    const path = `${moduloDB}/${currentProyecto}/${Date.now()}_${file.name}`;
+    const { error: uploadError } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
+    if(uploadError){ toast('Error subiendo '+file.name+': '+uploadError.message,'error'); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    const { error: insertError } = await sb.from('archivos').insert({
+      proyecto_id: currentProyecto,
+      modulo: moduloDB,
+      nombre: file.name,
+      tipo: file.type,
+      url: urlData.publicUrl,
+      tamanio: file.size,
+      subido_por: currentUser?.id || null
+    });
+    if(insertError){ toast('Error BD: '+insertError.message+' | '+JSON.stringify(insertError),'error'); console.error('archivos insert:', insertError); continue; }
+  }
+
+  toast('✅ Archivos subidos correctamente','success');
+  input.value = '';
+  cargarArchivos(moduloUI);
+}
+
+async function eliminarArchivo(id, url, modulo){
+  if(!confirm('¿Eliminar este archivo?')) return;
+  const path = url.split('/hidivo-archivos/')[1];
+  if(path) await sb.storage.from('hidivo-archivos').remove([path]);
+  await sb.from('archivos').delete().eq('id', id);
+  toast('Archivo eliminado','success');
+  cargarArchivos(modulo);
+}
+
+// ── HELPERS ──
+async function cambiarEstadoRubro(id, estado){
+  const { error } = await sb.from('rubros').update({ estado }).eq('id', id);
+  if(error){ toast('Error: '+error.message,'error'); cargarRubros(); return; }
+  toast(`Estado actualizado a "${estado}"`, 'success');
+  cargarRubros();
+}
+
+async function recalcularRubros(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const btn = event.target.closest('button');
+  if(btn){ btn.disabled=true; btn.textContent='Recalculando...'; }
+
+  // Obtener todos los rubros del proyecto
+  const { data: rubros } = await sb.from('rubros').select('id').eq('proyecto_id', currentProyecto);
+  if(!rubros||!rubros.length){ toast('No hay rubros en este proyecto','error'); if(btn){btn.disabled=false;btn.innerHTML='↻ Recalcular';} return; }
+
+  // Para cada rubro, sumar todas las cantidades del libro de obra
+  let actualizados = 0;
+  for(const rubro of rubros){
+    const { data: sumas } = await sb.from('libro_obra_rubros')
+      .select('cantidad_dia')
+      .eq('rubro_id', rubro.id);
+    const total = (sumas||[]).reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
+    // Calcular estado automático
+    const { data: rubroActual } = await sb.from('rubros').select('cantidad_contrato,estado').eq('id',rubro.id).single();
+    let nuevoEstado = rubroActual?.estado || 'planificado';
+    if(rubroActual?.estado !== 'suspendido'){
+      if(total <= 0) nuevoEstado = 'planificado';
+      else if(rubroActual?.cantidad_contrato > 0 && total >= rubroActual.cantidad_contrato) nuevoEstado = 'terminado';
+      else nuevoEstado = 'trabajando';
+    }
+    await sb.from('rubros').update({ cantidad_ejecutada: total, estado: nuevoEstado }).eq('id', rubro.id);
+    actualizados++;
+  }
+
+  toast(`✅ ${actualizados} rubros recalculados`, 'success');
+  cargarRubros();
+}
+
+function cerrarModal(id){ document.getElementById(id).classList.remove('show'); }
+
+async function verReportePantalla(){
+  await generarReportePDF();
+}
+
+function imprimirReporte(){
+  const contenido = document.getElementById('reporteContenido').innerHTML;
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <style>
+    @page{size:A4 portrait;margin:15mm 15mm 20mm 15mm}
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    body{font-family:'Arial',sans-serif;font-size:10px;color:#1a1a2e;background:#fff;width:180mm}
+    /* HEADER */
+    .header{background:#1a1a2e!important;color:#fff!important;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;margin-bottom:0;border-radius:6px 6px 0 0}
+    .header-logo{display:flex;align-items:center;gap:12px}
+    .header-logo-box{background:#0073ea;border-radius:6px;padding:6px 10px;display:flex;align-items:center;justify-content:center}
+    .header-logo-text{color:#fff;font-size:16px;font-weight:900;letter-spacing:1px}
+    .header-logo-sub{color:#fff;font-size:9px;letter-spacing:3px;text-transform:uppercase;margin-top:1px;opacity:.7}
+    .header-info{text-align:right}
+    .header-info .title{font-size:14px;font-weight:700;color:#fff}
+    .header-info .sub{font-size:8px;color:rgba(255,255,255,.6);margin-top:2px}
+    .header-info .date{font-size:8px;color:rgba(255,255,255,.5);margin-top:4px}
+    /* AZUL TOP BORDER */
+    .blue-bar{height:3px;background:linear-gradient(90deg,#0073ea,#00c2ff);margin-bottom:12px}
+    /* SECCIONES */
+    .section{padding:10px 14px;border:1px solid #e6e9ef;border-radius:6px;margin-bottom:10px}
+    .section-title{font-size:9px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #e6e9ef}
+    /* GRID INFO */
+    .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+    .info-item{padding:5px 8px;background:#f8f9ff;border-radius:4px;border-left:2px solid #0073ea}
+    .info-item .lbl{font-size:7px;font-weight:700;color:#676879;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+    .info-item .val{font-size:10px;font-weight:600;color:#1a1a2e}
+    /* RESUMEN */
+    .resumen-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .resumen-card{background:#f0f7ff!important;border-radius:6px;padding:8px;text-align:center;border:1px solid #cce4ff}
+    .resumen-card .num{font-size:18px;font-weight:800;color:#0073ea!important}
+    .resumen-card .lbl{font-size:7px;color:#676879;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+    /* REGISTROS */
+    .registro-block{border:1px solid #e6e9ef;border-radius:6px;margin-bottom:10px;overflow:hidden;page-break-inside:avoid}
+    .registro-header{background:#1a1a2e!important;color:#fff!important;padding:7px 12px;display:flex;justify-content:space-between;align-items:center}
+    .registro-header .reg-num{font-size:11px;font-weight:700;color:#fff!important}
+    .registro-header .reg-info{font-size:8px;color:rgba(255,255,255,.7)!important}
+    .registro-meta{background:#f0f7ff!important;padding:5px 12px;display:flex;gap:16px;font-size:8px;color:#323338;border-bottom:1px solid #e6e9ef}
+    .registro-meta span{display:flex;align-items:center;gap:3px}
+    .registro-body{padding:8px 12px}
+    .campo{margin-bottom:7px}
+    .campo .lbl{font-size:7px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:2px}
+    .campo .val{font-size:9px;line-height:1.5;color:#323338}
+    .novedad-box{background:#fff8e1!important;border-left:3px solid #ffc107!important;padding:5px 8px;border-radius:0 4px 4px 0;font-size:9px;color:#5d4037}
+    /* TABLA RUBROS */
+    table{width:100%;border-collapse:collapse;font-size:8px;margin-top:4px}
+    thead tr{background:#1a1a2e!important}
+    th{background:#1a1a2e!important;color:#fff!important;padding:4px 6px;text-align:left;font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:4px 6px;border-bottom:1px solid #f0f2f5;vertical-align:top}
+    tr:nth-child(even) td{background:#f8f9ff!important}
+    .td-qty{font-weight:700;color:#0073ea!important;text-align:right}
+    tfoot tr{background:#1a1a2e!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    tfoot td{color:#fff!important;font-weight:700}
+    /* FOTOS */
+    .fotos-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+    .foto-item img{width:100%;height:80px;object-fit:cover;border-radius:4px;border:1px solid #e6e9ef}
+    .foto-desc{font-size:7px;color:#676879;margin-top:2px;text-align:center}
+    /* FOOTER */
+    .footer{margin-top:14px;padding:8px 14px;background:#1a1a2e!important;border-radius:0 0 6px 6px;display:flex;justify-content:space-between;align-items:center}
+    .footer-left{font-size:8px;color:rgba(255,255,255,.6)!important}
+    .footer-right{font-size:8px;color:rgba(255,255,255,.5)!important}
+    [contenteditable]{outline:none}
+    @media print{
+      body{margin:0;width:auto}
+      .registro-block{page-break-inside:avoid}
+      .section{page-break-inside:avoid}
+    }
+  </style></head><body>${contenido}</body></html>`);
+  ventana.document.close();
+  ventana.focus();
+  setTimeout(()=>{ ventana.print(); }, 800);
+}
+
+function abrirModalReporte(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  // Fechas por defecto: primer día del mes actual hasta hoy
+  const hoy = new Date();
+  const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+  document.getElementById('reporteFechaInicio').value = primerDia;
+  document.getElementById('reporteFechaFin').value = hoy.toISOString().split('T')[0];
+  document.getElementById('modalReporte').classList.add('show');
+}
+
+async function generarReportePDF(){
+  const fechaInicio = document.getElementById('reporteFechaInicio').value;
+  const fechaFin = document.getElementById('reporteFechaFin').value;
+  if(!fechaInicio || !fechaFin){ toast('Selecciona el rango de fechas','error'); return; }
+
+  const btn = document.getElementById('btnGenerarPDF');
+  btn.disabled = true;
+  btn.textContent = 'Generando...';
+
+  // Obtener registros del período
+  const { data: registros } = await sb.from('libro_obra')
+    .select('*')
+    .eq('proyecto_id', currentProyecto)
+    .gte('fecha', fechaInicio)
+    .lte('fecha', fechaFin)
+    .order('fecha', {ascending: true});
+
+  if(!registros || !registros.length){
+    toast('No hay registros en el período seleccionado','error');
+    btn.disabled = false;
+    btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Generar y descargar PDF';
+    return;
+  }
+
+  // Obtener rubros trabajados por registro
+  const rubrosData = {};
+  if(document.getElementById('rptRubros').checked){
+    for(const r of registros){
+      const { data: rr } = await sb.from('libro_obra_rubros')
+        .select('cantidad_dia, rubro_id, rubros!inner(codigo, descripcion, unidad, precio_unitario)')
+        .eq('registro_id', r.id);
+      rubrosData[r.id] = rr||[];
+    }
+  }
+
+  // Obtener fotos por registro
+  const fotosData = {};
+  if(document.getElementById('rptFotos').checked){
+    for(const r of registros){
+      const { data: ff } = await sb.from('libro_obra_fotos').select('url,descripcion').eq('registro_id', r.id).order('orden');
+      fotosData[r.id] = ff||[];
+    }
+  }
+
+  // Obtener info del proyecto
+  const proy = proyectos.find(p=>p.id===currentProyecto) || {};
+
+  const incActividades = document.getElementById('rptActividades').checked;
+  const incEquipos = document.getElementById('rptEquipos').checked;
+  const incMateriales = document.getElementById('rptMateriales').checked;
+  const incNovedades = document.getElementById('rptNovedades').checked;
+  const incRubros = document.getElementById('rptRubros').checked;
+  const incFotos = document.getElementById('rptFotos').checked;
+
+  // Cargar rubros completos para cuadro de producción (siempre, independiente del checkbox)
+  const rubrosDataCompleto = {};
+  for(const r of registros){
+    if(!rubrosData[r.id] || !rubrosData[r.id][0]?.rubros?.precio_unitario){
+      const { data: rr } = await sb.from('libro_obra_rubros')
+        .select('cantidad_dia, rubro_id, rubros!inner(id, codigo, descripcion, unidad, precio_unitario)')
+        .eq('registro_id', r.id);
+      rubrosDataCompleto[r.id] = rr||[];
+    } else {
+      rubrosDataCompleto[r.id] = rubrosData[r.id];
+    }
+  }
+
+  // Calcular resumen de rubros del período
+  const rubrosResumen = {};
+  for(const r of registros){
+    for(const rr of (rubrosDataCompleto[r.id]||[])){
+      const rid = rr.rubros?.codigo || rr.rubro_id;
+      if(!rubrosResumen[rid]){
+        rubrosResumen[rid] = {
+          codigo: rr.rubros?.codigo||'—',
+          descripcion: rr.rubros?.descripcion||'—',
+          unidad: rr.rubros?.unidad||'—',
+          cantidad: 0,
+          precio_unitario: parseFloat(rr.rubros?.precio_unitario)||0
+        };
+      }
+      rubrosResumen[rid].cantidad += parseFloat(rr.cantidad_dia)||0;
+    }
+  }
+  const rubrosResumenArr = Object.values(rubrosResumen).filter(r=>r.cantidad>0);
+  const totalPeriodo = rubrosResumenArr.reduce((a,r)=>a+(r.cantidad*r.precio_unitario),0);
+
+  // Calcular resumen
+  const totalPersonal = registros.reduce((a,r)=>a+(r.personal_total||0),0);
+  const promedioPersonal = Math.round(totalPersonal / registros.length);
+  const climasCount = {};
+  registros.forEach(r=>{ if(r.clima) climasCount[r.clima] = (climasCount[r.clima]||0)+1; });
+  const climaPredominante = Object.entries(climasCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+
+  const fechaInicioFmt = new Date(fechaInicio+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
+  const fechaFinFmt = new Date(fechaFin+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
+  const fechaGeneracion = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  // Generar HTML del reporte (formato A4)
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"/></head>
+<body>
+
+<div class="header">
+  <div class="header-logo">
+    <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png" 
+         style="height:48px;object-fit:contain;filter:brightness(0) invert(1)" 
+         crossorigin="anonymous" alt="HIDIVO"/>
+    <div>
+      <div class="header-logo-sub">Gestión de Obras Civiles</div>
+    </div>
+  </div>
+  <div class="header-info">
+    <div class="title">Libro de Obra</div>
+    <div class="sub">Reporte Consolidado del Período</div>
+    <div class="date">Generado: ${fechaGeneracion}</div>
+  </div>
+</div>
+<div class="blue-bar"></div>
+
+<div class="section">
+  <div class="section-title">Información del Proyecto</div>
+  <div class="info-grid">
+    <div class="info-item"><div class="lbl">Proyecto</div><div class="val">${proy.nombre||'—'}</div></div>
+    <div class="info-item"><div class="lbl">Contratante</div><div class="val">${proy.contratante||'—'}</div></div>
+    <div class="info-item"><div class="lbl">Contratista</div><div class="val">${proy.contratista||'—'}</div></div>
+    <div class="info-item"><div class="lbl">Ubicación</div><div class="val">${proy.ubicacion||'—'}</div></div>
+    <div class="info-item"><div class="lbl">Período</div><div class="val">${fechaInicioFmt} — ${fechaFinFmt}</div></div>
+    <div class="info-item"><div class="lbl">Monto contrato</div><div class="val">${proy.monto_contrato ? '$'+Number(proy.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Resumen del Período</div>
+  <div class="resumen-grid">
+    <div class="resumen-card"><div class="num">${registros.length}</div><div class="lbl">Días registrados</div></div>
+    <div class="resumen-card"><div class="num">${promedioPersonal}</div><div class="lbl">Personal promedio</div></div>
+    <div class="resumen-card"><div class="num">${climaIcon(climaPredominante)} ${climaPredominante}</div><div class="lbl">Clima predominante</div></div>
+    <div class="resumen-card"><div class="num">${registros.filter(r=>r.novedades).length}</div><div class="lbl">Días con novedades</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Producción del Período</div>
+  ${rubrosResumenArr.length ? `
+  <table>
+    <thead><tr>
+      <th style="width:40px">Cód.</th>
+      <th>Descripción</th>
+      <th style="width:50px">Unidad</th>
+      <th style="width:70px;text-align:right">Cantidad</th>
+      <th style="width:80px;text-align:right">P. Unitario</th>
+      <th style="width:90px;text-align:right">Total $</th>
+    </tr></thead>
+    <tbody>
+      ${rubrosResumenArr.map(r=>`
+      <tr>
+        <td>${r.codigo}</td>
+        <td>${r.descripcion}</td>
+        <td>${r.unidad}</td>
+        <td class="td-qty">${r.cantidad.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td style="text-align:right">$${Number(r.precio_unitario).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+        <td style="text-align:right;font-weight:700">$${(r.cantidad*r.precio_unitario).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+      </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:#1a1a2e">
+        <td colspan="5" style="text-align:right;font-weight:700;color:#fff;padding:6px 8px;font-size:10px">TOTAL DEL PERÍODO</td>
+        <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:11px">$${totalPeriodo.toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+      </tr>
+    </tfoot>
+  </table>` : '<div style="font-size:9px;color:#676879;padding:6px 0">No hay rubros registrados en este período</div>'}
+</div>
+
+<div class="section">
+  <div class="section-title">Registros del Período — ${registros.length} registro(s)</div>
+  ${registros.map(r => `
+  <div class="registro-block">
+    <div class="registro-header">
+      <span class="reg-num">Registro N° ${r.numero_registro||'—'} — ${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</span>
+    </div>
+    <div class="registro-meta">
+      <span>${climaIcon(r.clima)} ${r.clima||'—'}</span>
+      <span>🌡️ ${r.temperatura_min!=null?r.temperatura_min+'°C':'—'} / ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</span>
+      <span>👷 ${r.personal_total||0} personas</span>
+    </div>
+    <div class="registro-body">
+      ${incActividades && r.actividades_ejecutadas ? `<div class="campo"><span class="lbl">Actividades ejecutadas</span><div class="val">${r.actividades_ejecutadas}</div></div>` : ''}
+      ${incEquipos && r.equipos_maquinaria ? `<div class="campo"><span class="lbl">Equipos y maquinaria</span><div class="val">${r.equipos_maquinaria}</div></div>` : ''}
+      ${incMateriales && r.materiales_utilizados ? `<div class="campo"><span class="lbl">Materiales utilizados</span><div class="val">${r.materiales_utilizados}</div></div>` : ''}
+      ${incRubros && rubrosData[r.id]?.length ? `<div class="campo"><span class="lbl">Rubros trabajados</span>
+        <table><thead><tr><th>Cód.</th><th>Descripción</th><th style="text-align:right">Cantidad</th><th>Unidad</th></tr></thead><tbody>
+        ${rubrosData[r.id].map(rr=>`<tr><td>${rr.rubros?.codigo||'—'}</td><td>${rr.rubros?.descripcion||'—'}</td><td class="td-qty">${rr.cantidad_dia}</td><td>${rr.rubros?.unidad||'—'}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+      ${incNovedades && r.novedades ? `<div class="campo"><span class="lbl">Novedades</span><div class="novedad-box">${r.novedades}</div></div>` : ''}
+      ${incNovedades && r.resoluciones ? `<div class="campo"><span class="lbl">Resoluciones</span><div class="val">${r.resoluciones}</div></div>` : ''}
+      ${incFotos && fotosData[r.id]?.length ? `<div class="campo"><span class="lbl">Fotos de avance (${fotosData[r.id].length})</span>
+        <div class="fotos-grid">
+          ${fotosData[r.id].map(f=>`<div class="foto-item">
+            <img src="${f.url}" crossorigin="anonymous"/>
+            ${f.descripcion ? `<div class="foto-desc">${f.descripcion}</div>` : ''}
+          </div>`).join('')}
+        </div></div>` : ''}
+    </div>
+  </div>`).join('')}
+</div>
+
+<div class="footer">
+  <span class="footer-left">HIDIVO — Gestión de Obras Civiles · ${proy.nombre||'—'}</span>
+  <span class="footer-right">Generado: ${fechaGeneracion}</span>
+</div>
+</body></html>`;
+
+  // Mostrar vista previa editable
+  // Extraer solo el body del HTML para mostrarlo en el modal
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  // Hacer todos los textos editables
+  const bodyContent = doc.body.innerHTML;
+  const editableHtml = bodyContent.replace(
+    /(<(p|div|span|td|th|h[1-6]|strong|label)[^>]*)(>)([^<]+)(<\/\2>)/g,
+    (match, open, tag, gt, text, close) => {
+      if(text.trim()) return open + ' contenteditable="true"' + gt + text + close;
+      return match;
+    }
+  );
+
+  document.getElementById('reporteContenido').innerHTML = editableHtml;
+  cerrarModal('modalReporte');
+  document.getElementById('modalVistaReporte').classList.add('show');
+  
+  btn.disabled = false;
+  btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Vista previa';
+  toast('Vista previa lista — puedes editar el texto antes de descargar ✓','success');
+}
+
+async function abrirEditarRegistro(id){
+  cerrarModal('modalDetalleLibro');
+  const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
+  const { data: fotosExistentes } = await sb.from('libro_obra_fotos').select('*').eq('registro_id',id).order('orden');
+
+  libroFotosSeleccionadas = [];
+  libroRubrosSeleccionados = [];
+  libroEquiposSeleccionados = [];
+  libroMaterialesSeleccionados = [];
+  window._editandoRegistroId = id;
+
+  // Cargar items existentes del registro
+  const { data: itemsExistentes } = await sb.from('libro_obra_items')
+    .select('*, catalogo_items(nombre)')
+    .eq('registro_id', id);
+  
+  if(itemsExistentes){
+    itemsExistentes.forEach(item => {
+      const nombre = item.catalogo_items?.nombre || item.nombre_libre || '—';
+      const obj = {item_id: item.item_id, nombre, cantidad: item.cantidad, tipo: item.tipo};
+      if(item.tipo === 'equipo') libroEquiposSeleccionados.push(obj);
+      else libroMaterialesSeleccionados.push(obj);
+    });
+  }
+
+  document.getElementById('lNumRegistro').value = r.numero_registro||'';
+  document.getElementById('lFecha').value = r.fecha||'';
+  document.getElementById('lClima').value = r.clima||'Soleado';
+  document.getElementById('lTempMin').value = r.temperatura_min||'';
+  document.getElementById('lTempMax').value = r.temperatura_max||'';
+  document.getElementById('lPersonal').value = r.personal_total||0;
+  document.getElementById('lActividades').value = r.actividades_ejecutadas||'';
+  document.getElementById('lNovedades').value = r.novedades||'';
+  document.getElementById('lResoluciones').value = r.resoluciones||'';
+
+  // Mostrar fotos existentes
+  document.getElementById('libroFotosPreview').innerHTML = fotosExistentes&&fotosExistentes.length ?
+    `<div style="margin-bottom:8px;font-size:12px;color:#676879">Fotos existentes (${fotosExistentes.length}):</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:12px">
+    ${fotosExistentes.map(f=>`<div style="position:relative">
+      <img src="${f.url}" style="width:100%;height:80px;object-fit:cover;border-radius:6px"/>
+      <button onclick="eliminarFotoExistente('${f.id}','${id}')" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer">✕</button>
+    </div>`).join('')}
+    </div>` : '';
+
+  // Cargar catálogo de equipos y materiales
+  await cargarCatalogoItems();
+  setTimeout(()=>{
+    renderItemsLista('equipo');
+    renderItemsLista('material');
+  }, 150);
+
+  // Cargar rubros y marcar los que ya están en el registro
+  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id',currentProyecto).order('orden');
+  const { data: rubrosExistentes } = await sb.from('libro_obra_rubros').select('rubro_id, cantidad_dia').eq('registro_id', id);
+  
+  // Pre-cargar rubros existentes en libroRubrosSeleccionados
+  libroRubrosSeleccionados = (rubrosExistentes||[]).map(r=>({
+    id: r.rubro_id,
+    cantidad: parseFloat(r.cantidad_dia)||0
+  }));
+
+  renderRubrosLibroModal(rubros||[]);
+
+  // Marcar checkboxes y cantidades de rubros existentes después del render
+  setTimeout(()=>{
+    (rubrosExistentes||[]).forEach(r=>{
+      const chk = document.getElementById('chk-'+r.rubro_id);
+      const qty = document.getElementById('qty-'+r.rubro_id);
+      if(chk){ chk.checked = true; }
+      if(qty){ qty.classList.add('visible'); qty.value = r.cantidad_dia||0; }
+    });
+  }, 100);
+
+  // Cambiar título y botón del modal
+  document.querySelector('#modalLibro .modal-title').textContent = '✏️ Editar registro';
+  const btnGuardar = document.getElementById('btnGuardarLibro');
+  btnGuardar.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar cambios';
+  btnGuardar.onclick = guardarEdicionRegistro;
+
+  document.getElementById('modalLibro').classList.add('show');
+  document.querySelector('#modalLibro .modal-body').scrollTop = 0;
+}
+
+async function eliminarFotoExistente(fotoId, registroId){
+  if(!confirm('¿Eliminar esta foto?')) return;
+  await sb.from('libro_obra_fotos').delete().eq('id', fotoId);
+  abrirEditarRegistro(registroId);
+}
+
+async function guardarEdicionRegistro(){
+  const id = window._editandoRegistroId;
+  if(!id) return;
+  const btnGuardar = document.getElementById('btnGuardarLibro');
+  btnGuardar.disabled = true;
+  btnGuardar.innerHTML = 'Guardando...';
+
+  const payload = {
+    fecha: document.getElementById('lFecha').value,
+    clima: document.getElementById('lClima').value||null,
+    temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
+    temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
+    personal_total: parseInt(document.getElementById('lPersonal').value)||null,
+    actividades_ejecutadas: document.getElementById('lActividades').value.trim()||null,
+    equipos_maquinaria: libroEquiposSeleccionados.length ? libroEquiposSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    materiales_utilizados: libroMaterialesSeleccionados.length ? libroMaterialesSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    novedades: document.getElementById('lNovedades').value.trim()||null,
+    resoluciones: document.getElementById('lResoluciones').value.trim()||null,
+  };
+
+  const { error } = await sb.from('libro_obra').update(payload).eq('id', id);
+  if(error){ toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar cambios'; return; }
+
+  // Actualizar rubros — combinar precargados + modificados en DOM
+  const { data: rubrosAnteriores } = await sb.from('libro_obra_rubros').select('rubro_id').eq('registro_id', id);
+  await sb.from('libro_obra_rubros').delete().eq('registro_id', id);
+
+  // Empezar con los rubros precargados (libroRubrosSeleccionados)
+  const rubrosMap = {};
+  libroRubrosSeleccionados.forEach(r => {
+    if(r.cantidad > 0) rubrosMap[r.id] = r.cantidad;
+  });
+
+  // Sobrescribir con los valores actuales del DOM (los que el usuario tocó)
+  document.querySelectorAll('[id^="qty-"]').forEach(qtyEl => {
+    const rubroId = qtyEl.id.replace('qty-', '');
+    const chk = document.getElementById('chk-' + rubroId);
+    if(chk && chk.checked){
+      // Si está marcado, usar el valor del input (aunque sea 0 para desmarcarlo)
+      const val = parseFloat(qtyEl.value) || 0;
+      if(val > 0) rubrosMap[rubroId] = val;
+      else delete rubrosMap[rubroId];
+    } else if(chk && !chk.checked){
+      // Si fue desmarcado explícitamente, eliminarlo
+      delete rubrosMap[rubroId];
+    }
+  });
+
+  const rubrosActualizados = Object.entries(rubrosMap).map(([rubro_id, cantidad_dia]) => ({rubro_id, cantidad_dia}));
+
+  if(rubrosActualizados.length){
+    await sb.from('libro_obra_rubros').insert(
+      rubrosActualizados.map(r=>({registro_id: id, rubro_id: r.rubro_id, cantidad_dia: r.cantidad_dia}))
+    );
+  }
+
+  // Recalcular cantidad_ejecutada para todos los rubros afectados
+  const todosRubroIds = [...new Set([
+    ...(rubrosAnteriores||[]).map(r=>r.rubro_id),
+    ...rubrosActualizados.map(r=>r.rubro_id)
+  ])];
+  for(const rubroId of todosRubroIds){
+    const { data: sumas } = await sb.from('libro_obra_rubros').select('cantidad_dia').eq('rubro_id', rubroId);
+    const total = (sumas||[]).reduce((a,r)=>a+(parseFloat(r.cantidad_dia)||0),0);
+    await sb.from('rubros').update({cantidad_ejecutada: total}).eq('id', rubroId);
+  }
+
+  // Subir nuevas fotos
+  if(libroFotosSeleccionadas.length){
+    for(let i=0;i<libroFotosSeleccionadas.length;i++){
+      const f = libroFotosSeleccionadas[i];
+      const url = await subirFotoSupabase(f.file, id, Date.now()+i);
+      if(url) await sb.from('libro_obra_fotos').insert({ registro_id: id, url, descripcion: f.descripcion||null, orden: i+1 });
+    }
+  }
+
+  toast('Registro actualizado ✓','success');
+  window._editandoRegistroId = null;
+
+  // Restaurar modal a modo creación
+  document.querySelector('#modalLibro .modal-title').textContent = '📖 Nuevo registro — Libro de Obra';
+  const btn = document.getElementById('btnGuardarLibro');
+  btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
+  btn.onclick = guardarRegistroLibro;
+
+  cerrarModal('modalLibro');
+  btnGuardar.disabled=false;
+  cargarLibroObra();
+}
+
+async function confirmarEliminarRegistro(id, num){
+  if(!confirm(`¿Eliminar el Registro N° ${num||id}?\n\nEsta acción no se puede deshacer.`)) return;
+
+  // Obtener rubros afectados antes de eliminar
+  const { data: rubrosAfectados } = await sb.from('libro_obra_rubros')
+    .select('rubro_id')
+    .eq('registro_id', id);
+
+  // Eliminar registro (CASCADE elimina libro_obra_rubros y fotos)
+  const { error } = await sb.from('libro_obra').delete().eq('id', id);
+  if(error){ toast('Error al eliminar: '+error.message,'error'); return; }
+
+  // Recalcular cantidad_ejecutada para cada rubro afectado
+  if(rubrosAfectados && rubrosAfectados.length){
+    const rubroIds = [...new Set(rubrosAfectados.map(r=>r.rubro_id))];
+    for(const rubroId of rubroIds){
+      const { data: sumas } = await sb.from('libro_obra_rubros')
+        .select('cantidad_dia')
+        .eq('rubro_id', rubroId);
+      const total = (sumas||[]).reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
+      await sb.from('rubros').update({ cantidad_ejecutada: total }).eq('id', rubroId);
+    }
+  }
+
+  toast('Registro eliminado y rubros actualizados','success');
+  cerrarModal('modalDetalleLibro');
+  cargarLibroObra();
+}
+function toast(msg, tipo='info'){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast show '+(tipo==='success'?'success':tipo==='error'?'error':'');
+  setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ── INIT ──
+checkAuth();
+</script>
+</body>
+</html>
