@@ -2805,10 +2805,10 @@ async function cargarCanalesChat(){
 }
 
 async function cargarDMsChat(){
-  // DMs: canales tipo 'dm' donde el usuario actual es participante
+  // DMs globales — sin filtro de proyecto
   const { data: dms } = await sb.from('canales_chat')
     .select('*,dm_usuario1:perfiles!canales_chat_dm_user1_id_fkey(nombre,apellido),dm_usuario2:perfiles!canales_chat_dm_user2_id_fkey(nombre,apellido)')
-    .eq('proyecto_id', currentProyecto).eq('tipo','dm')
+    .eq('tipo','dm')
     .or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
   const el = document.getElementById('chatDMs');
   if(!dms?.length){ el.innerHTML=''; return; }
@@ -2817,6 +2817,7 @@ async function cargarDMsChat(){
     const otro = esUser1 ? dm.dm_usuario2 : dm.dm_usuario1;
     const nombre = otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario';
     return `<div onclick="abrirCanal('${dm.id}','${nombre}','dm',null,'')"
+      id="canal-${dm.id}"
       style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;
       ${chatCanalActivo?.id===dm.id?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
       onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${chatCanalActivo?.id===dm.id?'#ffffff20':'transparent'}'">
@@ -3200,16 +3201,15 @@ async function abrirModalNuevoDM(){
   const idx = parseInt(sel)-1;
   if(isNaN(idx)||idx<0||idx>=perfiles.length) return;
   const otro = perfiles[idx];
-  // Verificar si ya existe DM
+  // Verificar si ya existe DM entre estos dos usuarios
   const { data: existe } = await sb.from('canales_chat').select('*')
-    .eq('tipo','dm').eq('proyecto_id',currentProyecto)
+    .eq('tipo','dm')
     .or(`and(dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${otro.id}),and(dm_user1_id.eq.${otro.id},dm_user2_id.eq.${currentUser.id})`);
   if(existe?.length){
     abrirCanal(existe[0].id, `${otro.nombre} ${otro.apellido}`, 'dm', otro.id, '');
     return;
   }
   const { data: dm } = await sb.from('canales_chat').insert({
-    proyecto_id: currentProyecto,
     nombre: `dm-${currentUser.id}-${otro.id}`,
     tipo: 'dm',
     dm_user1_id: currentUser.id,
