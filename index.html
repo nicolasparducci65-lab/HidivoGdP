@@ -184,6 +184,17 @@ body.modo-visualizador button[onclick*="abrirModalProyecto"]{display:none!import
 body.modo-visualizador button[onclick*="abrirModalCronograma"]{display:none!important}
 body.modo-visualizador button[onclick*="subirPlano"]{display:none!important}
 body.modo-visualizador button[onclick*="activarPinModo"]{display:none!important}
+body.modo-visualizador button[onclick*="abrirModalReporte"]{display:none!important}
+body.modo-visualizador button[onclick*="imprimirReporte"]{display:none!important}
+body.modo-visualizador button[onclick*="verReportePantalla"]{display:none!important}
+body.modo-visualizador button[onclick*="subirArchivos"]{display:none!important}
+body.modo-visualizador button[onclick*="cargarArchivos"]{display:none!important}
+body.modo-visualizador .archivos-panel .btn{display:none!important}
+body.modo-visualizador [id^="archivosPanel"]{display:none!important}
+body.modo-visualizador select[onchange*="cambiarEstadoRubro"]{pointer-events:none!important;opacity:.6;cursor:default!important}
+body.modo-visualizador label:has(input[onchange*="subirArchivos"]){display:none!important}
+body.modo-visualizador button[onclick*="abrirModalCronograma"]{display:none!important}
+body.modo-visualizador label[onclick*="importarCronograma"]{display:none!important}
 /* Excepciones: navegación y logout sí se muestran */
 body.modo-visualizador button[onclick*="cerrarModal"]{display:flex!important}
 body.modo-visualizador button[onclick*="navTo"]{display:flex!important}
