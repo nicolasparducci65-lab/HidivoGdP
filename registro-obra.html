@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Registro Diario de Obra — HIDIVO</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#323338;font-size:14px;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:20px 24px;display:flex;align-items:center;gap:14px}
+.header-logo{height:32px;filter:brightness(0) invert(1);opacity:.9}
+.header-info{color:#fff}
+.header-title{font-size:16px;font-weight:700}
+.header-sub{font-size:12px;color:rgba(255,255,255,.5);margin-top:2px}
+.container{max-width:720px;margin:28px auto;padding:0 16px 40px}
+.card{background:#fff;border-radius:14px;border:1px solid #e6e9ef;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.card-header{padding:16px 20px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px}
+.card-icon{font-size:20px}
+.card-title{font-size:14px;font-weight:600;color:#323338}
+.card-body{padding:20px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:500px){.form-row,.form-row-3{grid-template-columns:1fr}}
+.form-group{margin-bottom:14px}
+.form-group:last-child{margin-bottom:0}
+.form-label{font-size:11px;font-weight:600;color:#676879;margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:.4px}
+.form-control{width:100%;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid #c5c7d4;background:#fff;color:#323338;transition:border .15s}
+.form-control:focus{outline:none;border-color:#0073ea;box-shadow:0 0 0 3px rgba(0,115,234,.1)}
+textarea.form-control{resize:vertical;min-height:80px;line-height:1.5}
+select.form-control{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23676879' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+.clima-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+@media(max-width:500px){.clima-grid{grid-template-columns:repeat(3,1fr)}}
+.clima-btn{border:2px solid #e6e9ef;border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;transition:all .15s;background:#fff}
+.clima-btn:hover{border-color:#0073ea;background:#f0f7ff}
+.clima-btn.active{border-color:#0073ea;background:#e8f4ff}
+.clima-btn .icon{font-size:22px;display:block;margin-bottom:4px}
+.clima-btn .label{font-size:10px;color:#676879;font-weight:500}
+.personal-input{display:flex;align-items:center;gap:10px}
+.personal-btn{width:36px;height:36px;border-radius:8px;border:1px solid #c5c7d4;background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.personal-btn:hover{background:#f0f7ff;border-color:#0073ea}
+.personal-val{font-size:22px;font-weight:700;color:#0073ea;min-width:40px;text-align:center}
+/* Rubros */
+.rubro-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f5f6f8}
+.rubro-item:last-child{border-bottom:none}
+.rubro-check{width:18px;height:18px;cursor:pointer;accent-color:#0073ea;flex-shrink:0}
+.rubro-codigo{font-size:11px;color:#676879;min-width:28px;font-weight:600}
+.rubro-desc{font-size:13px;flex:1;line-height:1.3}
+.rubro-unidad{font-size:11px;color:#676879;min-width:30px;text-align:right}
+.rubro-qty{width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:13px;display:none;text-align:right}
+.rubro-qty.visible{display:block}
+/* Fotos */
+.foto-upload-zone{border:2px dashed #c5c7d4;border-radius:10px;padding:24px;text-align:center;cursor:pointer;transition:all .2s;color:#676879}
+.foto-upload-zone:hover{border-color:#0073ea;background:#f0f7ff;color:#0073ea}
+.foto-upload-zone svg{margin-bottom:8px;display:block;margin-left:auto;margin-right:auto}
+.foto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px}
+.foto-item{position:relative;border-radius:8px;overflow:hidden}
+.foto-item img{width:100%;height:100px;object-fit:cover;display:block}
+.foto-item-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.foto-item-desc{font-size:11px;padding:4px 6px;border:1px solid #e6e9ef;border-radius:0 0 8px 8px;width:100%;background:#fafafa}
+/* Archivos */
+.archivo-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8}
+.archivo-item:last-child{border-bottom:none}
+.archivo-icon{font-size:20px;flex-shrink:0}
+.archivo-nombre{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archivo-del{background:none;border:none;color:#e2445c;cursor:pointer;font-size:16px;padding:4px;flex-shrink:0}
+/* Submit */
+.submit-btn{width:100%;padding:14px;background:#0073ea;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s;margin-top:8px}
+.submit-btn:hover{background:#0060c0}
+.submit-btn:disabled{background:#c5c7d4;cursor:not-allowed}
+/* Estados */
+.success-screen{text-align:center;padding:60px 20px;display:none}
+.success-icon{font-size:64px;margin-bottom:16px}
+.success-title{font-size:22px;font-weight:700;color:#00c875;margin-bottom:8px}
+.success-sub{font-size:14px;color:#676879;line-height:1.6}
+.error-msg{background:#fce4ec;color:#b71c1c;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:100;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.loading-overlay.show{display:flex}
+.spinner{width:40px;height:40px;border:3px solid #e6e9ef;border-top-color:#0073ea;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:14px;color:#676879;font-weight:500}
+.badge-proyecto{background:#e8f4ff;color:#0060c0;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.info-banner{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;font-size:12px;color:#856404;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img class="header-logo" src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" onerror="this.style.display='none'"/>
+  <div class="header-info">
+    <div class="header-title">Registro Diario de Obra</div>
+    <div class="header-sub">Plataforma HIDIVO — Gestión de obras civiles</div>
+  </div>
+</div>
+
+<div class="container">
+  <div id="errorMsg" class="error-msg"></div>
+
+  <!-- FORMULARIO -->
+  <div id="formContent">
+
+    <!-- Info del proyecto -->
+    <div class="card">
+      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:12px;color:#676879;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Proyecto</div>
+          <div id="proyectoNombre" style="font-size:18px;font-weight:700;color:#323338">Cargando...</div>
+          <div id="proyectoInfo" style="font-size:12px;color:#676879;margin-top:2px"></div>
+        </div>
+        <span class="badge-proyecto" id="proyectoFecha"></span>
+      </div>
+    </div>
+
+    <!-- Fecha, número, clima -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📅</span><span class="card-title">Información general</span></div>
+      <div class="card-body">
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="form-label">Fecha *</label>
+            <input type="date" class="form-control" id="lFecha"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">N° Registro</label>
+            <input type="number" class="form-control" id="lNumRegistro" min="1" readonly style="background:#fafafa"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Residente</label>
+            <input type="text" class="form-control" id="lResidente" placeholder="Tu nombre"/>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Correo electrónico</label>
+            <input type="email" class="form-control" id="lEmail" placeholder="residente@empresa.com"/>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Empresa / Contratista</label>
+            <input type="text" class="form-control" id="lEmpresa" placeholder="Constructora..."/>
+          </div>
+        </div>
+        <!-- Clima -->
+        <div class="form-group" style="margin-top:4px">
+          <label class="form-label">Clima</label>
+          <div class="clima-grid" id="climaGrid">
+            <div class="clima-btn active" onclick="selClima('Soleado',this)"><span class="icon">☀️</span><span class="label">Soleado</span></div>
+            <div class="clima-btn" onclick="selClima('Parcialmente nublado',this)"><span class="icon">⛅</span><span class="label">Parc. nublado</span></div>
+            <div class="clima-btn" onclick="selClima('Nublado',this)"><span class="icon">☁️</span><span class="label">Nublado</span></div>
+            <div class="clima-btn" onclick="selClima('Lluvioso',this)"><span class="icon">🌧️</span><span class="label">Lluvioso</span></div>
+            <div class="clima-btn" onclick="selClima('Tormenta',this)"><span class="icon">⛈️</span><span class="label">Tormenta</span></div>
+          </div>
+        </div>
+        <!-- Temperaturas -->
+        <div class="form-row" style="margin-top:4px">
+          <div class="form-group">
+            <label class="form-label">Temperatura mínima (°C)</label>
+            <input type="number" class="form-control" id="lTempMin" placeholder="18" step="0.5"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temperatura máxima (°C)</label>
+            <input type="number" class="form-control" id="lTempMax" placeholder="30" step="0.5"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Personal -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">👷</span><span class="card-title">Personal en obra</span></div>
+      <div class="card-body">
+        <div class="personal-input">
+          <button class="personal-btn" onclick="cambiarPersonal(-1)">−</button>
+          <div class="personal-val" id="personalVal">0</div>
+          <button class="personal-btn" onclick="cambiarPersonal(1)">+</button>
+          <span style="font-size:13px;color:#676879">personas en obra hoy</span>
+        </div>
+        <input type="hidden" id="lPersonal" value="0"/>
+      </div>
+    </div>
+
+    <!-- Actividades -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🔨</span><span class="card-title">Actividades ejecutadas</span></div>
+      <div class="card-body">
+        <div class="form-group">
+          <textarea class="form-control" id="lActividades" rows="4" placeholder="Describe en detalle las actividades realizadas durante el día de hoy..."></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Equipos y maquinaria</label>
+            <div id="equiposLista" style="border:1px solid #c5c7d4;border-radius:8px;padding:8px;min-height:40px;background:#fafafa;margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px">
+              <select id="equipoSelector" class="form-control" style="flex:1">
+                <option value="">+ Seleccionar equipo...</option>
+              </select>
+              <input type="number" id="equipoCantidad" placeholder="Cant." step="0.1" min="0" style="width:75px;padding:9px 8px;border:1px solid #c5c7d4;border-radius:8px;font-size:13px"/>
+              <button type="button" onclick="agregarItem('equipo')" style="background:#0073ea;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:18px;cursor:pointer;font-weight:700">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Materiales utilizados</label>
+            <div id="materialesLista" style="border:1px solid #c5c7d4;border-radius:8px;padding:8px;min-height:40px;background:#fafafa;margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px">
+              <select id="materialSelector" class="form-control" style="flex:1">
+                <option value="">+ Seleccionar material...</option>
+              </select>
+              <input type="number" id="materialCantidad" placeholder="Cant." step="0.1" min="0" style="width:75px;padding:9px 8px;border:1px solid #c5c7d4;border-radius:8px;font-size:13px"/>
+              <button type="button" onclick="agregarItem('material')" style="background:#0073ea;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:18px;cursor:pointer;font-weight:700">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rubros -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📋</span><span class="card-title">Rubros trabajados hoy</span></div>
+      <div class="card-body">
+        <div id="rubrosLista" style="max-height:280px;overflow-y:auto">
+          <div style="color:#676879;text-align:center;padding:20px">Cargando rubros...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Novedades -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">⚠️</span><span class="card-title">Novedades y resoluciones</span></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Novedades del día</label>
+          <textarea class="form-control" id="lNovedades" rows="3" placeholder="Incidentes, observaciones, problemas encontrados... (dejar vacío si no hay)"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Resoluciones tomadas</label>
+          <textarea class="form-control" id="lResoluciones" rows="2" placeholder="Decisiones o acciones para resolver las novedades..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fotos -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📷</span><span class="card-title">Fotos de avance</span></div>
+      <div class="card-body">
+        <div class="info-banner">
+          <span>📱</span> Puedes tomar fotos directamente desde el celular o subirlas desde galería.
+        </div>
+        <label class="foto-upload-zone" id="fotoZone">
+          <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" width="36" height="36"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Subir fotos</div>
+          <div style="font-size:12px">Haz clic o arrastra fotos aquí — máximo 10 imágenes</div>
+          <input type="file" accept="image/*" multiple capture="environment" style="display:none" id="fotoInput" onchange="manejarFotos(this)"/>
+        </label>
+        <div class="foto-grid" id="fotoGrid"></div>
+      </div>
+    </div>
+
+    <!-- Archivos -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📎</span><span class="card-title">Archivos adjuntos</span></div>
+      <div class="card-body">
+        <label class="foto-upload-zone" style="padding:16px">
+          <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" width="28" height="28"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div style="font-size:13px;font-weight:500;margin-bottom:2px">Subir archivos</div>
+          <div style="font-size:11px">PDF, Word, Excel, DWG — máximo 10 archivos</div>
+          <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg" multiple style="display:none" id="archivoInput" onchange="manejarArchivos(this)"/>
+        </label>
+        <div id="archivosLista" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- Botón enviar -->
+    <div id="errorMsgBottom" class="error-msg"></div>
+    <button class="submit-btn" id="btnEnviar" onclick="enviarRegistro()">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="18" height="18"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+      Enviar registro de obra
+    </button>
+    <div style="text-align:center;font-size:11px;color:#676879;margin-top:10px">Al enviar, el registro quedará guardado en la plataforma HIDIVO</div>
+  </div>
+
+  <!-- PANTALLA DE ÉXITO -->
+  <div id="successScreen" class="success-screen">
+    <div class="card" style="padding:40px 20px">
+      <div class="success-icon">✅</div>
+      <div class="success-title">¡Registro enviado!</div>
+      <div class="success-sub">El registro del día de hoy ha sido guardado correctamente en la plataforma HIDIVO.<br/><br/>El equipo de fiscalización puede revisarlo en tiempo real.</div>
+      <div style="margin-top:24px;padding:16px;background:#f5f6f8;border-radius:10px;font-size:13px;color:#676879" id="resumenEnvio"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Guardando registro...</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA';
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let proyectoId = null;
+let climaSeleccionado = 'Soleado';
+let fotosSeleccionadas = [];
+let equiposSeleccionados = [];
+let materialesSeleccionados = [];
+let archivosSeleccionados = [];
+let rubrosDisponibles = [];
+let rubrosSeleccionados = [];
+
+// Leer proyecto del URL
+const params = new URLSearchParams(window.location.search);
+proyectoId = params.get('proyecto');
+
+window.addEventListener('DOMContentLoaded', async () => {
+  if(!proyectoId){ mostrarError('No se especificó un proyecto. Verifica el link.'); return; }
+
+  // Cargar info del proyecto
+  const { data: proy, error } = await sb.from('proyectos').select('*').eq('id', proyectoId).single();
+  if(error || !proy){ mostrarError('Proyecto no encontrado. Verifica el link.'); return; }
+
+  document.getElementById('proyectoNombre').textContent = proy.nombre;
+  document.getElementById('proyectoInfo').textContent = `${proy.contratista||''} · ${proy.ubicacion||''}`;
+  const hoy = new Date().toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  document.getElementById('proyectoFecha').textContent = hoy;
+
+  // Fecha de hoy
+  document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
+
+  // Número de registro
+  const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id', proyectoId);
+  document.getElementById('lNumRegistro').value = (count||0)+1;
+
+  // Cargar catálogo equipos y materiales
+  const { data: catalogoItems } = await sb.from('catalogo_items')
+    .select('*')
+    .or(`es_base.eq.true,proyecto_id.eq.${proyectoId}`)
+    .order('nombre');
+
+  const equipoSel = document.getElementById('equipoSelector');
+  const materialSel = document.getElementById('materialSelector');
+  const equipos = (catalogoItems||[]).filter(i=>i.tipo==='equipo');
+  const materiales = (catalogoItems||[]).filter(i=>i.tipo==='material');
+
+  equipoSel.innerHTML = '<option value="">+ Seleccionar equipo...</option>' +
+    equipos.map(i=>`<option value="${i.id}" data-nombre="${i.nombre}" data-unidad="${i.unidad||''}">${i.nombre}${i.unidad?' ('+i.unidad+')':''}</option>`).join('') +
+    '<option value="__nuevo__">✏️ Escribir otro...</option>';
+
+  materialSel.innerHTML = '<option value="">+ Seleccionar material...</option>' +
+    materiales.map(i=>`<option value="${i.id}" data-nombre="${i.nombre}" data-unidad="${i.unidad||''}">${i.nombre}${i.unidad?' ('+i.unidad+')':''}</option>`).join('') +
+    '<option value="__nuevo__">✏️ Escribir otro...</option>';
+
+  renderItemsLista('equipo');
+  renderItemsLista('material');
+
+  // Cargar rubros
+  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id', proyectoId).order('orden');
+  rubrosDisponibles = rubros||[];
+  renderRubros();
+
+  // Drag & drop fotos
+  const zone = document.getElementById('fotoZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor='#0073ea'; zone.style.background='#f0f7ff'; });
+  zone.addEventListener('dragleave', () => { zone.style.borderColor='#c5c7d4'; zone.style.background=''; });
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.style.borderColor='#c5c7d4'; zone.style.background=''; manejarFotosDesdeFiles(Array.from(e.dataTransfer.files)); });
+});
+
+function selClima(valor, btn){
+  climaSeleccionado = valor;
+  document.querySelectorAll('.clima-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function cambiarPersonal(delta){
+  const inp = document.getElementById('lPersonal');
+  const val = Math.max(0, (parseInt(inp.value)||0)+delta);
+  inp.value = val;
+  document.getElementById('personalVal').textContent = val;
+}
+
+function renderRubros(){
+  if(!rubrosDisponibles.length){
+    document.getElementById('rubrosLista').innerHTML = '<div style="color:#676879;text-align:center;padding:16px;font-size:13px">No hay rubros cargados en este proyecto</div>';
+    return;
+  }
+  document.getElementById('rubrosLista').innerHTML = rubrosDisponibles.map(r=>`
+    <div class="rubro-item">
+      <input type="checkbox" class="rubro-check" id="chk-${r.id}" onchange="toggleRubro('${r.id}')"/>
+      <span class="rubro-codigo">${r.codigo||''}</span>
+      <label for="chk-${r.id}" class="rubro-desc" style="cursor:pointer">${r.descripcion}</label>
+      <span class="rubro-unidad">${r.unidad||''}</span>
+      <input type="number" class="rubro-qty" id="qty-${r.id}" placeholder="0" step="0.01" min="0"
+        onchange="setCantidad('${r.id}',this.value)" title="Cantidad ejecutada hoy"/>
+    </div>`).join('');
+}
+
+function toggleRubro(id){
+  const chk = document.getElementById('chk-'+id);
+  const qty = document.getElementById('qty-'+id);
+  if(chk.checked){
+    qty.classList.add('visible');
+    qty.focus();
+    if(!rubrosSeleccionados.find(r=>r.id===id))
+      rubrosSeleccionados.push({id, cantidad:0});
+  } else {
+    qty.classList.remove('visible');
+    qty.value='';
+    rubrosSeleccionados = rubrosSeleccionados.filter(r=>r.id!==id);
+  }
+}
+
+function setCantidad(id, val){
+  const r = rubrosSeleccionados.find(r=>r.id===id);
+  if(r) r.cantidad = parseFloat(val)||0;
+}
+
+function manejarFotos(input){ manejarFotosDesdeFiles(Array.from(input.files)); input.value=''; }
+
+function manejarFotosDesdeFiles(files){
+  const validas = files.filter(f=>f.type.startsWith('image/'));
+  if(fotosSeleccionadas.length + validas.length > 10){ alert('Máximo 10 fotos por registro'); return; }
+  validas.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = e => { fotosSeleccionadas.push({file, dataUrl:e.target.result, descripcion:''}); renderFotoGrid(); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderFotoGrid(){
+  document.getElementById('fotoGrid').innerHTML = fotosSeleccionadas.map((f,i)=>`
+    <div class="foto-item">
+      <img src="${f.dataUrl}" alt="foto ${i+1}"/>
+      <button class="foto-item-del" onclick="eliminarFoto(${i})">✕</button>
+      <input class="foto-item-desc" type="text" placeholder="Descripción..." value="${f.descripcion}"
+        onchange="fotosSeleccionadas[${i}].descripcion=this.value"/>
+    </div>`).join('');
+}
+
+function eliminarFoto(i){ fotosSeleccionadas.splice(i,1); renderFotoGrid(); }
+
+function agregarItem(tipo){
+  const sel = document.getElementById(tipo==='equipo' ? 'equipoSelector' : 'materialSelector');
+  const cantInput = document.getElementById(tipo==='equipo' ? 'equipoCantidad' : 'materialCantidad');
+  const lista = tipo==='equipo' ? equiposSeleccionados : materialesSeleccionados;
+
+  let nombre = '', itemId = null;
+  if(sel.value === '__nuevo__'){
+    nombre = prompt(`Nombre del ${tipo==='equipo'?'equipo':'material'}:`);
+    if(!nombre) return;
+  } else if(sel.value){
+    const opt = sel.options[sel.selectedIndex];
+    nombre = opt.dataset.nombre;
+    itemId = sel.value;
+  } else {
+    alert('Selecciona un item primero');
+    return;
+  }
+
+  const cantidad = parseFloat(cantInput.value)||1;
+  if(lista.find(i=>i.nombre===nombre)){ alert('Ya está en la lista'); return; }
+  const unidad = itemId && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].dataset.unidad||'' : '';
+  lista.push({item_id: itemId, nombre, cantidad, tipo, unidad});
+  cantInput.value = '';
+  sel.value = '';
+  renderItemsLista(tipo);
+}
+
+function renderItemsLista(tipo){
+  const lista = tipo==='equipo' ? equiposSeleccionados : materialesSeleccionados;
+  const listaEl = document.getElementById(tipo==='equipo' ? 'equiposLista' : 'materialesLista');
+  if(!lista.length){
+    listaEl.innerHTML = `<span style="color:#676879;font-size:12px">Sin ${tipo==='equipo'?'equipos':'materiales'} agregados</span>`;
+    return;
+  }
+  listaEl.innerHTML = lista.map((item,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f5">
+      <span style="font-size:18px">${tipo==='equipo'?'🔧':'🏗️'}</span>
+      <span style="flex:1;font-size:13px">${item.nombre}</span>
+      <input type="number" value="${item.cantidad}" step="0.1" min="0"
+        onchange="${tipo==='equipo'?'equiposSeleccionados':'materialesSeleccionados'}[${i}].cantidad=parseFloat(this.value)||0"
+        style="width:65px;padding:3px 6px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;text-align:right"/>
+      <span style="font-size:11px;color:#676879;min-width:30px">${item.unidad||''}</span>
+      <button type="button" onclick="${tipo==='equipo'?'equiposSeleccionados':'materialesSeleccionados'}.splice(${i},1);renderItemsLista('${tipo}')"
+        style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:16px">✕</button>
+    </div>`).join('');
+}
+
+function archivoIcono(nombre){
+  const ext = (nombre||'').split('.').pop().toLowerCase();
+  if(ext==='pdf') return '📄';
+  if(['doc','docx'].includes(ext)) return '📝';
+  if(['xls','xlsx'].includes(ext)) return '📊';
+  if(ext==='dwg') return '📐';
+  return '📎';
+}
+
+function manejarArchivos(input){
+  const files = Array.from(input.files);
+  if(archivosSeleccionados.length + files.length > 10){ alert('Máximo 10 archivos'); return; }
+  files.forEach(file => archivosSeleccionados.push(file));
+  renderArchivosLista();
+  input.value='';
+}
+
+function renderArchivosLista(){
+  document.getElementById('archivosLista').innerHTML = archivosSeleccionados.map((f,i)=>`
+    <div class="archivo-item">
+      <span class="archivo-icon">${archivoIcono(f.name)}</span>
+      <span class="archivo-nombre">${f.name}</span>
+      <span style="font-size:11px;color:#676879;white-space:nowrap">${(f.size/1024).toFixed(0)} KB</span>
+      <button class="archivo-del" onclick="eliminarArchivo(${i})">✕</button>
+    </div>`).join('') || '';
+}
+
+function eliminarArchivo(i){ archivosSeleccionados.splice(i,1); renderArchivosLista(); }
+
+async function subirFoto(file, registroId, orden){
+  const ext = file.name.split('.').pop()||'jpg';
+  const path = `libro_obra/${registroId}/${Date.now()}_${orden}.${ext}`;
+  const { error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
+  if(error) return null;
+  const { data } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function enviarRegistro(){
+  const fecha = document.getElementById('lFecha').value;
+  const actividades = document.getElementById('lActividades').value.trim();
+  if(!fecha){ mostrarErrorBottom('La fecha es obligatoria.'); return; }
+  if(!actividades){ mostrarErrorBottom('Describe las actividades del día.'); return; }
+
+  document.getElementById('btnEnviar').disabled = true;
+  mostrarLoading('Guardando registro...');
+
+  const payload = {
+    proyecto_id: proyectoId,
+    residente_nombre: document.getElementById('lResidente').value.trim()||null,
+    residente_email: document.getElementById('lEmail').value.trim()||null,
+    residente_empresa: document.getElementById('lEmpresa').value.trim()||null,
+    fecha,
+    numero_registro: parseInt(document.getElementById('lNumRegistro').value)||null,
+    clima: climaSeleccionado,
+    temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
+    temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
+    personal_total: parseInt(document.getElementById('lPersonal').value)||0,
+    actividades_ejecutadas: actividades,
+    equipos_maquinaria: equiposSeleccionados.length ? equiposSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    materiales_utilizados: materialesSeleccionados.length ? materialesSeleccionados.map(i=>`${i.nombre}: ${i.cantidad}${i.unidad?' '+i.unidad:''}`).join(' | ') : null,
+    novedades: document.getElementById('lNovedades').value.trim()||null,
+    resoluciones: document.getElementById('lResoluciones').value.trim()||null,
+  };
+
+  const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
+  if(error){ ocultarLoading(); mostrarErrorBottom('Error al guardar: '+error.message); document.getElementById('btnEnviar').disabled=false; return; }
+
+  // Guardar equipos y materiales en libro_obra_items
+  const todosItems = [...equiposSeleccionados, ...materialesSeleccionados];
+  if(todosItems.length){
+    await sb.from('libro_obra_items').insert(todosItems.map(i=>({
+      registro_id: registro.id,
+      item_id: i.item_id||null,
+      nombre_libre: i.item_id ? null : i.nombre,
+      tipo: i.tipo,
+      cantidad: i.cantidad
+    })));
+  }
+
+  // Guardar rubros
+  const rubrosConCantidad = rubrosSeleccionados.filter(r=>r.cantidad>0);
+  if(rubrosConCantidad.length){
+    await sb.from('libro_obra_rubros').insert(rubrosConCantidad.map(r=>({registro_id:registro.id, rubro_id:r.id, cantidad_dia:r.cantidad})));
+    for(const r of rubrosConCantidad){
+      const { data: rub } = await sb.from('rubros').select('cantidad_ejecutada').eq('id',r.id).single();
+      await sb.from('rubros').update({cantidad_ejecutada:(rub?.cantidad_ejecutada||0)+r.cantidad}).eq('id',r.id);
+    }
+  }
+
+  // Subir fotos
+  if(fotosSeleccionadas.length){
+    actualizarLoading(`Subiendo ${fotosSeleccionadas.length} foto(s)...`);
+    for(let i=0;i<fotosSeleccionadas.length;i++){
+      actualizarLoading(`Subiendo foto ${i+1} de ${fotosSeleccionadas.length}...`);
+      const url = await subirFoto(fotosSeleccionadas[i].file, registro.id, i+1);
+      if(url) await sb.from('libro_obra_fotos').insert({registro_id:registro.id, url, descripcion:fotosSeleccionadas[i].descripcion||null, orden:i+1});
+    }
+  }
+
+  // Subir archivos adjuntos
+  if(archivosSeleccionados.length){
+    actualizarLoading(`Subiendo ${archivosSeleccionados.length} archivo(s)...`);
+    for(let i=0;i<archivosSeleccionados.length;i++){
+      const file = archivosSeleccionados[i];
+      actualizarLoading(`Subiendo archivo ${i+1} de ${archivosSeleccionados.length}...`);
+      const path = `libro_obra/${registro.id}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:file.type, upsert:true});
+      if(!upErr){
+        const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+        await sb.from('archivos').insert({
+          proyecto_id: proyectoId,
+          modulo: 'libro_obra',
+          referencia_id: registro.id,
+          nombre: file.name,
+          tipo: file.type,
+          url: urlData.publicUrl,
+          tamanio: file.size
+        });
+      }
+    }
+  }
+
+  ocultarLoading();
+  document.getElementById('resumenEnvio').innerHTML = `
+    <strong>Registro N° ${registro.numero_registro||'—'}</strong> · ${new Date(fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long'})}<br/>
+    ${climaSeleccionado} · ${payload.personal_total} personas · ${rubrosConCantidad.length} rubros · ${fotosSeleccionadas.length} foto(s)`;
+  document.getElementById('formContent').style.display='none';
+  document.getElementById('successScreen').style.display='block';
+  window.scrollTo(0,0);
+}
+
+function mostrarError(msg){ const e=document.getElementById('errorMsg'); e.textContent=msg; e.style.display='block'; document.getElementById('formContent').style.display='none'; }
+function mostrarErrorBottom(msg){ const e=document.getElementById('errorMsgBottom'); e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none',5000); }
+function mostrarLoading(msg='Procesando...'){ document.getElementById('loadingText').textContent=msg; document.getElementById('loadingOverlay').classList.add('show'); }
+function actualizarLoading(msg){ document.getElementById('loadingText').textContent=msg; }
+function ocultarLoading(){ document.getElementById('loadingOverlay').classList.remove('show'); }
+</script>
+</body>
+</html>
