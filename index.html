@@ -947,31 +947,82 @@ select.form-control{appearance:none}
 <div class="modal-overlay" id="modalInvitar">
   <div class="modal" style="width:460px;max-width:98vw">
     <div class="modal-header">
-      <div class="modal-title">✉️ Invitar usuario</div>
+      <div class="modal-title">👤 Crear usuario</div>
       <button class="btn" onclick="cerrarModal('modalInvitar')" style="padding:6px 10px">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Email *</label>
-        <input type="email" class="form-control" id="invEmail" placeholder="usuario@empresa.com"/>
+      <!-- Tabs -->
+      <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px;margin-bottom:16px">
+        <button onclick="switchInvitarTab('manual')" id="tabManual" class="btn primary" style="flex:1;border-radius:6px;font-size:12px;padding:7px">
+          🔑 Crear con contraseña
+        </button>
+        <button onclick="switchInvitarTab('email')" id="tabEmail" class="btn" style="flex:1;border-radius:6px;font-size:12px;padding:7px">
+          ✉️ Enviar invitación
+        </button>
       </div>
-      <div class="form-group">
-        <label class="form-label">Rol</label>
-        <select class="form-control" id="invRol">
-          <option value="fiscalizador">Fiscalizador — acceso completo menos usuarios</option>
-          <option value="residente">Residente — responder observaciones (por proyecto)</option>
-          <option value="visualizador">Visualizador — solo lectura (por proyecto)</option>
-        </select>
+
+      <!-- Tab manual -->
+      <div id="panelManual">
+        <div class="form-group">
+          <label class="form-label">Email *</label>
+          <input type="email" class="form-control" id="invEmail" placeholder="usuario@empresa.com"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre *</label>
+          <input type="text" class="form-control" id="invNombre" placeholder="Nombre del usuario"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Apellido *</label>
+          <input type="text" class="form-control" id="invApellido" placeholder="Apellido del usuario"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña temporal *</label>
+          <div style="position:relative">
+            <input type="text" class="form-control" id="invPassword" placeholder="Mín. 6 caracteres"
+              style="padding-right:100px"/>
+            <button onclick="generarPasswordAleatorio()" type="button"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:#f5f6f8;border:1px solid #c5c7d4;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">
+              Generar
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rol</label>
+          <select class="form-control" id="invRolManual">
+            <option value="fiscalizador">Fiscalizador</option>
+            <option value="residente">Residente</option>
+            <option value="visualizador">Visualizador</option>
+          </select>
+        </div>
+        <div style="background:#fff3cd;border-radius:8px;padding:10px 12px;font-size:12px;color:#856404">
+          ⚠️ Comparte el email y la contraseña con el usuario por WhatsApp u otro medio seguro.
+        </div>
       </div>
-      <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0">
-        📧 El usuario recibirá un email con un link para crear su contraseña y acceder a la plataforma.
+
+      <!-- Tab email -->
+      <div id="panelEmail" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Email *</label>
+          <input type="email" class="form-control" id="invEmailInvitacion" placeholder="usuario@empresa.com"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rol</label>
+          <select class="form-control" id="invRol">
+            <option value="fiscalizador">Fiscalizador — acceso completo menos usuarios</option>
+            <option value="residente">Residente — responder observaciones (por proyecto)</option>
+            <option value="visualizador">Visualizador — solo lectura (por proyecto)</option>
+          </select>
+        </div>
+        <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0">
+          📧 El usuario recibirá un email con un link para crear su contraseña. Requiere dominio verificado en Resend.
+        </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalInvitar')">Cancelar</button>
-      <button id="btnEnviarInvitacion" class="btn primary" onclick="enviarInvitacion()">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        Enviar invitación
+      <button id="btnEnviarInvitacion" class="btn primary" onclick="crearUsuarioManual()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+        Crear usuario
       </button>
     </div>
   </div>
@@ -3306,14 +3357,87 @@ async function cargarMiembrosPorProyecto(){
   }).join('');
 }
 
+function switchInvitarTab(tab){
+  document.getElementById('panelManual').style.display = tab==='manual'?'block':'none';
+  document.getElementById('panelEmail').style.display = tab==='email'?'block':'none';
+  document.getElementById('tabManual').className = 'btn'+(tab==='manual'?' primary':'');
+  document.getElementById('tabEmail').className = 'btn'+(tab==='email'?' primary':'');
+  const btn = document.getElementById('btnEnviarInvitacion');
+  if(tab==='manual'){
+    btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> Crear usuario';
+    btn.onclick = crearUsuarioManual;
+  } else {
+    btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar invitación';
+    btn.onclick = enviarInvitacion;
+  }
+}
+
+function generarPasswordAleatorio(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$';
+  let pass = '';
+  for(let i=0;i<10;i++) pass += chars[Math.floor(Math.random()*chars.length)];
+  document.getElementById('invPassword').value = pass;
+  document.getElementById('invPassword').select();
+  document.execCommand('copy');
+  toast('Contraseña generada y copiada al portapapeles ✓','success');
+}
+
+async function crearUsuarioManual(){
+  const email = document.getElementById('invEmail').value.trim();
+  const nombre = document.getElementById('invNombre').value.trim();
+  const apellido = document.getElementById('invApellido').value.trim();
+  const password = document.getElementById('invPassword').value.trim();
+  const rol = document.getElementById('invRolManual').value;
+
+  if(!email||!nombre||!password){ toast('Email, nombre y contraseña son obligatorios','error'); return; }
+  if(password.length < 6){ toast('La contraseña debe tener mínimo 6 caracteres','error'); return; }
+
+  const btn = document.getElementById('btnEnviarInvitacion');
+  btn.disabled=true; btn.textContent='Creando...';
+
+  // Crear usuario en Supabase Auth
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password,
+    options:{
+      data:{ nombre, apellido, rol }
+    }
+  });
+
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Crear usuario'; return; }
+
+  // Crear perfil en tabla perfiles
+  if(data.user){
+    await sb.from('perfiles').upsert({
+      id: data.user.id,
+      email,
+      nombre,
+      apellido,
+      rol
+    });
+  }
+
+  toast(`✅ Usuario ${nombre} creado. Comparte las credenciales por WhatsApp.`,'success');
+  btn.disabled=false;
+  btn.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> Crear usuario';
+  cerrarModal('modalInvitar');
+  cargarUsuarios();
+}
+
 function abrirModalInvitar(){
   document.getElementById('invEmail').value='';
+  document.getElementById('invNombre').value='';
+  document.getElementById('invApellido').value='';
+  document.getElementById('invPassword').value='';
+  document.getElementById('invRolManual').value='fiscalizador';
+  document.getElementById('invEmailInvitacion').value='';
   document.getElementById('invRol').value='fiscalizador';
+  switchInvitarTab('manual');
   document.getElementById('modalInvitar').classList.add('show');
 }
 
 async function enviarInvitacion(){
-  const email = document.getElementById('invEmail').value.trim();
+  const email = document.getElementById('invEmailInvitacion').value.trim();
   const rol = document.getElementById('invRol').value;
   if(!email){ toast('Ingresa un email','error'); return; }
   const btn = document.getElementById('btnEnviarInvitacion');
