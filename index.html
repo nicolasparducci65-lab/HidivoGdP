@@ -859,6 +859,31 @@ select.form-control{appearance:none}
   </div>
 </div>
 
+<!-- MODAL NUEVO CANAL -->
+<div class="modal-overlay" id="modalNuevoCanal">
+  <div class="modal" style="width:380px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">💬 Nuevo canal</div>
+      <button class="btn" onclick="cerrarModal('modalNuevoCanal')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre del canal</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:16px;color:#676879">#</span>
+          <input type="text" class="form-control" id="nuevoCanalnombre" placeholder="ej: excavacion"
+            onkeydown="if(event.key==='Enter') guardarNuevoCanal()"/>
+        </div>
+        <div style="font-size:11px;color:#676879;margin-top:4px">Sin espacios ni mayúsculas</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalNuevoCanal')">Cancelar</button>
+      <button class="btn primary" onclick="guardarNuevoCanal()">Crear canal</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -2514,17 +2539,23 @@ function suscribirseAlCanal(canalId){
 }
 
 function abrirModalNuevoCanal(){
-  const nombre = prompt('Nombre del canal (sin #):');
-  if(!nombre) return;
-  sb.from('canales_chat').insert({
+  document.getElementById('nuevoCanalnombre').value='';
+  document.getElementById('modalNuevoCanal').classList.add('show');
+}
+
+async function guardarNuevoCanal(){
+  const nombre = document.getElementById('nuevoCanalnombre').value.trim();
+  if(!nombre){ toast('Ingresa un nombre','error'); return; }
+  await sb.from('canales_chat').insert({
     proyecto_id: currentProyecto,
     nombre: nombre.toLowerCase().replace(/\s+/g,'-'),
     tipo: 'canal',
     descripcion: ''
-  }).then(()=>{ toast('Canal creado ✓','success'); cargarCanalesChat(); });
+  });
+  toast('Canal creado ✓','success');
+  cerrarModal('modalNuevoCanal');
+  cargarCanalesChat();
 }
-
-async function abrirModalNuevoDM(){
   const { data: perfiles } = await sb.from('perfiles').select('id,nombre,apellido').neq('id', currentUser.id);
   if(!perfiles?.length){ toast('No hay otros usuarios disponibles','info'); return; }
   const opciones = perfiles.map((p,i)=>`${i+1}. ${p.nombre} ${p.apellido}`).join('\n');
