@@ -1686,12 +1686,18 @@ async function parsearExcelCronograma(file){
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, {raw:true});
   let importados=0;
-  rows.forEach(row=>{
-    const desc=(row['Descripcion']||row['descripcion']||row['DESCRIPCION']||'').toString().trim();
-    if(!desc) return;
-    const match = cronogramaData.find(r=>
-      r.descripcion.toLowerCase().substring(0,20) === desc.toLowerCase().substring(0,20)
-    );
+  rows.forEach((row, i)=>{
+    // Intentar match por número (#) primero
+    const num = parseInt(row['#']||row['N°']||row['No']||0);
+    const desc = (row['Descripcion']||row['descripcion']||'').toString().trim();
+    
+    let match = null;
+    if(num >= 1 && num <= cronogramaData.length){
+      match = cronogramaData[num-1]; // match directo por índice
+    } else if(desc){
+      match = cronogramaData.find(r=>r.descripcion.substring(0,30)===desc.substring(0,30));
+    }
+    
     if(match){
       const fi = row['FechaInicio']||row['fecha_inicio']||row['Fecha Inicio']||null;
       const ff = row['FechaFin']||row['fecha_fin']||row['Fecha Fin']||null;
