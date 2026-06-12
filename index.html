@@ -253,6 +253,10 @@ select.form-control{appearance:none}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Chat
       </div>
+      <div class="nav-item" id="navUsuarios" style="display:none" onclick="navTo('usuarios',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Usuarios
+      </div>
     </div>
     <div class="sidebar-bottom">
       <div class="user-pill" onclick="logout()">
@@ -349,6 +353,11 @@ select.form-control{appearance:none}
       <!-- CHAT -->
       <div class="page" id="page-chat">
         <div class="empty-state"><div class="empty-icon">💬</div><div class="empty-title">Chat por obra</div><div class="empty-sub">Próximamente — comunicación en tiempo real con tu equipo</div></div>
+      </div>
+
+      <!-- USUARIOS -->
+      <div class="page" id="page-usuarios">
+        <div id="usuariosContent"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Gestión de usuarios</div></div></div>
       </div>
     </div>
   </div>
@@ -734,6 +743,68 @@ select.form-control{appearance:none}
   </div>
 </div>
 
+<!-- MODAL INVITAR USUARIO -->
+<div class="modal-overlay" id="modalInvitar">
+  <div class="modal" style="width:460px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">✉️ Invitar usuario</div>
+      <button class="btn" onclick="cerrarModal('modalInvitar')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input type="email" class="form-control" id="invEmail" placeholder="usuario@empresa.com"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol</label>
+        <select class="form-control" id="invRol">
+          <option value="fiscalizador">Fiscalizador — acceso completo menos usuarios</option>
+          <option value="residente">Residente — responder observaciones (por proyecto)</option>
+          <option value="visualizador">Visualizador — solo lectura (por proyecto)</option>
+        </select>
+      </div>
+      <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0">
+        📧 El usuario recibirá un email con un link para crear su contraseña y acceder a la plataforma.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalInvitar')">Cancelar</button>
+      <button id="btnEnviarInvitacion" class="btn primary" onclick="enviarInvitacion()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Enviar invitación
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL AGREGAR MIEMBRO A PROYECTO -->
+<div class="modal-overlay" id="modalAgregarMiembro">
+  <div class="modal" style="width:420px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">👤 Agregar miembro — <span id="miembroProyectoNombre"></span></div>
+      <button class="btn" onclick="cerrarModal('modalAgregarMiembro')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Email del usuario *</label>
+        <input type="email" class="form-control" id="miembroEmail" placeholder="usuario@empresa.com"/>
+        <div style="font-size:11px;color:#676879;margin-top:4px">El usuario debe estar registrado en la plataforma</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol en este proyecto</label>
+        <select class="form-control" id="miembroRol">
+          <option value="residente">Residente — responder observaciones</option>
+          <option value="visualizador">Visualizador — solo lectura</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalAgregarMiembro')">Cancelar</button>
+      <button class="btn primary" onclick="guardarMiembro()">Agregar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -818,6 +889,11 @@ function mostrarApp(){
   document.getElementById('appScreen').style.display='flex';
   cargarDashboard();
   cargarProyectosSelector();
+  // Mostrar nav de usuarios solo para admin
+  setTimeout(()=>{
+    const rol = currentPerfil?.rol;
+    if(rol==='admin') document.getElementById('navUsuarios').style.display='flex';
+  }, 500);
 }
 
 function navTo(page, btn){
@@ -826,7 +902,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Fiscalización', chat:'Chat' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Fiscalización', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const showSelector = ['rubros','libro','curvaS','fiscalizacion'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
@@ -839,6 +915,7 @@ function navTo(page, btn){
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
+  if(page==='usuarios') cargarUsuarios();
 }
 
 function accionPrincipal(){
@@ -2123,6 +2200,16 @@ function abrirModalObservacion(planoId=null, pinX=null, pinY=null){
   document.getElementById('modalObsNueva').classList.add('show');
 }
 
+function previewObsFotos(input){
+  const preview = document.getElementById('obsNuevaFotosPreview');
+  if(!preview) return;
+  preview.innerHTML='';
+  [...input.files].forEach(f=>{
+    const url=URL.createObjectURL(f);
+    preview.innerHTML+=`<img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+  });
+}
+
 async function guardarObservacionNueva(){
   const titulo = document.getElementById('obsNuevaTitulo').value.trim();
   if(!titulo){ toast('El título es obligatorio','error'); return; }
@@ -2159,13 +2246,235 @@ async function guardarObservacionNueva(){
 }
 
 
-function previewObsFotos(input){
-  const preview = document.getElementById('obsNuevaFotosPreview');
-  preview.innerHTML='';
-  [...input.files].forEach(f=>{
-    const url=URL.createObjectURL(f);
-    preview.innerHTML+=`<img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+// ── USUARIOS ──
+async function cargarUsuarios(){
+  const { data: perfiles } = await sb.from('perfiles').select('*').order('created_at');
+  const content = document.getElementById('usuariosContent');
+
+  const rolColor = {admin:'#0073ea',fiscalizador:'#00c875',residente:'#ff9f00',visualizador:'#676879'};
+  const rolLabel = {admin:'Admin',fiscalizador:'Fiscalizador',residente:'Residente',visualizador:'Visualizador'};
+
+  content.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#323338">Usuarios</div>
+      <div style="font-size:13px;color:#676879">${perfiles?.length||0} usuarios registrados</div>
+    </div>
+    <button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Invitar usuario
+    </button>
+  </div>
+
+  <!-- Invitaciones pendientes -->
+  <div id="invitacionesPendientes" style="margin-bottom:16px"></div>
+
+  <!-- Lista de usuarios -->
+  <div class="card">
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Usuario</th>
+          <th>Email</th>
+          <th style="text-align:center">Rol</th>
+          <th>Cargo</th>
+          <th style="text-align:center">Acciones</th>
+        </tr></thead>
+        <tbody>
+          ${(perfiles||[]).map(p=>`
+          <tr>
+            <td>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:32px;height:32px;border-radius:50%;background:#0073ea20;color:#0073ea;
+                  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">
+                  ${(p.nombre||'?')[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">${p.nombre||''} ${p.apellido||''}</div>
+                  ${p.id===currentUser?.id?'<div style="font-size:11px;color:#0073ea">Tú</div>':''}
+                </div>
+              </div>
+            </td>
+            <td style="font-size:13px;color:#676879">${p.email||'—'}</td>
+            <td style="text-align:center">
+              <span style="background:${(rolColor[p.rol]||'#676879')}20;color:${rolColor[p.rol]||'#676879'};
+                padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">
+                ${rolLabel[p.rol]||p.rol||'—'}
+              </span>
+            </td>
+            <td style="font-size:13px;color:#676879">${p.cargo||'—'}</td>
+            <td style="text-align:center">
+              ${p.id!==currentUser?.id?`
+              <div style="display:flex;gap:6px;justify-content:center">
+                <button onclick="cambiarRolUsuario('${p.id}','${p.rol}')" class="btn" style="padding:4px 10px;font-size:12px">Rol</button>
+                <button onclick="eliminarUsuario('${p.id}','${p.nombre}')" class="btn" style="padding:4px 10px;font-size:12px;color:#e2445c">🗑</button>
+              </div>`:'—'}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Miembros por proyecto -->
+  <div style="margin-top:24px">
+    <div style="font-size:15px;font-weight:700;color:#323338;margin-bottom:12px">Acceso por proyecto</div>
+    <div id="proyectoMiembros"></div>
+  </div>`;
+
+  cargarInvitacionesPendientes();
+  cargarMiembrosPorProyecto();
+}
+
+async function cargarInvitacionesPendientes(){
+  const { data: inv } = await sb.from('invitaciones').select('*').eq('estado','pendiente').order('created_at',{ascending:false});
+  const el = document.getElementById('invitacionesPendientes');
+  if(!el||!inv?.length){ if(el) el.innerHTML=''; return; }
+  el.innerHTML = `
+  <div class="card" style="border:1px solid #ffc107;background:#fffde7">
+    <div style="padding:12px 16px;font-size:12px;font-weight:600;color:#856404;border-bottom:1px solid #ffc10740">
+      ⏳ Invitaciones pendientes (${inv.length})
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Email</th><th style="text-align:center">Rol</th><th>Enviada</th><th style="text-align:center">Acción</th></tr></thead>
+        <tbody>
+          ${inv.map(i=>`<tr>
+            <td style="font-size:13px">${i.email}</td>
+            <td style="text-align:center"><span style="font-size:11px;font-weight:600;color:#856404">${i.rol}</span></td>
+            <td style="font-size:12px;color:#676879">${new Date(i.created_at).toLocaleDateString('es-EC')}</td>
+            <td style="text-align:center">
+              <button onclick="reenviarInvitacion('${i.id}','${i.email}')" class="btn" style="padding:4px 10px;font-size:11px">Reenviar</button>
+              <button onclick="cancelarInvitacion('${i.id}')" class="btn" style="padding:4px 10px;font-size:11px;color:#e2445c">Cancelar</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function cargarMiembrosPorProyecto(){
+  const el = document.getElementById('proyectoMiembros');
+  if(!el) return;
+  const { data: proyects } = await sb.from('proyectos').select('id,nombre').order('nombre');
+  if(!proyects?.length){ el.innerHTML=''; return; }
+  const { data: miembros } = await sb.from('proyecto_miembros').select('*,perfiles(nombre,apellido,email,rol)');
+  const { data: perfiles } = await sb.from('perfiles').select('id,nombre,apellido,email,rol');
+
+  el.innerHTML = proyects.map(p=>{
+    const miembrosProyecto = (miembros||[]).filter(m=>m.proyecto_id===p.id);
+    return `
+    <div class="card" style="margin-bottom:12px">
+      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e6e9ef">
+        <div style="font-weight:600;font-size:14px;color:#323338">🏗 ${p.nombre}</div>
+        <button onclick="abrirModalAgregarMiembro('${p.id}','${p.nombre.replace(/'/g,"\\'")}')" class="btn" style="padding:4px 12px;font-size:12px">+ Agregar miembro</button>
+      </div>
+      <div style="padding:12px 16px">
+        ${miembrosProyecto.length?miembrosProyecto.map(m=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0">
+          <div style="font-size:13px">${m.perfiles?.nombre||''} ${m.perfiles?.apellido||''} <span style="color:#676879;font-size:11px">${m.perfiles?.email||''}</span></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;font-weight:600;color:#0073ea">${m.rol}</span>
+            <button onclick="eliminarMiembro('${m.id}','${p.id}')" class="btn" style="padding:2px 8px;font-size:11px;color:#e2445c">✕</button>
+          </div>
+        </div>`).join(''):'<div style="font-size:13px;color:#676879">Sin miembros asignados</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function abrirModalInvitar(){
+  document.getElementById('invEmail').value='';
+  document.getElementById('invRol').value='fiscalizador';
+  document.getElementById('modalInvitar').classList.add('show');
+}
+
+async function enviarInvitacion(){
+  const email = document.getElementById('invEmail').value.trim();
+  const rol = document.getElementById('invRol').value;
+  if(!email){ toast('Ingresa un email','error'); return; }
+  const btn = document.getElementById('btnEnviarInvitacion');
+  btn.disabled=true; btn.textContent='Enviando...';
+
+  // Guardar invitación en BD
+  const token = crypto.randomUUID();
+  const { error } = await sb.from('invitaciones').insert({
+    email, rol, token,
+    invitado_por: currentUser?.id,
+    estado: 'pendiente'
   });
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar invitación'; return; }
+
+  // Enviar email via Supabase Auth (magic link)
+  const { error: authErr } = await sb.auth.admin?.inviteUserByEmail?.(email) ||
+    await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin+window.location.pathname+'?token='+token } });
+
+  toast('Invitación enviada a '+email+' ✓','success');
+  btn.disabled=false; btn.textContent='Enviar invitación';
+  cerrarModal('modalInvitar');
+  cargarUsuarios();
+}
+
+async function cambiarRolUsuario(id, rolActual){
+  const roles = ['admin','fiscalizador','residente','visualizador'];
+  const nuevoRol = prompt(`Cambiar rol de "${rolActual}" a:`, rolActual);
+  if(!nuevoRol||!roles.includes(nuevoRol)){ toast('Rol inválido. Opciones: '+roles.join(', '),'error'); return; }
+  await sb.from('perfiles').update({rol: nuevoRol}).eq('id', id);
+  toast('Rol actualizado ✓','success');
+  cargarUsuarios();
+}
+
+async function eliminarUsuario(id, nombre){
+  if(!confirm(`¿Eliminar al usuario ${nombre}? Esta acción no se puede deshacer.`)) return;
+  await sb.from('perfiles').delete().eq('id', id);
+  toast('Usuario eliminado','success');
+  cargarUsuarios();
+}
+
+async function cancelarInvitacion(id){
+  await sb.from('invitaciones').delete().eq('id', id);
+  toast('Invitación cancelada','success');
+  cargarInvitacionesPendientes();
+}
+
+async function reenviarInvitacion(id, email){
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin+window.location.pathname } });
+  if(error) toast('Error reenviando: '+error.message,'error');
+  else toast('Invitación reenviada a '+email,'success');
+}
+
+function abrirModalAgregarMiembro(proyectoId, proyectoNombre){
+  window._miembroProyectoId = proyectoId;
+  document.getElementById('miembroProyectoNombre').textContent = proyectoNombre;
+  document.getElementById('miembroEmail').value='';
+  document.getElementById('miembroRol').value='residente';
+  document.getElementById('modalAgregarMiembro').classList.add('show');
+}
+
+async function guardarMiembro(){
+  const email = document.getElementById('miembroEmail').value.trim();
+  const rol = document.getElementById('miembroRol').value;
+  if(!email){ toast('Ingresa un email','error'); return; }
+  // Buscar perfil por email
+  const { data: perfil } = await sb.from('perfiles').select('id').eq('email', email).single();
+  if(!perfil){ toast('Usuario no encontrado. Primero invítalo.','error'); return; }
+  const { error } = await sb.from('proyecto_miembros').insert({
+    proyecto_id: window._miembroProyectoId,
+    usuario_id: perfil.id,
+    rol
+  });
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Miembro agregado ✓','success');
+  cerrarModal('modalAgregarMiembro');
+  cargarMiembrosPorProyecto();
+}
+
+async function eliminarMiembro(miembroId, proyectoId){
+  if(!confirm('¿Remover este miembro del proyecto?')) return;
+  await sb.from('proyecto_miembros').delete().eq('id', miembroId);
+  toast('Miembro removido','success');
+  cargarMiembrosPorProyecto();
 }
 
 // ── ARCHIVOS ──
