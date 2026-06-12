@@ -1065,10 +1065,19 @@ function mostrarApp(){
   document.getElementById('appScreen').style.display='flex';
   cargarDashboard();
   cargarProyectosSelector();
-  // Mostrar nav de usuarios solo para admin
   setTimeout(()=>{
     const rol = currentPerfil?.rol;
+    // Mostrar nav de usuarios solo para admin
     if(rol==='admin') document.getElementById('navUsuarios').style.display='flex';
+    // Ocultar botón de nuevo proyecto para residente y visualizador
+    if(rol==='residente'||rol==='visualizador'){
+      const btnAccion = document.getElementById('btnAccionPrincipal');
+      if(btnAccion) btnAccion.style.display='none';
+    }
+    // Ocultar nav de proyectos para visualizador
+    if(rol==='visualizador'){
+      // Solo puede ver rubros, libro, curva S, fiscalización en modo lectura
+    }
   }, 500);
 }
 
@@ -1174,15 +1183,44 @@ function estadoLabel(e){ return {planificacion:'Planificación',ejecucion:'En ej
 
 // ── PROYECTOS ──
 async function cargarProyectosLista(){
-  const { data } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
-  proyectos = data||[];
+  const rol = currentPerfil?.rol;
+  let data;
+  if(rol==='residente'||rol==='visualizador'){
+    // Solo proyectos donde el usuario es miembro
+    const { data: miembros } = await sb.from('proyecto_miembros')
+      .select('proyecto_id').eq('usuario_id', currentUser.id);
+    const ids = (miembros||[]).map(m=>m.proyecto_id);
+    if(!ids.length){ proyectos=[]; renderProyectosTabla('proyectosList',[]); return; }
+    const { data: proy } = await sb.from('proyectos')
+      .select('*').in('id', ids).order('created_at',{ascending:false});
+    data = proy||[];
+  } else {
+    const { data: proy } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
+    data = proy||[];
+  }
+  proyectos = data;
   renderProyectosTabla('proyectosList', proyectos);
 }
 
 async function cargarProyectosSelector(){
-  const { data } = await sb.from('proyectos').select('id,nombre');
+  const rol = currentPerfil?.rol;
+  let data;
+  if(rol==='residente'||rol==='visualizador'){
+    const { data: miembros } = await sb.from('proyecto_miembros')
+      .select('proyecto_id').eq('usuario_id', currentUser.id);
+    const ids = (miembros||[]).map(m=>m.proyecto_id);
+    if(!ids.length){ data=[]; }
+    else {
+      const { data: proy } = await sb.from('proyectos').select('id,nombre').in('id', ids);
+      data = proy||[];
+    }
+  } else {
+    const { data: proy } = await sb.from('proyectos').select('id,nombre');
+    data = proy||[];
+  }
   const sel = document.getElementById('selectProyecto');
-  sel.innerHTML = '<option value="">Selecciona un proyecto...</option>' + (data||[]).map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
+  sel.innerHTML = '<option value="">Selecciona un proyecto...</option>' +
+    data.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
 }
 
 function cambiarProyecto(id){
