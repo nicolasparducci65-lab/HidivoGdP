@@ -1447,7 +1447,7 @@ async function guardarProyecto(){
     if(!error && nuevo){
       await sb.from('proyecto_miembros').insert({
         proyecto_id: nuevo.id,
-        perfil_id: currentUser.id,
+        usuario_id: currentUser.id,
         rol: 'director'
       });
     }
@@ -3332,7 +3332,8 @@ async function cargarMiembrosPorProyecto(){
   if(!el) return;
   const { data: proyects } = await sb.from('proyectos').select('id,nombre').order('nombre');
   if(!proyects?.length){ el.innerHTML=''; return; }
-  const { data: miembros } = await sb.from('proyecto_miembros').select('*,perfiles(nombre,apellido,email,rol)');
+  const { data: miembros } = await sb.from('proyecto_miembros')
+    .select('*,perfiles!proyecto_miembros_usuario_id_fkey(nombre,apellido,email,rol)');
   const { data: perfiles } = await sb.from('perfiles').select('id,nombre,apellido,email,rol');
 
   el.innerHTML = proyects.map(p=>{
