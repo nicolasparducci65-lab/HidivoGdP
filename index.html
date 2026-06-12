@@ -298,6 +298,11 @@ select.form-control{appearance:none}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Observaciones
       </div>
+      <div class="nav-item" onclick="navTo('solicitudes',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Solicitudes
+        <span id="solicitudesBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -405,6 +410,11 @@ select.form-control{appearance:none}
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
         <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- SOLICITUDES -->
+      <div class="page" id="page-solicitudes">
+        <div id="solicitudesContent"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- CHAT -->
@@ -1132,6 +1142,102 @@ select.form-control{appearance:none}
   </div>
 </div>
 
+<!-- MODAL NUEVA SOLICITUD -->
+<div class="modal-overlay" id="modalNuevaSolicitud">
+  <div class="modal" style="width:520px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">📋 Nueva solicitud</div>
+      <button class="btn" onclick="cerrarModal('modalNuevaSolicitud')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div class="form-group">
+        <label class="form-label">Tipo de solicitud *</label>
+        <select class="form-control" id="solNuevaTipo">
+          <option value="planilla">📄 Aprobación de Planillas</option>
+          <option value="liberacion">✅ Liberación de Actividad</option>
+          <option value="documentacion">📁 Documentación</option>
+          <option value="presupuesto">💰 Aprobación de Presupuestos</option>
+          <option value="qhse">🦺 QHSE</option>
+          <option value="cambio">🔄 Cambios</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Título *</label>
+        <input type="text" class="form-control" id="solNuevaTitulo" placeholder="Ej: Planilla N°3 — Semana del 10 al 16 de junio"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <textarea class="form-control" id="solNuevaDesc" rows="3" placeholder="Detalla el motivo o contexto de la solicitud..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Archivos adjuntos</label>
+        <input type="file" class="form-control" id="solNuevaArchivos" multiple
+          onchange="previewSolArchivos(this)"/>
+        <div id="solNuevaArchivosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalNuevaSolicitud')">Cancelar</button>
+      <button id="btnGuardarSolicitud" class="btn primary" onclick="guardarNuevaSolicitud()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Enviar solicitud
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VER SOLICITUD -->
+<div class="modal-overlay" id="modalVerSolicitud">
+  <div class="modal" style="width:600px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="solDetalleTitulo">Solicitud</div>
+        <div style="display:flex;gap:6px;margin-top:6px" id="solDetalleTipo"></div>
+      </div>
+      <button class="btn" onclick="cerrarModal('modalVerSolicitud')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <div id="solDetalleEstado"></div>
+        <div style="font-size:12px;color:#676879" id="solDetallePor"></div>
+      </div>
+      <div style="font-size:13px;color:#323338;margin-bottom:16px;line-height:1.6" id="solDetalleDesc"></div>
+      <div style="margin-bottom:16px" id="solDetalleArchivos"></div>
+
+      <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Historial</div>
+      <div id="solDetalleRespuestas" style="margin-bottom:16px"></div>
+
+      <!-- Responder -->
+      <div style="border-top:1px solid #e6e9ef;padding-top:16px">
+        <div class="form-group">
+          <label class="form-label">Respuesta</label>
+          <textarea class="form-control" id="solRespuestaTexto" rows="2" placeholder="Escribe tu respuesta..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Adjuntar archivo (opcional)</label>
+          <input type="file" class="form-control" id="solRespuestaArchivo"/>
+        </div>
+        <input type="hidden" id="solRespuestaAccion" value="comentario"/>
+
+        <!-- Botones fiscalizador -->
+        <div id="solBotonesAccion" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button onclick="responderSolicitud('aprobar')" class="btn" style="background:#00c875;color:#fff;border-color:#00c875;gap:6px">✅ Aprobar</button>
+          <button onclick="responderSolicitud('rechazar')" class="btn" style="background:#e2445c;color:#fff;border-color:#e2445c;gap:6px">❌ Rechazar</button>
+          <button onclick="responderSolicitud('correccion')" class="btn" style="background:#856404;color:#fff;border-color:#856404;gap:6px">🔄 Solicitar corrección</button>
+          <button onclick="responderSolicitud('comentario')" class="btn primary" style="gap:6px">💬 Comentar</button>
+        </div>
+        <!-- Botón residente/visualizador -->
+        <div id="solBotonesAccion" style="display:flex;gap:8px" class="btn-comentar-sol">
+          <button onclick="responderSolicitud('comentario')" class="btn primary" style="gap:6px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Enviar comentario
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1236,10 +1342,10 @@ function mostrarApp(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat'],
-    residente:    ['fiscalizacion','chat'],
-    visualizador: ['rubros','libro','curvaS','fiscalizacion','chat']
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat'],
+    residente:    ['fiscalizacion','solicitudes','chat'],
+    visualizador: ['rubros','libro','curvaS','fiscalizacion','solicitudes','chat']
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
@@ -1252,6 +1358,7 @@ function aplicarAccesosPorRol(rol){
     libro:          document.querySelector('.nav-item[onclick*="libro"]'),
     curvaS:         document.querySelector('.nav-item[onclick*="curvaS"]'),
     fiscalizacion:  document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    solicitudes:    document.querySelector('.nav-item[onclick*="solicitudes"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios')
   };
@@ -1296,9 +1403,9 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -1309,6 +1416,7 @@ function navTo(page, btn){
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
+  if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='chat') { cargarChat(); setTimeout(cargarDMsChat, 300); }
   if(page==='usuarios') cargarUsuarios();
 }
@@ -1439,6 +1547,7 @@ function cambiarProyecto(id){
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
+  if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
@@ -3260,6 +3369,253 @@ async function abrirModalNuevoDM(){
   }).select().single();
   if(dm) abrirCanal(dm.id, `${otro.nombre} ${otro.apellido}`, 'dm', otro.id, '');
   cargarDMsChat();
+}
+
+function previewSolArchivos(input){
+  const preview = document.getElementById('solNuevaArchivosPreview');
+  preview.innerHTML='';
+  [...input.files].forEach(f=>{
+    const esImg = f.type.startsWith('image/');
+    if(esImg){
+      const url=URL.createObjectURL(f);
+      preview.innerHTML+=`<img src="${url}" style="width:70px;height:55px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+    } else {
+      preview.innerHTML+=`<span style="background:#f5f6f8;border-radius:6px;padding:4px 8px;font-size:11px">📎 ${f.name}</span>`;
+    }
+  });
+}
+
+// ── SOLICITUDES ──
+const TIPOS_SOLICITUD = {
+  planilla:      { label:'Aprobación de Planillas',    emoji:'📄', color:'#0073ea' },
+  liberacion:    { label:'Liberación de Actividad',    emoji:'✅', color:'#00c875' },
+  documentacion: { label:'Documentación',              emoji:'📁', color:'#ff9f00' },
+  presupuesto:   { label:'Aprobación de Presupuestos', emoji:'💰', color:'#9b59b6' },
+  qhse:          { label:'QHSE',                       emoji:'🦺', color:'#e2445c' },
+  cambio:        { label:'Cambios',                    emoji:'🔄', color:'#676879' }
+};
+
+const ESTADOS_SOLICITUD = {
+  pendiente:    { label:'Pendiente',          color:'#ff9f00', bg:'#fff3e0' },
+  en_revision:  { label:'En revisión',        color:'#0073ea', bg:'#e8f4ff' },
+  aprobada:     { label:'Aprobada',           color:'#00c875', bg:'#e8f5e9' },
+  rechazada:    { label:'Rechazada',          color:'#e2445c', bg:'#fce4ec' },
+  correccion:   { label:'Requiere corrección',color:'#856404', bg:'#fff3cd' }
+};
+
+let solicitudFiltroTipo = 'todas';
+let solicitudFiltroEstado = 'todos';
+
+async function cargarSolicitudes(){
+  if(!currentProyecto){
+    document.getElementById('solicitudesContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  const rol = currentPerfil?.rol;
+
+  let q = sb.from('solicitudes').select('*,creado_por:perfiles!solicitudes_creado_por_fkey(nombre,apellido,rol)')
+    .eq('proyecto_id', currentProyecto).order('created_at',{ascending:false});
+
+  if(solicitudFiltroTipo !== 'todas') q = q.eq('tipo', solicitudFiltroTipo);
+  if(solicitudFiltroEstado !== 'todos') q = q.eq('estado', solicitudFiltroEstado);
+
+  const { data: sols } = await q;
+
+  // Contar pendientes para badge
+  const { data: pendientes } = await sb.from('solicitudes').select('id')
+    .eq('proyecto_id', currentProyecto).eq('estado','pendiente');
+  const badge = document.getElementById('solicitudesBadge');
+  if(badge && pendientes?.length > 0){
+    badge.style.display='inline';
+    badge.textContent = pendientes.length;
+  } else if(badge){
+    badge.style.display='none';
+  }
+
+  const puedeCrear = rol==='residente'||rol==='admin'||rol==='fiscalizador';
+
+  document.getElementById('solicitudesContent').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <!-- Filtro tipo -->
+      <select onchange="solicitudFiltroTipo=this.value;cargarSolicitudes()" class="form-control" style="width:auto;font-size:12px;padding:6px 10px">
+        <option value="todas">Todos los tipos</option>
+        ${Object.entries(TIPOS_SOLICITUD).map(([k,v])=>`<option value="${k}" ${solicitudFiltroTipo===k?'selected':''}>${v.emoji} ${v.label}</option>`).join('')}
+      </select>
+      <!-- Filtro estado -->
+      <select onchange="solicitudFiltroEstado=this.value;cargarSolicitudes()" class="form-control" style="width:auto;font-size:12px;padding:6px 10px">
+        <option value="todos">Todos los estados</option>
+        ${Object.entries(ESTADOS_SOLICITUD).map(([k,v])=>`<option value="${k}" ${solicitudFiltroEstado===k?'selected':''}>${v.label}</option>`).join('')}
+      </select>
+    </div>
+    ${puedeCrear?`<button onclick="abrirModalNuevaSolicitud()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nueva solicitud
+    </button>`:''}
+  </div>
+
+  ${!sols?.length ? `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin solicitudes</div><div class="empty-sub">No hay solicitudes en este proyecto</div></div>` :
+  `<div style="display:flex;flex-direction:column;gap:10px">
+    ${sols.map(s=>{
+      const tipo = TIPOS_SOLICITUD[s.tipo]||{label:s.tipo,emoji:'📋',color:'#676879'};
+      const estado = ESTADOS_SOLICITUD[s.estado]||{label:s.estado,color:'#676879',bg:'#f5f6f8'};
+      return `
+      <div onclick="verSolicitud('${s.id}')" style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s;border-left:4px solid ${tipo.color}"
+        onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <span style="background:${tipo.color}15;color:${tipo.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${tipo.emoji} ${tipo.label}</span>
+              <span style="background:${estado.bg};color:${estado.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estado.label}</span>
+              <span style="font-size:11px;color:#676879">${new Date(s.created_at).toLocaleDateString('es-EC')}</span>
+            </div>
+            <div style="font-weight:600;color:#323338;font-size:14px;margin-bottom:4px">${s.titulo}</div>
+            ${s.descripcion?`<div style="font-size:12px;color:#676879;line-height:1.5">${s.descripcion.substring(0,100)}${s.descripcion.length>100?'...':''}</div>`:''}
+            <div style="font-size:11px;color:#676879;margin-top:6px">Por: ${s.creado_por?.nombre||''} ${s.creado_por?.apellido||''}</div>
+          </div>
+          <svg fill="none" stroke="#c5c7d4" stroke-width="2" viewBox="0 0 24 24" width="16" height="16" style="flex-shrink:0;margin-top:4px"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`}`;
+}
+
+function abrirModalNuevaSolicitud(){
+  document.getElementById('solNuevaTitulo').value='';
+  document.getElementById('solNuevaDesc').value='';
+  document.getElementById('solNuevaTipo').value='planilla';
+  document.getElementById('solNuevaArchivos').value='';
+  document.getElementById('solNuevaArchivosPreview').innerHTML='';
+  document.getElementById('modalNuevaSolicitud').classList.add('show');
+}
+
+async function guardarNuevaSolicitud(){
+  const titulo = document.getElementById('solNuevaTitulo').value.trim();
+  const tipo = document.getElementById('solNuevaTipo').value;
+  const desc = document.getElementById('solNuevaDesc').value.trim();
+  if(!titulo){ toast('El título es obligatorio','error'); return; }
+
+  const btn = document.getElementById('btnGuardarSolicitud');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const { data: sol, error } = await sb.from('solicitudes').insert({
+    proyecto_id: currentProyecto,
+    tipo, titulo,
+    descripcion: desc||null,
+    estado: 'pendiente',
+    creado_por: currentUser?.id
+  }).select().single();
+
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar solicitud'; return; }
+
+  // Subir archivos
+  const files = document.getElementById('solNuevaArchivos').files;
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    const path=`solicitudes/${sol.id}/${Date.now()}_${f.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
+    if(!upErr){
+      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+      await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.name});
+    }
+  }
+
+  toast('Solicitud enviada ✓','success');
+  btn.disabled=false; btn.textContent='Enviar solicitud';
+  cerrarModal('modalNuevaSolicitud');
+  cargarSolicitudes();
+}
+
+async function verSolicitud(id){
+  const { data: sol } = await sb.from('solicitudes')
+    .select('*,creado_por:perfiles!solicitudes_creado_por_fkey(nombre,apellido,rol)')
+    .eq('id',id).single();
+  const { data: archivos } = await sb.from('solicitud_archivos').select('*').eq('solicitud_id',id);
+  const { data: resps } = await sb.from('solicitud_respuestas')
+    .select('*,autor:perfiles!solicitud_respuestas_autor_id_fkey(nombre,apellido,rol)')
+    .eq('solicitud_id',id).order('created_at');
+
+  window._solActiva = sol;
+  const tipo = TIPOS_SOLICITUD[sol.tipo]||{label:sol.tipo,emoji:'📋',color:'#676879'};
+  const estado = ESTADOS_SOLICITUD[sol.estado]||{label:sol.estado,color:'#676879',bg:'#f5f6f8'};
+  const rol = currentPerfil?.rol;
+  const esFiscalizador = rol==='admin'||rol==='fiscalizador';
+
+  document.getElementById('solDetalleTitulo').textContent = sol.titulo;
+  document.getElementById('solDetalleTipo').innerHTML = `<span style="background:${tipo.color}15;color:${tipo.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${tipo.emoji} ${tipo.label}</span>`;
+  document.getElementById('solDetalleEstado').innerHTML = `<span style="background:${estado.bg};color:${estado.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estado.label}</span>`;
+  document.getElementById('solDetalleDesc').textContent = sol.descripcion||'Sin descripción';
+  document.getElementById('solDetallePor').textContent = `${sol.creado_por?.nombre||''} ${sol.creado_por?.apellido||''} · ${new Date(sol.created_at).toLocaleDateString('es-EC')}`;
+
+  // Archivos adjuntos
+  document.getElementById('solDetalleArchivos').innerHTML = (archivos||[]).map(a=>`
+    <a href="${a.url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f5f6f8;border-radius:8px;padding:6px 10px;font-size:12px;color:#323338;text-decoration:none;margin:4px">
+      📎 ${a.nombre}
+    </a>`).join('') || '<span style="font-size:12px;color:#676879">Sin archivos</span>';
+
+  // Historial de respuestas
+  document.getElementById('solDetalleRespuestas').innerHTML = (resps||[]).map(r=>{
+    const accionColor = {aprobar:'#00c875',rechazar:'#e2445c',correccion:'#856404',comentario:'#0073ea'}[r.accion]||'#676879';
+    const accionLabel = {aprobar:'✅ Aprobó',rechazar:'❌ Rechazó',correccion:'🔄 Solicitó corrección',comentario:'💬 Comentó'}[r.accion]||r.accion;
+    return `<div style="background:#f5f6f8;border-radius:8px;padding:12px;margin-bottom:8px;border-left:3px solid ${accionColor}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:600;color:${accionColor}">${accionLabel}</span>
+        <span style="font-size:11px;color:#676879">${r.autor?.nombre||''} ${r.autor?.apellido||''} · ${new Date(r.created_at).toLocaleDateString('es-EC')}</span>
+      </div>
+      ${r.texto?`<div style="font-size:13px;color:#323338">${r.texto}</div>`:''}
+      ${r.archivo_url?`<a href="${r.archivo_url}" target="_blank" style="font-size:12px;color:#0073ea">📎 ${r.archivo_nombre||'Archivo'}</a>`:''}
+    </div>`;
+  }).join('') || '<div style="font-size:13px;color:#676879">Sin respuestas aún</div>';
+
+  // Botones de acción para fiscalizador
+  const botonesAccion = document.getElementById('solBotonesAccion');
+  if(esFiscalizador && sol.estado !== 'aprobada'){
+    botonesAccion.style.display='flex';
+  } else {
+    botonesAccion.style.display='none';
+  }
+
+  // Input de respuesta
+  document.getElementById('solRespuestaTexto').value='';
+  document.getElementById('solRespuestaArchivo').value='';
+  document.getElementById('solRespuestaAccion').value='comentario';
+
+  document.getElementById('modalVerSolicitud').classList.add('show');
+}
+
+async function responderSolicitud(accion){
+  const texto = document.getElementById('solRespuestaTexto').value.trim();
+  const archivo = document.getElementById('solRespuestaArchivo').files[0];
+  if(!texto&&!archivo){ toast('Escribe una respuesta o adjunta un archivo','error'); return; }
+  if(!window._solActiva) return;
+
+  let archivoUrl=null, archivoNombre=null;
+  if(archivo){
+    const path=`solicitudes/${window._solActiva.id}/respuestas/${Date.now()}_${archivo.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,archivo,{upsert:true});
+    if(!upErr){
+      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+      archivoUrl=urlData.publicUrl; archivoNombre=archivo.name;
+    }
+  }
+
+  // Guardar respuesta
+  await sb.from('solicitud_respuestas').insert({
+    solicitud_id: window._solActiva.id,
+    texto: texto||null,
+    accion,
+    archivo_url: archivoUrl,
+    archivo_nombre: archivoNombre,
+    autor_id: currentUser?.id
+  });
+
+  // Actualizar estado según acción
+  const nuevoEstado = {aprobar:'aprobada',rechazar:'rechazada',correccion:'correccion',comentario:'en_revision'}[accion];
+  await sb.from('solicitudes').update({estado:nuevoEstado, updated_at:new Date().toISOString()}).eq('id',window._solActiva.id);
+
+  toast('Respuesta enviada ✓','success');
+  cerrarModal('modalVerSolicitud');
+  cargarSolicitudes();
 }
 
 // ── USUARIOS ──
