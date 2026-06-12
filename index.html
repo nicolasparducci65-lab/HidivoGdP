@@ -1233,8 +1233,8 @@ function aplicarAccesosPorRol(rol){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat'],
-    residente:    ['dashboard','fiscalizacion','chat'],
-    visualizador: ['dashboard','rubros','libro','curvaS','fiscalizacion','chat']
+    residente:    ['fiscalizacion','chat'],
+    visualizador: ['rubros','libro','curvaS','fiscalizacion','chat']
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
@@ -1268,7 +1268,8 @@ function aplicarAccesosPorRol(rol){
 
   // Redirigir al dashboard si están en una página no permitida
   if(!permitidos.includes(currentPage)){
-    navTo('dashboard', document.querySelector('.nav-item[onclick*="dashboard"]'));
+    const paginaInicio = rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : 'dashboard';
+    navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
 
