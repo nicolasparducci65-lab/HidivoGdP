@@ -171,6 +171,26 @@ select.form-control{appearance:none}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;background:#323338;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
+/* Modo visualizador */
+body.modo-visualizador .btn.primary{display:none!important}
+body.modo-visualizador .btn.danger{display:none!important}
+body.modo-visualizador input[type="file"]{display:none!important}
+body.modo-visualizador label.btn{display:none!important}
+body.modo-visualizador #btnAccionPrincipal{display:none!important}
+body.modo-visualizador button[onclick*="eliminar"]{display:none!important}
+body.modo-visualizador button[onclick*="editar"]{display:none!important}
+body.modo-visualizador button[onclick*="abrirModalLibro"]{display:none!important}
+body.modo-visualizador button[onclick*="abrirModalProyecto"]{display:none!important}
+body.modo-visualizador button[onclick*="abrirModalCronograma"]{display:none!important}
+body.modo-visualizador button[onclick*="subirPlano"]{display:none!important}
+body.modo-visualizador button[onclick*="activarPinModo"]{display:none!important}
+/* Excepciones: reporte y navegación sí se muestran */
+body.modo-visualizador button[onclick*="abrirModalReporte"]{display:flex!important}
+body.modo-visualizador button[onclick*="imprimirReporte"]{display:flex!important}
+body.modo-visualizador button[onclick*="verReportePantalla"]{display:flex!important}
+body.modo-visualizador button[onclick*="cerrarModal"]{display:flex!important}
+body.modo-visualizador button[onclick*="navTo"]{display:flex!important}
+body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 .toast.show{opacity:1}
 .toast.success{background:#00c875}
 .toast.error{background:#e2445c}
@@ -1339,6 +1359,30 @@ function mostrarApp(){
   }, 500);
 }
 
+function esVisualizador(){
+  return currentPerfil?.rol === 'visualizador';
+}
+
+function ocultarBotonesAccion(){
+  if(!esVisualizador()) return;
+  // Ocultar todos los botones primary y de edición/eliminación
+  document.querySelectorAll('.btn.primary, .btn.danger, [onclick*="abrirModal"], [onclick*="editar"], [onclick*="eliminar"], [onclick*="guardar"], [onclick*="subir"], [onclick*="nuevo"], [onclick*="crear"]').forEach(btn=>{
+    // Excepciones: botones de navegación y cierre de modal
+    if(btn.onclick?.toString().includes('navTo')) return;
+    if(btn.onclick?.toString().includes('cerrarModal')) return;
+    if(btn.onclick?.toString().includes('logout')) return;
+    if(btn.onclick?.toString().includes('imprimirReporte')) return;
+    if(btn.onclick?.toString().includes('verReporte')) return;
+    if(btn.onclick?.toString().includes('abrirModalReporte')) return;
+    btn.style.display='none';
+  });
+  // Ocultar inputs de archivo
+  document.querySelectorAll('input[type="file"], input[type="date"][onchange], label[style*="cursor:pointer"]').forEach(el=>{
+    if(el.closest('.modal')) return; // No tocar modales
+    el.style.display='none';
+  });
+}
+
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
@@ -1349,6 +1393,13 @@ function aplicarAccesosPorRol(rol){
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
+
+  // Aplicar modo visualizador
+  if(rol === 'visualizador'){
+    document.body.classList.add('modo-visualizador');
+  } else {
+    document.body.classList.remove('modo-visualizador');
+  }
 
   // Mapeo de página a nav-item
   const navItems = {
