@@ -1,0 +1,27 @@
+{
+  "name": "HIDIVO — Gestión de Obras Civiles",
+  "short_name": "HIDIVO",
+  "description": "Plataforma de gestión de proyectos de obras civiles",
+  "start_url": "/HidivoGdP/",
+  "scope": "/HidivoGdP/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#0073ea",
+  "icons": [
+    {
+      "src": "https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "es"
+}

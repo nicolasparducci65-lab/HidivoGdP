@@ -4,6 +4,16 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>HIDIVO — Gestión de Obras Civiles</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#0073ea"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="HIDIVO"/>
+<link rel="apple-touch-icon" href="https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="application-name" content="HIDIVO"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -1073,6 +1083,12 @@ select.form-control{appearance:none}
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
+
+<!-- BANNER PWA -->
+<div id="pwaBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;
+  background:#0073ea;color:#fff;padding:14px 16px;z-index:9999;
+  display:none;align-items:center;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.2)">
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -4192,6 +4208,78 @@ function toast(msg, tipo='info'){
   const el=document.getElementById('toast');
   el.textContent=msg; el.className='toast show '+(tipo==='success'?'success':tipo==='error'?'error':'');
   setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ── PWA: Registrar Service Worker ──
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('/HidivoGdP/service-worker.js')
+      .then(reg => console.log('SW registrado:', reg.scope))
+      .catch(err => console.log('SW error:', err));
+  });
+}
+
+// ── PWA: Banner de instalación ──
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  mostrarBannerInstalar('android');
+});
+
+function mostrarBannerInstalar(tipo){
+  // No mostrar si ya está instalada
+  if(window.matchMedia('(display-mode: standalone)').matches) return;
+  // No mostrar si ya fue descartada
+  if(localStorage.getItem('hidivo-pwa-dismissed')) return;
+
+  const banner = document.getElementById('pwaBanner');
+  if(!banner) return;
+
+  if(tipo === 'ios'){
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;flex:1">
+        <span style="font-size:24px">📱</span>
+        <div>
+          <div style="font-weight:600;font-size:13px">Instala HIDIVO en tu iPhone</div>
+          <div style="font-size:11px;opacity:.85;margin-top:2px">Toca <strong>⬆ Compartir</strong> → <strong>"Añadir a pantalla de inicio"</strong></div>
+        </div>
+      </div>
+      <button onclick="cerrarBannerPWA()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px">✕</button>`;
+  } else {
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;flex:1">
+        <span style="font-size:24px">📱</span>
+        <div>
+          <div style="font-weight:600;font-size:13px">Instala HIDIVO como app</div>
+          <div style="font-size:11px;opacity:.85;margin-top:2px">Acceso rápido desde tu pantalla de inicio</div>
+        </div>
+      </div>
+      <button onclick="instalarPWA()" style="background:#fff;color:#0073ea;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Instalar</button>
+      <button onclick="cerrarBannerPWA()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px">✕</button>`;
+  }
+  banner.style.display = 'flex';
+}
+
+async function instalarPWA(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if(outcome === 'accepted') cerrarBannerPWA();
+  deferredPrompt = null;
+}
+
+function cerrarBannerPWA(){
+  document.getElementById('pwaBanner').style.display = 'none';
+  localStorage.setItem('hidivo-pwa-dismissed', '1');
+}
+
+// Detectar iOS
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+if(isIOS && !isStandalone){
+  window.addEventListener('load', () => setTimeout(()=>mostrarBannerInstalar('ios'), 2000));
 }
 
 // ── INIT ──
