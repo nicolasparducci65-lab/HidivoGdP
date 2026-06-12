@@ -2811,6 +2811,8 @@ async function guardarRespuesta(){
   if(archivoInput) archivoInput.value='';
   document.getElementById('obsRespuestaArchivoPreview').innerHTML='';
   toast('Respuesta guardada ✓','success');
+  // Notificar al residente via DM
+  await notificarResidenteViaDM('observacion', `Respuesta en observación: ${window._obsActiva.titulo}`, texto||'');
   verObservacion(window._obsActiva.id);
   cargarObservaciones();
 }
@@ -2888,6 +2890,8 @@ async function guardarObservacionNueva(){
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalObsNueva');
   if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
+  // Notificar al residente via DM
+  await notificarResidenteViaDM('observacion', titulo, desc);
   cargarObservaciones();
 }
 
@@ -3385,6 +3389,50 @@ function previewSolArchivos(input){
   });
 }
 
+async function notificarResidenteViaDM(tipo, titulo, detalle){
+  if(!currentProyecto) return;
+
+  // Obtener miembros residentes del proyecto
+  const { data: miembros } = await sb.from('proyecto_miembros')
+    .select('usuario_id').eq('proyecto_id', currentProyecto).eq('rol','residente');
+  if(!miembros?.length) return;
+
+  for(const m of miembros){
+    const residenteId = m.usuario_id;
+    if(residenteId === currentUser?.id) continue; // No notificarse a sí mismo
+
+    // Buscar o crear DM global entre el autor y el residente
+    let { data: dms } = await sb.from('canales_chat').select('id').eq('tipo','dm')
+      .or(`and(dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${residenteId}),and(dm_user1_id.eq.${residenteId},dm_user2_id.eq.${currentUser.id})`);
+
+    let canalId;
+    if(dms?.length){
+      canalId = dms[0].id;
+    } else {
+      // Crear DM si no existe
+      const { data: nuevoDM } = await sb.from('canales_chat').insert({
+        nombre: `dm-${currentUser.id}-${residenteId}`,
+        tipo: 'dm',
+        dm_user1_id: currentUser.id,
+        dm_user2_id: residenteId
+      }).select().single();
+      canalId = nuevoDM?.id;
+    }
+
+    if(!canalId) continue;
+
+    // Enviar mensaje automático
+    const emoji = tipo==='observacion' ? '🔍' : '📋';
+    const mensaje = `${emoji} *${tipo==='observacion'?'Nueva observación':'Nueva solicitud'}*\n\n*${titulo}*\n${detalle||''}\n\n_Proyecto: ${proyectos.find(p=>p.id===currentProyecto)?.nombre||''}_`;
+
+    await sb.from('mensajes_chat').insert({
+      canal_id: canalId,
+      autor_id: currentUser?.id,
+      contenido: mensaje
+    });
+  }
+}
+
 // ── SOLICITUDES ──
 const TIPOS_SOLICITUD = {
   planilla:      { label:'Aprobación de Planillas',    emoji:'📄', color:'#0073ea' },
@@ -3523,6 +3571,8 @@ async function guardarNuevaSolicitud(){
   toast('Solicitud enviada ✓','success');
   btn.disabled=false; btn.textContent='Enviar solicitud';
   cerrarModal('modalNuevaSolicitud');
+  // Notificar al residente/fiscalizador via DM
+  await notificarResidenteViaDM('solicitud', titulo, desc);
   cargarSolicitudes();
 }
 
@@ -3614,6 +3664,9 @@ async function responderSolicitud(accion){
   await sb.from('solicitudes').update({estado:nuevoEstado, updated_at:new Date().toISOString()}).eq('id',window._solActiva.id);
 
   toast('Respuesta enviada ✓','success');
+  // Notificar via DM
+  const accionLabel = {aprobar:'aprobó ✅',rechazar:'rechazó ❌',correccion:'solicitó corrección 🔄',comentario:'comentó 💬'}[accion]||accion;
+  await notificarResidenteViaDM('solicitud', `${accionLabel}: ${window._solActiva.titulo}`, texto||'');
   cerrarModal('modalVerSolicitud');
   cargarSolicitudes();
 }
