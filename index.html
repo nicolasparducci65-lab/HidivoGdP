@@ -390,7 +390,32 @@ select.form-control{appearance:none}
                 </button>
               </div>
             </div>
-            <div id="chatMensajes" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:4px"></div>
+            <!-- Área de mensajes + panel hilo lado a lado -->
+            <div style="flex:1;display:flex;overflow:hidden">
+              <!-- Mensajes principales -->
+              <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+                <div id="chatMensajes" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:4px"></div>
+              </div>
+              <!-- Panel lateral de hilo -->
+              <div id="panelHilo" style="width:0;border-left:0px solid #e6e9ef;display:flex;flex-direction:column;overflow:hidden;transition:width .2s,border .2s;background:#fafbfc">
+                <div style="padding:12px 16px;border-bottom:1px solid #e6e9ef;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+                  <div style="font-weight:700;font-size:14px;color:#323338">↩ Hilo</div>
+                  <button onclick="cerrarPanelHilo()" style="background:none;border:none;cursor:pointer;color:#676879;font-size:18px;line-height:1" title="Cerrar hilo">✕</button>
+                </div>
+                <div id="hiloMensajes" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:4px"></div>
+                <div style="padding:10px 12px;border-top:1px solid #e6e9ef;flex-shrink:0">
+                  <div style="display:flex;gap:8px;align-items:flex-end">
+                    <textarea id="hiloInputText" placeholder="Responder en hilo..." rows="1"
+                      style="flex:1;border:1px solid #e6e9ef;border-radius:10px;padding:8px 12px;outline:none;resize:none;font-size:13px;font-family:inherit;max-height:100px"
+                      oninput="autoResizeTextarea(this)"
+                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarMensajeHilo()}"></textarea>
+                    <button onclick="enviarMensajeHilo()" class="btn primary" style="padding:8px 12px;border-radius:10px;flex-shrink:0">
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <!-- Input -->
             <div id="chatInput" style="padding:12px 16px;border-top:1px solid #e6e9ef;flex-shrink:0;display:none">
               <!-- Hilo activo -->
@@ -2649,9 +2674,7 @@ async function adjuntarArchivoChat(input){
 
 function responderHilo(msgId){
   chatHiloActivo = msgId;
-  const hiloEl = document.getElementById('hiloActivo');
-  hiloEl.style.display='flex';
-  document.getElementById('chatInputText').focus();
+  abrirPanelHilo(msgId);
 }
 
 function cerrarHilo(){
@@ -2661,10 +2684,90 @@ function cerrarHilo(){
 
 async function abrirHilo(msgId, count){
   chatHiloActivo = msgId;
-  document.getElementById('chatCanalDesc').textContent = `Hilo — ${count} respuesta${count>1?'s':''}`;
-  await cargarMensajes(chatCanalActivo.id, msgId);
-  const hiloEl = document.getElementById('hiloActivo');
-  hiloEl.style.display='flex';
+  abrirPanelHilo(msgId);
+}
+
+async function abrirPanelHilo(msgId){
+  chatHiloActivo = msgId;
+  const panel = document.getElementById('panelHilo');
+  panel.style.width = '320px';
+  panel.style.borderLeft = '1px solid #e6e9ef';
+  await cargarMensajesHilo(msgId);
+  document.getElementById('hiloInputText').focus();
+}
+
+function cerrarPanelHilo(){
+  chatHiloActivo = null;
+  const panel = document.getElementById('panelHilo');
+  panel.style.width = '0';
+  panel.style.borderLeft = '0px solid #e6e9ef';
+  document.getElementById('hiloMensajes').innerHTML = '';
+}
+
+async function cargarMensajesHilo(msgId){
+  // Cargar mensaje original
+  const { data: original } = await sb.from('mensajes_chat')
+    .select('*,autor:perfiles(nombre,apellido)').eq('id', msgId).single();
+  // Cargar respuestas del hilo
+  const { data: respuestas } = await sb.from('mensajes_chat')
+    .select('*,autor:perfiles(nombre,apellido)')
+    .eq('hilo_id', msgId).order('created_at');
+
+  const el = document.getElementById('hiloMensajes');
+  let html = '';
+
+  // Mensaje original destacado
+  if(original){
+    const autorNombre = original.autor ? `${original.autor.nombre} ${original.autor.apellido}` : 'Usuario';
+    const timeStr = new Date(original.created_at).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+    html += `
+    <div style="background:#f0f7ff;border-radius:10px;padding:10px 12px;margin-bottom:12px;border-left:3px solid #0073ea">
+      <div style="font-size:11px;font-weight:600;color:#0073ea;margin-bottom:4px">${autorNombre} · ${timeStr}</div>
+      <div style="font-size:13px;color:#323338;line-height:1.5">${original.contenido?escapeHtml(original.contenido):''}</div>
+    </div>
+    <div style="font-size:11px;color:#676879;margin-bottom:8px;text-align:center">${(respuestas||[]).length} respuesta${(respuestas||[]).length!==1?'s':''}</div>`;
+  }
+
+  // Respuestas
+  (respuestas||[]).forEach(m=>{
+    const esMio = m.autor_id === currentUser?.id;
+    const autorNombre = m.autor ? `${m.autor.nombre} ${m.autor.apellido}` : 'Usuario';
+    const timeStr = new Date(m.created_at).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+    html += `
+    <div style="display:flex;gap:8px;padding:3px 0;${esMio?'flex-direction:row-reverse':''}">
+      <div style="width:28px;height:28px;border-radius:50%;background:${esMio?'#0073ea':'#e6e9ef'};color:${esMio?'#fff':'#323338'};
+        display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0">
+        ${autorNombre[0].toUpperCase()}</div>
+      <div style="max-width:80%">
+        <div style="font-size:10px;color:#676879;margin-bottom:2px;${esMio?'text-align:right':''}">${esMio?'Tú':autorNombre} · ${timeStr}</div>
+        <div style="background:${esMio?'#0073ea':'#f0f0f0'};color:${esMio?'#fff':'#323338'};
+          padding:7px 10px;border-radius:${esMio?'10px 10px 3px 10px':'10px 10px 10px 3px'};
+          font-size:13px;line-height:1.4;word-break:break-word">
+          ${m.archivo_url?`<a href="${m.archivo_url}" target="_blank" style="color:${esMio?'#cce4ff':'#0073ea'}">📎 ${m.archivo_nombre||'Archivo'}</a><br>`:''}
+          ${m.contenido?escapeHtml(m.contenido):''}
+        </div>
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function enviarMensajeHilo(){
+  const texto = document.getElementById('hiloInputText').value.trim();
+  if(!texto||!chatCanalActivo||!chatHiloActivo) return;
+  document.getElementById('hiloInputText').value='';
+  document.getElementById('hiloInputText').style.height='auto';
+  await sb.from('mensajes_chat').insert({
+    canal_id: chatCanalActivo.id,
+    autor_id: currentUser?.id,
+    contenido: texto,
+    hilo_id: chatHiloActivo
+  });
+  await sb.rpc('incrementar_hilo', {msg_id: chatHiloActivo});
+  cargarMensajesHilo(chatHiloActivo);
+  cargarMensajes(chatCanalActivo.id);
 }
 
 async function eliminarMensaje(id){
@@ -2676,7 +2779,12 @@ function suscribirseAlCanal(canalId){
   if(chatSuscripcion) sb.removeChannel(chatSuscripcion);
   chatSuscripcion = sb.channel('chat-'+canalId)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'mensajes_chat',filter:`canal_id=eq.${canalId}`},
-      payload=>{ cargarMensajes(canalId, chatHiloActivo); })
+      payload=>{
+        cargarMensajes(canalId);
+        if(chatHiloActivo && payload.new?.hilo_id===chatHiloActivo){
+          cargarMensajesHilo(chatHiloActivo);
+        }
+      })
     .subscribe();
 }
 
