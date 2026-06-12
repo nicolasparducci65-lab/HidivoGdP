@@ -2205,26 +2205,28 @@ function verPlano(id, url, nombre, tipo){
   const visor = document.getElementById('planoVisor');
   if(!visor) return;
 
-  if(tipo.includes('pdf')){
-    // PDF: iframe con overlay encima
+  if(tipo.includes('pdf') || nombre.toLowerCase().endsWith('.pdf')){
     visor.innerHTML = `
-      <div style="position:relative;width:100%;height:600px;overflow:auto" id="imgVisorContainer">
-        <div style="position:relative;width:100%;min-height:600px">
-          <iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px" id="planoIframe"></iframe>
+      <div style="width:100%;height:600px;overflow-y:auto;overflow-x:hidden;border-radius:12px;background:#525659" id="pdfScrollContainer">
+        <div style="position:relative;display:inline-block;width:100%" id="pdfCanvasWrapper">
+          <canvas id="pdfCanvas" style="display:block;width:100%;height:auto"></canvas>
           <div id="pinsOverlay" onclick="pinModo&&colocarPin(event,this)"
             style="position:absolute;top:0;left:0;width:100%;height:100%;
             cursor:${pinModo?'crosshair':'default'};
             pointer-events:${pinModo?'all':'none'};z-index:5"></div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:8px;background:#3d3d3d;position:sticky;bottom:0">
+          <button onclick="cambiarPaginaPDF(-1)" class="btn" style="padding:4px 12px;color:#fff;background:#555;border:none">◀</button>
+          <span id="pdfPageInfo" style="color:#fff;font-size:12px">Cargando...</span>
+          <button onclick="cambiarPaginaPDF(1)" class="btn" style="padding:4px 12px;color:#fff;background:#555;border:none">▶</button>
+        </div>
       </div>`;
+    renderizarPDF(url, 1);
   } else {
-    // Imagen: el overlay está DENTRO del mismo div scrolleable, sobre la imagen
     visor.innerHTML = `
       <div style="width:100%;height:600px;overflow:auto;border-radius:12px;background:#f5f6f8" id="imgVisorContainer">
         <div style="position:relative;display:inline-block;min-width:100%">
-          <img src="${url}" id="planoImg"
-            style="display:block;width:100%;height:auto;border-radius:12px"
-            onload="ajustarOverlayAlPlano()"/>
+          <img src="${url}" id="planoImg" style="display:block;width:100%;height:auto;border-radius:12px"/>
           <div id="pinsOverlay" onclick="pinModo&&colocarPin(event,this)"
             style="position:absolute;top:0;left:0;width:100%;height:100%;
             cursor:${pinModo?'crosshair':'default'};
@@ -2233,6 +2235,56 @@ function verPlano(id, url, nombre, tipo){
       </div>`;
   }
   cargarPinsPlano(id);
+}
+
+let pdfDoc = null;
+let pdfPaginaActual = 1;
+
+async function renderizarPDF(url, pagina){
+  if(typeof pdfjsLib === 'undefined'){
+    await new Promise(resolve=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
+    });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  try {
+    if(!pdfDoc || pdfDoc._url !== url){
+      pdfDoc = await pdfjsLib.getDocument(url).promise;
+      pdfDoc._url = url;
+      pdfPaginaActual = 1;
+    }
+    const page = await pdfDoc.getPage(pagina);
+    const canvas = document.getElementById('pdfCanvas');
+    if(!canvas) return;
+    const container = document.getElementById('pdfScrollContainer');
+    const containerWidth = (container?.clientWidth || 800) - 4;
+    const viewport = page.getViewport({scale:1});
+    const scale = containerWidth / viewport.width;
+    const scaledViewport = page.getViewport({scale});
+    canvas.width = scaledViewport.width;
+    canvas.height = scaledViewport.height;
+    const wrapper = document.getElementById('pdfCanvasWrapper');
+    if(wrapper) wrapper.style.height = scaledViewport.height + 'px';
+    await page.render({canvasContext: canvas.getContext('2d'), viewport: scaledViewport}).promise;
+    const pageInfo = document.getElementById('pdfPageInfo');
+    if(pageInfo) pageInfo.textContent = `Página ${pagina} de ${pdfDoc.numPages}`;
+    if(planoActivo) cargarPinsPlano(planoActivo.id);
+  } catch(e){
+    console.error('Error PDF.js:', e);
+    const visor = document.getElementById('planoVisor');
+    if(visor) visor.innerHTML = `<iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px"></iframe>`;
+  }
+}
+
+function cambiarPaginaPDF(delta){
+  if(!pdfDoc) return;
+  const nueva = pdfPaginaActual + delta;
+  if(nueva < 1 || nueva > pdfDoc.numPages) return;
+  pdfPaginaActual = nueva;
+  renderizarPDF(planoActivo.url, nueva);
 }
 
 function ajustarOverlayAlPlano(){
