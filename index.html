@@ -184,10 +184,7 @@ body.modo-visualizador button[onclick*="abrirModalProyecto"]{display:none!import
 body.modo-visualizador button[onclick*="abrirModalCronograma"]{display:none!important}
 body.modo-visualizador button[onclick*="subirPlano"]{display:none!important}
 body.modo-visualizador button[onclick*="activarPinModo"]{display:none!important}
-/* Excepciones: reporte y navegación sí se muestran */
-body.modo-visualizador button[onclick*="abrirModalReporte"]{display:flex!important}
-body.modo-visualizador button[onclick*="imprimirReporte"]{display:flex!important}
-body.modo-visualizador button[onclick*="verReportePantalla"]{display:flex!important}
+/* Excepciones: navegación y logout sí se muestran */
 body.modo-visualizador button[onclick*="cerrarModal"]{display:flex!important}
 body.modo-visualizador button[onclick*="navTo"]{display:flex!important}
 body.modo-visualizador button[onclick*="logout"]{display:flex!important}
@@ -1389,7 +1386,7 @@ function aplicarAccesosPorRol(rol){
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat'],
     residente:    ['fiscalizacion','solicitudes','chat'],
-    visualizador: ['rubros','libro','curvaS','fiscalizacion','solicitudes','chat']
+    visualizador: ['rubros','curvaS','chat']
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
