@@ -2402,7 +2402,7 @@ async function verObservacion(id){
       <div style="font-size:11px;color:#676879;margin-bottom:4px">${new Date(r.created_at).toLocaleDateString('es-EC')}</div>
       ${r.texto?`<div style="font-size:13px;color:#323338;margin-bottom:${r.archivo_url?'8px':'0'}">${r.texto}</div>`:''}
       ${r.archivo_url?(r.archivo_nombre?.match(/\.(jpg|jpeg|png|gif|webp)$/i)?`<a href="${r.archivo_url}" target="_blank"><img src="${r.archivo_url}" style="max-width:200px;max-height:150px;object-fit:cover;border-radius:6px"/></a>`:`<a href="${r.archivo_url}" target="_blank" style="font-size:12px;color:#0073ea">📎 ${r.archivo_nombre||'Archivo'}</a>`):''}
-    </div>`).join('')' || '<div style="color:#676879;font-size:13px">Sin respuestas aún</div>';
+    </div>`).join('') || '<div style="color:#676879;font-size:13px">Sin respuestas aún</div>';
   document.getElementById('modalObsDetalle').classList.add('show');
 }
 
