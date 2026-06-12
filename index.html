@@ -337,6 +337,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div class="nav-item" onclick="navTo('chat',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Chat
+        <span id="chatBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
       <div class="nav-item" id="navUsuarios" style="display:none" onclick="navTo('usuarios',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -1445,6 +1446,11 @@ function mostrarApp(){
   setTimeout(()=>{
     const rol = currentPerfil?.rol;
     aplicarAccesosPorRol(rol);
+    // Iniciar badge y suscripción global de chat
+    actualizarBadgeChat();
+    suscribirseGlobalChat();
+    // Actualizar badge cada 30 segundos
+    setInterval(actualizarBadgeChat, 30000);
   }, 500);
 }
 
@@ -1559,7 +1565,12 @@ function navTo(page, btn){
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
-  if(page==='chat') { cargarChat(); setTimeout(cargarDMsChat, 300); }
+  if(page==='chat') { 
+    cargarChat(); 
+    setTimeout(cargarDMsChat, 300);
+    // Limpiar badge visualmente al entrar al chat
+    document.getElementById('chatBadge').style.display='none';
+  }
   if(page==='usuarios') cargarUsuarios();
 }
 
@@ -3114,6 +3125,61 @@ async function guardarObservacionNueva(){
 }
 
 
+// ── MENSAJES NO LEÍDOS ──
+async function actualizarBadgeChat(){
+  if(!currentUser) return;
+  try {
+    // Obtener todos los DMs y canales del usuario
+    const { data: dms } = await sb.from('canales_chat').select('id')
+      .eq('tipo','dm')
+      .or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
+
+    const { data: canales } = await sb.from('canales_chat').select('id')
+      .eq('tipo','canal').eq('proyecto_id', currentProyecto||'00000000-0000-0000-0000-000000000000');
+
+    const todosCanales = [...(dms||[]), ...(canales||[])].map(c=>c.id);
+    if(!todosCanales.length) return;
+
+    // Obtener últimos leídos por canal
+    const { data: leidos } = await sb.from('mensajes_leidos').select('canal_id,ultimo_leido_at')
+      .eq('usuario_id', currentUser.id);
+    const leidosMap = {};
+    (leidos||[]).forEach(l => leidosMap[l.canal_id] = l.ultimo_leido_at);
+
+    // Contar mensajes no leídos
+    let totalNoLeidos = 0;
+    for(const canalId of todosCanales){
+      const ultimoLeido = leidosMap[canalId] || '2000-01-01';
+      const { count } = await sb.from('mensajes_chat')
+        .select('id', {count:'exact', head:true})
+        .eq('canal_id', canalId)
+        .is('hilo_id', null)
+        .neq('autor_id', currentUser.id)
+        .gt('created_at', ultimoLeido);
+      totalNoLeidos += count||0;
+    }
+
+    const badge = document.getElementById('chatBadge');
+    if(!badge) return;
+    if(totalNoLeidos > 0){
+      badge.style.display='inline';
+      badge.textContent = totalNoLeidos > 99 ? '99+' : totalNoLeidos;
+    } else {
+      badge.style.display='none';
+    }
+  } catch(e){ console.log('Badge error:', e); }
+}
+
+async function marcarCanalLeido(canalId){
+  if(!currentUser||!canalId) return;
+  await sb.from('mensajes_leidos').upsert({
+    usuario_id: currentUser.id,
+    canal_id: canalId,
+    ultimo_leido_at: new Date().toISOString()
+  }, {onConflict:'usuario_id,canal_id'});
+  actualizarBadgeChat();
+}
+
 // ── CHAT ──
 let chatCanalActivo = null; // {id, nombre, tipo, dm_usuario_id}
 let chatSuscripcion = null;
@@ -3222,6 +3288,7 @@ async function abrirCanal(id, nombre, tipo, dmUsuarioId, descripcion){
 
   await cargarMensajes(id);
   suscribirseAlCanal(id);
+  marcarCanalLeido(id);
 }
 
 async function eliminarCanalActivo(){
@@ -3515,6 +3582,21 @@ function suscribirseAlCanal(canalId){
         if(chatHiloActivo && payload.new?.hilo_id===chatHiloActivo){
           cargarMensajesHilo(chatHiloActivo);
         }
+        // Marcar como leído si el canal está abierto
+        if(chatCanalActivo?.id===canalId) marcarCanalLeido(canalId);
+        else actualizarBadgeChat();
+      })
+    .subscribe();
+}
+
+// Suscripción global para DMs (detectar mensajes en canales no abiertos)
+let suscripcionGlobalChat = null;
+function suscribirseGlobalChat(){
+  if(suscripcionGlobalChat) sb.removeChannel(suscripcionGlobalChat);
+  suscripcionGlobalChat = sb.channel('chat-global')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'mensajes_chat'},
+      payload=>{ 
+        if(payload.new?.autor_id !== currentUser?.id) actualizarBadgeChat();
       })
     .subscribe();
 }
