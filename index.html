@@ -1677,24 +1677,28 @@ async function importarCronograma(input){
 }
 
 async function parsearExcelCronograma(file){
-  // Leer como texto CSV-like usando FileReader y parseo manual básico
-  // Usamos SheetJS si está disponible, sino aviso
   if(typeof XLSX==='undefined'){
-    toast('Carga el archivo en el modal de cronograma manualmente','error');
+    toast('Librería Excel no disponible','error');
     return;
   }
   const data = await file.arrayBuffer();
-  const wb = XLSX.read(data);
+  const wb = XLSX.read(data, {type:'array', cellDates:false});
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws);
+  const rows = XLSX.utils.sheet_to_json(ws, {raw:true});
   let importados=0;
   rows.forEach(row=>{
     const desc=(row['Descripcion']||row['descripcion']||row['DESCRIPCION']||'').toString().trim();
-    const match = cronogramaData.find(r=>r.descripcion.toLowerCase().includes(desc.toLowerCase().substring(0,15)));
+    if(!desc) return;
+    const match = cronogramaData.find(r=>
+      r.descripcion.toLowerCase().substring(0,20) === desc.toLowerCase().substring(0,20)
+    );
     if(match){
-      if(row['FechaInicio']||row['fecha_inicio']) match.fecha_inicio=excelFechaToISO(row['FechaInicio']||row['fecha_inicio']);
-      if(row['FechaFin']||row['fecha_fin']) match.fecha_fin=excelFechaToISO(row['FechaFin']||row['fecha_fin']);
-      if(row['Peso']||row['peso']) match.peso=parseFloat(row['Peso']||row['peso'])||null;
+      const fi = row['FechaInicio']||row['fecha_inicio']||row['Fecha Inicio']||null;
+      const ff = row['FechaFin']||row['fecha_fin']||row['Fecha Fin']||null;
+      const p  = row['Peso']||row['peso']||null;
+      if(fi) match.fecha_inicio = excelFechaToISO(fi);
+      if(ff) match.fecha_fin    = excelFechaToISO(ff);
+      if(p)  match.peso         = parseFloat(p)||null;
       importados++;
     }
   });
@@ -1704,8 +1708,12 @@ async function parsearExcelCronograma(file){
 
 function excelFechaToISO(val){
   if(!val) return null;
-  if(typeof val==='number'){ const d=new Date((val-25569)*86400000); return d.toISOString().split('T')[0]; }
-  const d=new Date(val);
+  if(typeof val==='number'){
+    // Excel serial date: días desde 1900-01-01 (con bug del año bisiesto 1900)
+    const d = new Date((val - 25569) * 86400000);
+    return d.toISOString().split('T')[0];
+  }
+  const d = new Date(val);
   if(!isNaN(d)) return d.toISOString().split('T')[0];
   return null;
 }
