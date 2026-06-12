@@ -658,15 +658,33 @@ select.form-control{appearance:none}
 
 <!-- MODAL REPORTE LIBRO DE OBRA -->
 <div class="modal-overlay" id="modalReporte">
-  <div class="modal" style="width:480px;max-width:98vw">
+  <div class="modal" style="width:540px;max-width:98vw;max-height:92vh">
     <div class="modal-header">
-      <div class="modal-title">📄 Reporte Consolidado — Libro de Obra</div>
+      <div class="modal-title">📄 Generar Reporte</div>
       <button class="btn" onclick="cerrarModal('modalReporte')" style="padding:6px 10px">✕</button>
     </div>
-    <div class="modal-body">
-      <div style="background:#f0f7ff;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#0060c0">
-        Genera un reporte PDF con todos los registros del período seleccionado.
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <!-- Tipo de reporte -->
+      <div class="form-group">
+        <label class="form-label">Tipo de reporte</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+          <label id="tipoClienteBtn" onclick="seleccionarTipoReporte('cliente')"
+            style="border:2px solid #0073ea;border-radius:10px;padding:12px;cursor:pointer;background:#f0f7ff;text-align:center">
+            <div style="font-size:20px">👤</div>
+            <div style="font-weight:600;font-size:13px;color:#0073ea">Para el cliente</div>
+            <div style="font-size:11px;color:#676879;margin-top:3px">Avance, fotos, rubros, curva S</div>
+          </label>
+          <label id="tipoGerenteBtn" onclick="seleccionarTipoReporte('gerente')"
+            style="border:2px solid #e6e9ef;border-radius:10px;padding:12px;cursor:pointer;background:#fff;text-align:center">
+            <div style="font-size:20px">📊</div>
+            <div style="font-weight:600;font-size:13px;color:#323338">Para el gerente</div>
+            <div style="font-size:11px;color:#676879;margin-top:3px">Libro de obra, fiscalización, indicadores</div>
+          </label>
+        </div>
+        <input type="hidden" id="reporteTipo" value="cliente"/>
       </div>
+
+      <!-- Período -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
         <div class="form-group" style="margin:0">
           <label class="form-label">Fecha inicio</label>
@@ -677,6 +695,8 @@ select.form-control{appearance:none}
           <input type="date" class="form-control" id="reporteFechaFin"/>
         </div>
       </div>
+
+      <!-- Incluir -->
       <div class="form-group">
         <label class="form-label">Incluir en el reporte</label>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
@@ -698,7 +718,27 @@ select.form-control{appearance:none}
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="rptFotos" checked style="width:16px;height:16px;accent-color:#0073ea"/> Fotos de avance
           </label>
+          <label id="rptCurvaSLabel" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptCurvaS" checked style="width:16px;height:16px;accent-color:#0073ea"/> Curva S
+          </label>
+          <label id="rptFiscalizacionLabel" style="display:none;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptFiscalizacion" checked style="width:16px;height:16px;accent-color:#0073ea"/> Observaciones de fiscalización
+          </label>
         </div>
+      </div>
+
+      <!-- Novedades del período -->
+      <div class="form-group">
+        <label class="form-label">Novedades del período</label>
+        <textarea class="form-control" id="rptNovedadesPeriodo" rows="3"
+          placeholder="Describe las novedades relevantes del período reportado..."></textarea>
+      </div>
+
+      <!-- Actividades siguiente período -->
+      <div class="form-group">
+        <label class="form-label">Actividades planificadas para el siguiente período</label>
+        <textarea class="form-control" id="rptActividadesSiguiente" rows="3"
+          placeholder="Describe las actividades planificadas para el siguiente período..."></textarea>
       </div>
     </div>
     <div class="modal-footer">
@@ -3514,13 +3554,24 @@ function imprimirReporte(){
   setTimeout(()=>{ ventana.print(); }, 800);
 }
 
+function seleccionarTipoReporte(tipo){
+  document.getElementById('reporteTipo').value = tipo;
+  document.getElementById('tipoClienteBtn').style.borderColor = tipo==='cliente'?'#0073ea':'#e6e9ef';
+  document.getElementById('tipoClienteBtn').style.background = tipo==='cliente'?'#f0f7ff':'#fff';
+  document.getElementById('tipoGerenteBtn').style.borderColor = tipo==='gerente'?'#0073ea':'#e6e9ef';
+  document.getElementById('tipoGerenteBtn').style.background = tipo==='gerente'?'#f0f7ff':'#fff';
+  document.getElementById('rptFiscalizacionLabel').style.display = tipo==='gerente'?'flex':'none';
+}
+
 function abrirModalReporte(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
-  // Fechas por defecto: primer día del mes actual hasta hoy
   const hoy = new Date();
   const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
   document.getElementById('reporteFechaInicio').value = primerDia;
   document.getElementById('reporteFechaFin').value = hoy.toISOString().split('T')[0];
+  document.getElementById('rptNovedadesPeriodo').value = '';
+  document.getElementById('rptActividadesSiguiente').value = '';
+  seleccionarTipoReporte('cliente');
   document.getElementById('modalReporte').classList.add('show');
 }
 
@@ -3622,6 +3673,23 @@ async function generarReportePDF(){
   const fechaFinFmt = new Date(fechaFin+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
   const fechaGeneracion = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
+  const tipoReporte = document.getElementById('reporteTipo').value;
+  const novedadesPeriodo = document.getElementById('rptNovedadesPeriodo').value.trim();
+  const actividadesSiguiente = document.getElementById('rptActividadesSiguiente').value.trim();
+  const incCurvaS = document.getElementById('rptCurvaS').checked;
+  const incFiscalizacion = document.getElementById('rptFiscalizacion')?.checked && tipoReporte==='gerente';
+  const tituloReporte = tipoReporte==='gerente' ? 'Reporte de Gestión — Gerente de Proyecto' : 'Reporte de Avance — Cliente';
+
+  // Obtener observaciones de fiscalización si aplica
+  let observaciones = [];
+  if(incFiscalizacion){
+    const { data: obs } = await sb.from('observaciones')
+      .select('*').eq('proyecto_id', currentProyecto)
+      .gte('created_at', fechaInicio).lte('created_at', fechaFin+'T23:59:59')
+      .order('created_at');
+    observaciones = obs||[];
+  }
+
   // Generar HTML del reporte (formato A4)
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -3639,7 +3707,7 @@ async function generarReportePDF(){
   </div>
   <div class="header-info">
     <div class="title">Libro de Obra</div>
-    <div class="sub">Reporte Consolidado del Período</div>
+    <div class="sub">${tituloReporte}</div>
     <div class="date">Generado: ${fechaGeneracion}</div>
   </div>
 </div>
@@ -3736,6 +3804,39 @@ async function generarReportePDF(){
   <span class="footer-left">HIDIVO — Gestión de Obras Civiles · ${proy.nombre||'—'}</span>
   <span class="footer-right">Generado: ${fechaGeneracion}</span>
 </div>
+
+${novedadesPeriodo||actividadesSiguiente ? `
+<div class="section" style="page-break-before:always">
+  ${novedadesPeriodo ? `
+  <div class="section-title">Novedades del Período</div>
+  <div style="border:1px solid #e6e9ef;border-radius:8px;padding:14px;font-size:9px;line-height:1.7;color:#323338;min-height:80px;white-space:pre-wrap">${novedadesPeriodo}</div>` : ''}
+  ${actividadesSiguiente ? `
+  <div class="section-title" style="margin-top:20px">Actividades Planificadas — Siguiente Período</div>
+  <div style="border:1px solid #e6e9ef;border-radius:8px;padding:14px;font-size:9px;line-height:1.7;color:#323338;min-height:80px;white-space:pre-wrap">${actividadesSiguiente}</div>` : ''}
+</div>` : `
+<div class="section" style="page-break-before:always">
+  <div class="section-title">Novedades del Período</div>
+  <div style="border:1px dashed #c5c7d4;border-radius:8px;padding:14px;min-height:100px;background:#fafafa"></div>
+  <div class="section-title" style="margin-top:20px">Actividades Planificadas — Siguiente Período</div>
+  <div style="border:1px dashed #c5c7d4;border-radius:8px;padding:14px;min-height:100px;background:#fafafa"></div>
+</div>`}
+
+${incFiscalizacion && observaciones.length ? `
+<div class="section">
+  <div class="section-title">Observaciones de Fiscalización — ${observaciones.length} observacion(es)</div>
+  <table>
+    <thead><tr><th>#</th><th>Título</th><th>Estado</th><th>Fecha</th></tr></thead>
+    <tbody>
+      ${observaciones.map((o,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${o.titulo}</td>
+        <td style="font-weight:600;color:${o.estado==='resuelta'?'#00c875':o.estado==='en_proceso'?'#ff9f00':'#e2445c'}">${o.estado==='resuelta'?'✅ Resuelta':o.estado==='en_proceso'?'🟡 En proceso':'🔴 Abierta'}</td>
+        <td>${new Date(o.created_at).toLocaleDateString('es-EC')}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>` : ''}
+
 </body></html>`;
 
   // Mostrar vista previa editable
