@@ -665,6 +665,75 @@ select.form-control{appearance:none}
   </div>
 </div>
 
+<!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalObsNueva">
+  <div class="modal" style="width:560px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">🔍 Nueva observación</div>
+      <button class="btn" onclick="cerrarModal('modalObsNueva')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div class="form-group">
+        <label class="form-label">Título *</label>
+        <input type="text" class="form-control" id="obsNuevaTitulo" placeholder="Ej: Fisura en muro sector A"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <textarea class="form-control" id="obsNuevaDesc" rows="3" placeholder="Detalle de la observación..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fotos</label>
+        <input type="file" id="obsNuevaFotos" accept="image/*" multiple class="form-control"
+          onchange="previewObsFotos(this)"/>
+        <div id="obsNuevaFotosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+      </div>
+      <div id="obsNuevaPinInfo" style="font-size:12px;color:#676879;padding:8px;background:#f5f6f8;border-radius:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalObsNueva')">Cancelar</button>
+      <button id="btnGuardarObsNueva" class="btn primary" onclick="guardarObservacionNueva()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETALLE OBSERVACIÓN -->
+<div class="modal-overlay" id="modalObsDetalle">
+  <div class="modal" style="width:600px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title" id="obsDetalleId">Observación</div>
+      <button class="btn" onclick="cerrarModal('modalObsDetalle')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <label class="form-label" style="margin:0">Estado:</label>
+        <select id="obsDetalleEstado" class="form-control" style="width:160px">
+          <option value="abierta">🔴 Abierta</option>
+          <option value="en_proceso">🟡 En proceso</option>
+          <option value="resuelta">✅ Resuelta</option>
+        </select>
+      </div>
+      <div id="obsDetalleDesc" style="font-size:13px;color:#323338;margin-bottom:16px;line-height:1.6"></div>
+      <div id="obsDetalleFotos" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+      <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Respuestas</div>
+      <div id="obsDetalleRespuestas" style="margin-bottom:16px"></div>
+      <div class="form-group">
+        <label class="form-label">Agregar respuesta</label>
+        <textarea class="form-control" id="obsRespuestaTexto" rows="2" placeholder="Escribe una respuesta..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalObsDetalle')">Cerrar</button>
+      <button class="btn primary" onclick="guardarRespuesta()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Enviar respuesta
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1740,9 +1809,341 @@ function parseMSProjectXML(xml){
 }
 
 // ── FISCALIZACIÓN ──
+let fiscalTab = 'planos'; // 'planos' | 'observaciones'
+let planoActivo = null; // {id, nombre, url}
+let obsFiltrando = 'todas'; // 'todas' | 'abierta' | 'en_proceso' | 'resuelta'
+let pinModo = false; // modo para colocar pin en el plano
+
 async function cargarFiscalizacion(){
-  document.getElementById('fiscalizacionContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Fiscalización</div><div class="empty-sub">Módulo próximamente — inspecciones y planillas de pago</div></div>';
-  if(currentProyecto) cargarArchivos('fiscalizacion');
+  if(!currentProyecto){
+    document.getElementById('fiscalizacionContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  renderFiscalizacionShell();
+  if(fiscalTab==='planos') cargarPlanos();
+  else cargarObservaciones();
+  cargarArchivos('fiscalizacion');
+}
+
+function renderFiscalizacionShell(){
+  document.getElementById('fiscalizacionContent').innerHTML = `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="switchFiscalTab('planos')" id="btnTabPlanos" class="btn ${fiscalTab==='planos'?'primary':''}" style="padding:6px 16px;font-size:13px;border-radius:6px">📐 Planos</button>
+      <button onclick="switchFiscalTab('observaciones')" id="btnTabObs" class="btn ${fiscalTab==='observaciones'?'primary':''}" style="padding:6px 16px;font-size:13px;border-radius:6px">🔍 Observaciones</button>
+    </div>
+    ${fiscalTab==='planos'?`
+    <label class="btn" style="gap:6px;cursor:pointer">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Subir plano
+      <input type="file" accept=".pdf,.dwg,.png,.jpg" style="display:none" onchange="subirPlano(this)"/>
+    </label>`:`
+    <button onclick="abrirModalObservacion()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nueva observación
+    </button>
+    <div style="display:flex;gap:6px">
+      ${['todas','abierta','en_proceso','resuelta'].map(e=>`
+      <button onclick="filtrarObs('${e}')" class="btn ${obsFiltrando===e?'primary':''}" style="padding:5px 12px;font-size:12px">${estadoObsLabel(e)}</button>`).join('')}
+    </div>`}
+  </div>
+  <div id="fiscalBody"></div>`;
+}
+
+function switchFiscalTab(tab){
+  fiscalTab = tab;
+  renderFiscalizacionShell();
+  if(tab==='planos') cargarPlanos();
+  else cargarObservaciones();
+}
+
+function estadoObsLabel(e){
+  return {todas:'Todas',abierta:'🔴 Abierta',en_proceso:'🟡 En proceso',resuelta:'✅ Resuelta'}[e]||e;
+}
+
+function estadoObsColor(e){
+  return {abierta:'#e2445c',en_proceso:'#ff9f00',resuelta:'#00c875'}[e]||'#676879';
+}
+
+// ── PLANOS ──
+async function cargarPlanos(){
+  const { data: planos } = await sb.from('planos').select('*').eq('proyecto_id', currentProyecto).order('created_at');
+  const body = document.getElementById('fiscalBody');
+  if(!planos||!planos.length){
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">📐</div><div class="empty-title">Sin planos</div><div class="empty-sub">Sube el primer plano del proyecto</div></div>';
+    return;
+  }
+  body.innerHTML = `
+  <div style="display:grid;grid-template-columns:240px 1fr;gap:16px;min-height:500px">
+    <div>
+      <div style="font-size:11px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Planos (${planos.length})</div>
+      <div id="planoLista" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <div id="planoVisor" style="border:1px solid #e6e9ef;border-radius:12px;overflow:hidden;background:#f5f6f8;min-height:500px;position:relative;display:flex;align-items:center;justify-content:center">
+      <div style="color:#676879;font-size:13px">Selecciona un plano para verlo</div>
+    </div>
+  </div>`;
+
+  const lista = document.getElementById('planoLista');
+  lista.innerHTML = planos.map(p=>`
+    <div onclick="verPlano('${p.id}','${p.url}','${p.nombre.replace(/'/g,"\\'")}','${p.tipo||'pdf'}')"
+      style="padding:10px 12px;border-radius:8px;border:1px solid #e6e9ef;background:#fff;cursor:pointer;transition:all .15s"
+      onmouseover="this.style.borderColor='#0073ea'" onmouseout="this.style.borderColor='#e6e9ef'">
+      <div style="font-size:13px;font-weight:600;color:#323338;margin-bottom:2px">${iconoTipoPlano(p.tipo)} ${p.nombre}</div>
+      <div style="font-size:11px;color:#676879">${new Date(p.created_at).toLocaleDateString('es-EC')}</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button onclick="event.stopPropagation();activarPinModo('${p.id}')" class="btn" style="padding:3px 8px;font-size:11px">📍 Pin</button>
+        <button onclick="event.stopPropagation();eliminarPlano('${p.id}','${p.url}')" class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c">🗑</button>
+      </div>
+    </div>`).join('');
+}
+
+function iconoTipoPlano(tipo){
+  if(!tipo) return '📄';
+  if(tipo.includes('pdf')) return '📄';
+  if(tipo.includes('dwg')) return '📐';
+  return '🖼';
+}
+
+async function subirPlano(input){
+  const file = input.files[0];
+  if(!file) return;
+  const path = `planos/${currentProyecto}/${Date.now()}_${file.name}`;
+  const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert:true});
+  if(upErr){ toast('Error subiendo plano: '+upErr.message,'error'); return; }
+  const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+  const { error } = await sb.from('planos').insert({
+    proyecto_id: currentProyecto,
+    nombre: file.name,
+    url: urlData.publicUrl,
+    tipo: file.type,
+    subido_por: currentUser?.id||null
+  });
+  if(error){ toast('Error guardando plano: '+error.message,'error'); return; }
+  toast('Plano subido ✓','success');
+  input.value='';
+  cargarPlanos();
+}
+
+async function eliminarPlano(id, url){
+  if(!confirm('¿Eliminar este plano?')) return;
+  const path = url.split('/hidivo-archivos/')[1];
+  if(path) await sb.storage.from('hidivo-archivos').remove([path]);
+  await sb.from('planos').delete().eq('id', id);
+  toast('Plano eliminado','success');
+  cargarPlanos();
+}
+
+function verPlano(id, url, nombre, tipo){
+  planoActivo = {id, url, nombre, tipo};
+  const visor = document.getElementById('planoVisor');
+  if(!visor) return;
+  if(tipo.includes('pdf')){
+    visor.innerHTML = `
+      <div style="position:relative;width:100%;height:100%;min-height:500px">
+        <iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px"></iframe>
+        <div id="pinsOverlay" style="position:absolute;top:0;left:0;width:100%;height:600px;pointer-events:none"></div>
+      </div>`;
+  } else {
+    visor.innerHTML = `
+      <div style="position:relative;width:100%;height:100%;min-height:500px;cursor:${pinModo?'crosshair':'default'}" id="imgVisorContainer" onclick="pinModo&&colocarPin(event,this)">
+        <img src="${url}" style="width:100%;height:600px;object-fit:contain;border-radius:12px" id="planoImg"/>
+        <div id="pinsOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%"></div>
+      </div>`;
+  }
+  cargarPinsPlano(id);
+}
+
+async function cargarPinsPlano(planoId){
+  const { data: obs } = await sb.from('observaciones')
+    .select('*').eq('plano_id', planoId).not('pin_x','is',null);
+  const overlay = document.getElementById('pinsOverlay');
+  if(!overlay||!obs) return;
+  overlay.style.pointerEvents = 'none';
+  overlay.innerHTML = obs.map(o=>`
+    <div title="${o.titulo}" onclick="event.stopPropagation();verObservacion('${o.id}')"
+      style="position:absolute;left:${o.pin_x}%;top:${o.pin_y}%;transform:translate(-50%,-100%);
+      pointer-events:all;cursor:pointer;z-index:10">
+      <div style="background:${estadoObsColor(o.estado)};color:#fff;border-radius:50%;width:24px;height:24px;
+        display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+        box-shadow:0 2px 8px rgba(0,0,0,.3)">!</div>
+      <div style="width:2px;height:10px;background:${estadoObsColor(o.estado)};margin:0 auto"></div>
+    </div>`).join('');
+}
+
+function activarPinModo(planoId){
+  if(!planoActivo||planoActivo.id!==planoId){
+    toast('Primero selecciona el plano haciendo click en él','info');
+    return;
+  }
+  pinModo = true;
+  toast('Haz click en el plano para colocar el pin de la observación 📍','info');
+  const container = document.getElementById('imgVisorContainer');
+  if(container) container.style.cursor = 'crosshair';
+}
+
+function colocarPin(event, container){
+  const rect = container.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width * 100).toFixed(1);
+  const y = ((event.clientY - rect.top) / rect.height * 100).toFixed(1);
+  pinModo = false;
+  container.style.cursor = 'default';
+  abrirModalObservacion(planoActivo?.id, parseFloat(x), parseFloat(y));
+}
+
+// ── OBSERVACIONES ──
+async function cargarObservaciones(){
+  let q = sb.from('observaciones').select('*').eq('proyecto_id', currentProyecto).order('created_at', {ascending:false});
+  if(obsFiltrando!=='todas') q = q.eq('estado', obsFiltrando);
+  const { data: obs } = await q;
+  const body = document.getElementById('fiscalBody');
+  if(!obs||!obs.length){
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Sin observaciones</div><div class="empty-sub">Crea la primera observación del proyecto</div></div>';
+    return;
+  }
+  body.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">
+    ${obs.map(o=>`
+    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s"
+      onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'"
+      onclick="verObservacion('${o.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="background:${estadoObsColor(o.estado)}20;color:${estadoObsColor(o.estado)};
+              padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estadoObsLabel(o.estado)}</span>
+            <span style="font-size:11px;color:#676879">${new Date(o.created_at).toLocaleDateString('es-EC')}</span>
+            ${o.pin_x!==null?'<span style="font-size:11px;color:#0073ea">📍 Con pin</span>':''}
+          </div>
+          <div style="font-weight:600;color:#323338;margin-bottom:4px">${o.titulo}</div>
+          <div style="font-size:13px;color:#676879;line-height:1.5">${o.descripcion||''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();cambiarEstadoObs('${o.id}','${o.estado}')" class="btn" style="padding:5px 10px;font-size:12px">Estado</button>
+          <button onclick="event.stopPropagation();eliminarObservacion('${o.id}')" class="btn" style="padding:5px 10px;font-size:12px;color:#e2445c">🗑</button>
+        </div>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function filtrarObs(estado){
+  obsFiltrando = estado;
+  renderFiscalizacionShell();
+  cargarObservaciones();
+}
+
+async function verObservacion(id){
+  const { data: o } = await sb.from('observaciones').select('*').eq('id',id).single();
+  if(!o) return;
+  const { data: fotos } = await sb.from('observacion_fotos').select('*').eq('observacion_id',id);
+  const { data: resps } = await sb.from('observacion_respuestas').select('*').eq('observacion_id',id).order('created_at');
+  window._obsActiva = o;
+  document.getElementById('obsDetalleId').textContent = o.titulo;
+  document.getElementById('obsDetalleEstado').value = o.estado;
+  document.getElementById('obsDetalleDesc').textContent = o.descripcion||'';
+  document.getElementById('obsDetalleFotos').innerHTML = (fotos||[]).map(f=>`
+    <a href="${f.url}" target="_blank"><img src="${f.url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/></a>`).join('');
+  document.getElementById('obsDetalleRespuestas').innerHTML = (resps||[]).map(r=>`
+    <div style="background:#f5f6f8;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:11px;color:#676879;margin-bottom:4px">${new Date(r.created_at).toLocaleDateString('es-EC')}</div>
+      <div style="font-size:13px;color:#323338">${r.texto}</div>
+    </div>`).join('') || '<div style="color:#676879;font-size:13px">Sin respuestas aún</div>';
+  document.getElementById('modalObsDetalle').classList.add('show');
+}
+
+async function guardarRespuesta(){
+  const texto = document.getElementById('obsRespuestaTexto').value.trim();
+  if(!texto||!window._obsActiva) return;
+  await sb.from('observacion_respuestas').insert({
+    observacion_id: window._obsActiva.id,
+    texto,
+    autor_id: currentUser?.id||null
+  });
+  // Actualizar estado si cambió
+  const nuevoEstado = document.getElementById('obsDetalleEstado').value;
+  if(nuevoEstado !== window._obsActiva.estado){
+    await sb.from('observaciones').update({estado: nuevoEstado}).eq('id', window._obsActiva.id);
+  }
+  document.getElementById('obsRespuestaTexto').value='';
+  toast('Respuesta guardada ✓','success');
+  verObservacion(window._obsActiva.id);
+  cargarObservaciones();
+}
+
+async function cambiarEstadoObs(id, estadoActual){
+  const estados = ['abierta','en_proceso','resuelta'];
+  const idx = estados.indexOf(estadoActual);
+  const nuevo = estados[(idx+1)%3];
+  await sb.from('observaciones').update({estado:nuevo}).eq('id',id);
+  toast(`Estado → ${estadoObsLabel(nuevo)}`,'success');
+  cargarObservaciones();
+}
+
+async function eliminarObservacion(id){
+  if(!confirm('¿Eliminar esta observación?')) return;
+  await sb.from('observacion_fotos').delete().eq('observacion_id',id);
+  await sb.from('observacion_respuestas').delete().eq('observacion_id',id);
+  await sb.from('observaciones').delete().eq('id',id);
+  toast('Observación eliminada','success');
+  cargarObservaciones();
+}
+
+// ── MODAL NUEVA OBSERVACIÓN ──
+function abrirModalObservacion(planoId=null, pinX=null, pinY=null){
+  window._obsNuevaPlano = planoId;
+  window._obsNuevaPin = {x:pinX, y:pinY};
+  document.getElementById('obsNuevaTitulo').value='';
+  document.getElementById('obsNuevaDesc').value='';
+  document.getElementById('obsNuevaFotos').value='';
+  document.getElementById('obsNuevaFotosPreview').innerHTML='';
+  const pinInfo = document.getElementById('obsNuevaPinInfo');
+  pinInfo.textContent = pinX!==null ? `📍 Pin colocado en (${pinX}%, ${pinY}%)` : 'Sin pin — puedes colocarlo desde el visor de planos';
+  document.getElementById('modalObsNueva').classList.add('show');
+}
+
+async function guardarObservacionNueva(){
+  const titulo = document.getElementById('obsNuevaTitulo').value.trim();
+  if(!titulo){ toast('El título es obligatorio','error'); return; }
+  const desc = document.getElementById('obsNuevaDesc').value.trim();
+  const btn = document.getElementById('btnGuardarObsNueva');
+  btn.disabled=true; btn.textContent='Guardando...';
+  const { data: obs, error } = await sb.from('observaciones').insert({
+    proyecto_id: currentProyecto,
+    plano_id: window._obsNuevaPlano||null,
+    titulo,
+    descripcion: desc||null,
+    estado: 'abierta',
+    pin_x: window._obsNuevaPin?.x||null,
+    pin_y: window._obsNuevaPin?.y||null,
+    creado_por: currentUser?.id||null
+  }).select().single();
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  // Subir fotos
+  const files = document.getElementById('obsNuevaFotos').files;
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    const path=`observaciones/${obs.id}/${Date.now()}_${f.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path,f,{contentType:f.type,upsert:true});
+    if(!upErr){
+      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+      await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
+    }
+  }
+  toast('Observación creada ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalObsNueva');
+  if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
+  cargarObservaciones();
+}
+
+
+function previewObsFotos(input){
+  const preview = document.getElementById('obsNuevaFotosPreview');
+  preview.innerHTML='';
+  [...input.files].forEach(f=>{
+    const url=URL.createObjectURL(f);
+    preview.innerHTML+=`<img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+  });
 }
 
 // ── ARCHIVOS ──
