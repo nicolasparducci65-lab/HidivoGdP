@@ -1,0 +1,59 @@
+name: Enviar invitaciones pendientes
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Cada 5 minutos
+  workflow_dispatch:        # También manual
+
+jobs:
+  invitar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Procesar invitaciones pendientes
+        run: |
+          # Obtener invitaciones pendientes
+          INVITACIONES=$(curl -s \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://kpswaoqxaxvhrgxntkcq.supabase.co/rest/v1/invitaciones?estado=eq.pendiente&select=id,email,rol,token")
+
+          echo "Invitaciones: $INVITACIONES"
+
+          # Procesar cada invitación
+          echo $INVITACIONES | jq -c '.[]' | while read inv; do
+            EMAIL=$(echo $inv | jq -r '.email')
+            ID=$(echo $inv | jq -r '.id')
+            TOKEN=$(echo $inv | jq -r '.token')
+            ROL=$(echo $inv | jq -r '.rol')
+
+            echo "Invitando a: $EMAIL (rol: $ROL)"
+
+            # Enviar invitación via Supabase Auth Admin
+            RESULT=$(curl -s -w "\n%{http_code}" \
+              -X POST \
+              -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"email\": \"$EMAIL\", \"data\": {\"rol\": \"$ROL\"}, \"redirect_to\": \"https://nicolasparducci65-lab.github.io/HidivoGdP/\"}" \
+              "https://kpswaoqxaxvhrgxntkcq.supabase.co/auth/v1/invite")
+
+            HTTP_CODE=$(echo "$RESULT" | tail -n1)
+            BODY=$(echo "$RESULT" | head -n1)
+
+            echo "Respuesta ($HTTP_CODE): $BODY"
+
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+              # Marcar como enviada
+              curl -s \
+                -X PATCH \
+                -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{\"estado\": \"enviada\"}" \
+                "https://kpswaoqxaxvhrgxntkcq.supabase.co/rest/v1/invitaciones?id=eq.$ID"
+              echo "✅ Invitación enviada a $EMAIL"
+            else
+              echo "❌ Error enviando a $EMAIL: $BODY"
+            fi
+          done
