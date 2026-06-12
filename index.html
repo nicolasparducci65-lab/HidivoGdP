@@ -724,6 +724,9 @@ select.form-control{appearance:none}
           <label id="rptFiscalizacionLabel" style="display:none;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="rptFiscalizacion" checked style="width:16px;height:16px;accent-color:#0073ea"/> Observaciones de fiscalización
           </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptCuadroRubros" checked style="width:16px;height:16px;accent-color:#0073ea"/> Cuadro de rubros completo
+          </label>
         </div>
       </div>
 
@@ -3678,7 +3681,16 @@ async function generarReportePDF(){
   const actividadesSiguiente = document.getElementById('rptActividadesSiguiente').value.trim();
   const incCurvaS = document.getElementById('rptCurvaS').checked;
   const incFiscalizacion = document.getElementById('rptFiscalizacion')?.checked && tipoReporte==='gerente';
+  const incCuadroRubros = document.getElementById('rptCuadroRubros').checked;
   const tituloReporte = tipoReporte==='gerente' ? 'Reporte de Gestión — Gerente de Proyecto' : 'Reporte de Avance — Cliente';
+
+  // Obtener todos los rubros del proyecto
+  let todosRubros = [];
+  if(incCuadroRubros){
+    const { data: rubs } = await sb.from('rubros')
+      .select('*').eq('proyecto_id', currentProyecto).order('orden');
+    todosRubros = rubs||[];
+  }
 
   // Obtener observaciones de fiscalización si aplica
   let observaciones = [];
@@ -3804,6 +3816,52 @@ async function generarReportePDF(){
   <span class="footer-left">HIDIVO — Gestión de Obras Civiles · ${proy.nombre||'—'}</span>
   <span class="footer-right">Generado: ${fechaGeneracion}</span>
 </div>
+
+${incCuadroRubros && todosRubros.length ? `
+<div class="section" style="page-break-before:always">
+  <div class="section-title">Cuadro de Rubros — Proyecto Completo</div>
+  <table>
+    <thead><tr>
+      <th style="width:35px">Cód.</th>
+      <th>Descripción</th>
+      <th style="width:45px;text-align:center">Unidad</th>
+      <th style="width:65px;text-align:right">Cant. contrato</th>
+      <th style="width:70px;text-align:right">P. Unitario</th>
+      <th style="width:80px;text-align:right">Total contrato</th>
+      <th style="width:55px;text-align:right">Avance %</th>
+      <th style="width:80px;text-align:right">Producido $</th>
+    </tr></thead>
+    <tbody>
+      ${todosRubros.map(r=>{
+        const avance = r.monto_contrato>0 ? Math.min((r.total_produccion||0)/r.monto_contrato*100,100) : 0;
+        return `<tr>
+          <td style="font-size:8px">${r.codigo||'—'}</td>
+          <td style="font-size:8px">${r.descripcion}</td>
+          <td style="text-align:center">${r.unidad||'—'}</td>
+          <td style="text-align:right">${Number(r.cantidad||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+          <td style="text-align:right;font-weight:600">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+          <td style="text-align:right;font-weight:700;color:${avance>=100?'#00c875':avance>=50?'#ff9f00':'#e2445c'}">${avance.toFixed(1)}%</td>
+          <td style="text-align:right">$${Number(r.total_produccion||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:#1a1a2e">
+        <td colspan="5" style="text-align:right;font-weight:700;color:#fff;padding:6px 8px;font-size:9px">TOTALES</td>
+        <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:10px">
+          $${todosRubros.reduce((s,r)=>s+(r.monto_contrato||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
+        </td>
+        <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:10px">
+          ${(todosRubros.reduce((s,r)=>s+(r.monto_contrato>0?(r.total_produccion||0)/r.monto_contrato*100:0),0)/todosRubros.filter(r=>r.monto_contrato>0).length||0).toFixed(1)}%
+        </td>
+        <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:10px">
+          $${todosRubros.reduce((s,r)=>s+(r.total_produccion||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>` : ''}
 
 ${novedadesPeriodo||actividadesSiguiente ? `
 <div class="section" style="page-break-before:always">
