@@ -1269,7 +1269,7 @@ function navTo(page, btn){
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
-  if(page==='chat'&&currentProyecto) cargarChat();
+  if(page==='chat') cargarChat();
   if(page==='usuarios') cargarUsuarios();
 }
 
@@ -2750,12 +2750,15 @@ let chatHiloActivo = null; // mensaje_id del hilo activo
 let chatNotifCount = {};
 
 async function cargarChat(){
-  if(!currentProyecto){
-    document.getElementById('chatMensajes').innerHTML='<div style="text-align:center;color:#676879;font-size:13px;margin-top:40px">Selecciona un proyecto para usar el chat</div>';
-    return;
+  const proy = proyectos.find(p=>p.id===currentProyecto);
+  document.getElementById('chatProyectoNombre').textContent = proy?.nombre || '— Sin proyecto —';
+  // Cargar canales solo si hay proyecto
+  if(currentProyecto){
+    await cargarCanalesChat();
+  } else {
+    document.getElementById('chatCanales').innerHTML = '<div style="padding:6px 16px;font-size:12px;color:#ffffff40">Selecciona un proyecto para ver canales</div>';
   }
-  document.getElementById('chatProyectoNombre').textContent = proyectos.find(p=>p.id===currentProyecto)?.nombre||'Proyecto';
-  await cargarCanalesChat();
+  // DMs siempre, son globales
   await cargarDMsChat();
 }
 
