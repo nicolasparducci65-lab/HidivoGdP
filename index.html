@@ -1270,6 +1270,56 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL NUEVO/EDITAR RUBRO -->
+<div class="modal-overlay" id="modalNuevoRubro">
+  <div class="modal" style="width:500px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">➕ Nuevo rubro</div>
+      <button class="btn" onclick="cerrarModal('modalNuevoRubro')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rubroId"/>
+      <div class="form-group">
+        <label class="form-label">Descripción *</label>
+        <textarea class="form-control" id="rubroDescripcion" rows="2" placeholder="Descripción del rubro..."></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Código</label>
+          <input type="text" class="form-control" id="rubroCodigo" placeholder="Ej: 001"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Unidad *</label>
+          <input type="text" class="form-control" id="rubroUnidad" placeholder="Ej: m², ml, kg, GBL"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cantidad contrato *</label>
+          <input type="number" class="form-control" id="rubroCantidad" placeholder="0.00" step="0.01" min="0"
+            oninput="actualizarMontoRubro()"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Precio unitario *</label>
+          <div style="position:relative">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#676879">$</span>
+            <input type="number" class="form-control" id="rubroPrecio" placeholder="0.00" step="0.01" min="0" style="padding-left:22px"
+              oninput="actualizarMontoRubro()"/>
+          </div>
+        </div>
+      </div>
+      <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0" id="rubroMontoPreview">
+        Monto contrato: $0.00
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalNuevoRubro')">Cancelar</button>
+      <button id="btnGuardarRubro" class="btn primary" onclick="guardarRubro()">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL LINK FORMULARIO -->
 <div class="modal-overlay" id="modalLinkFormulario">
   <div class="modal" style="width:440px;max-width:98vw">
@@ -1515,7 +1565,7 @@ function navTo(page, btn){
 
 function accionPrincipal(){
   if(currentPage==='proyectos') abrirModalProyecto();
-  else if(currentPage==='rubros') toast('Próximamente: agregar rubro','info');
+  else if(currentPage==='rubros') abrirModalNuevoRubro();
   else if(currentPage==='libro') abrirModalLibro();
 }
 
@@ -1723,7 +1773,7 @@ function renderRubros(rubros){
     </div>
     <div class="card">
       <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
-      ${rubros.length ? `<table><thead><tr><th>Descripción</th><th>Unidad</th><th>Cantidad</th><th>P. Unitario</th><th>Contratado</th><th>Ejecutado</th><th>Total Prod.</th><th>% Rubro</th><th>Estado</th></tr></thead><tbody>
+      ${rubros.length ? `<table><thead><tr><th>Descripción</th><th>Unidad</th><th>Cantidad</th><th>P. Unitario</th><th>Contratado</th><th>Ejecutado</th><th>Total Prod.</th><th>% Rubro</th><th>Estado</th><th></th></tr></thead><tbody>
         ${rubros.map(r=>{
           const pct = r.cantidad_contrato>0 ? Math.min((r.cantidad_ejecutada||0)/r.cantidad_contrato*100,100) : 0;
           const color = pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
@@ -1744,9 +1794,76 @@ function renderRubros(rubros){
                 <option value="suspendido" ${r.estado==='suspendido'?'selected':''}>⏸️ Suspendido</option>
               </select>
             </td>
+            <td style="white-space:nowrap">
+              <button onclick="abrirModalNuevoRubro(${JSON.stringify(r).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 8px;font-size:11px" title="Editar">✏️</button>
+              <button onclick="eliminarRubro('${r.id}','${r.descripcion.substring(0,20).replace(/'/g,"\\'")}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>
+            </td>
           </tr>`;}).join('')}
-      </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega los rubros del contrato para este proyecto</div><button class="btn primary" onclick="toast('Próximamente','info')">Agregar rubro</button></div>`}
+      </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Usa el botón "Nuevo rubro" arriba para agregar</div></div>`}
     </div>`;
+}
+
+function actualizarMontoRubro(){
+  const cant = parseFloat(document.getElementById('rubroCantidad').value)||0;
+  const precio = parseFloat(document.getElementById('rubroPrecio').value)||0;
+  const monto = cant * precio;
+  document.getElementById('rubroMontoPreview').textContent = `Monto contrato: $${monto.toLocaleString('es-EC',{minimumFractionDigits:2})}`;
+}
+
+function abrirModalNuevoRubro(rubro=null){
+  document.getElementById('rubroId').value = rubro?.id||'';
+  document.getElementById('rubroDescripcion').value = rubro?.descripcion||'';
+  document.getElementById('rubroUnidad').value = rubro?.unidad||'';
+  document.getElementById('rubroCantidad').value = rubro?.cantidad_contrato||'';
+  document.getElementById('rubroPrecio').value = rubro?.precio_unitario||'';
+  document.getElementById('rubroCodigo').value = rubro?.codigo||'';
+  document.getElementById('modalNuevoRubro').querySelector('.modal-title').textContent = rubro ? '✏️ Editar rubro' : '➕ Nuevo rubro';
+  document.getElementById('modalNuevoRubro').classList.add('show');
+}
+
+async function guardarRubro(){
+  const id = document.getElementById('rubroId').value;
+  const descripcion = document.getElementById('rubroDescripcion').value.trim();
+  const unidad = document.getElementById('rubroUnidad').value.trim();
+  const cantidad = parseFloat(document.getElementById('rubroCantidad').value)||0;
+  const precio = parseFloat(document.getElementById('rubroPrecio').value)||0;
+  const codigo = document.getElementById('rubroCodigo').value.trim();
+  if(!descripcion){ toast('La descripción es obligatoria','error'); return; }
+
+  const btn = document.getElementById('btnGuardarRubro');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const payload = {
+    proyecto_id: currentProyecto,
+    descripcion, unidad,
+    cantidad_contrato: cantidad,
+    precio_unitario: precio,
+    monto_contrato: cantidad * precio,
+    codigo: codigo||null
+  };
+
+  let error;
+  if(id){
+    ({ error } = await sb.from('rubros').update(payload).eq('id',id));
+  } else {
+    // Calcular siguiente orden
+    const { data: ultimos } = await sb.from('rubros').select('orden').eq('proyecto_id',currentProyecto).order('orden',{ascending:false}).limit(1);
+    payload.orden = (ultimos?.[0]?.orden||0) + 1;
+    ({ error } = await sb.from('rubros').insert(payload));
+  }
+
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  toast(id ? 'Rubro actualizado ✓' : 'Rubro creado ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalNuevoRubro');
+  cargarRubros();
+}
+
+async function eliminarRubro(id, descripcion){
+  if(!confirm(`¿Eliminar el rubro "${descripcion}"?\n\nEsta acción no se puede deshacer.`)) return;
+  await sb.from('rubros').delete().eq('id',id);
+  toast('Rubro eliminado','success');
+  cargarRubros();
 }
 
 function mostrarLinkFormulario(){
@@ -1786,18 +1903,13 @@ function renderLibroObra(registros){
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
           Reporte PDF
         </button>
-        <button class="btn primary" onclick="abrirModalLibro()">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Nuevo registro
-        </button>
       </div>
     </div>`;
 
   if(!registros.length){
     document.getElementById('libroContent').innerHTML = header + `
       <div class="empty-state"><div class="empty-icon">📖</div><div class="empty-title">Sin registros</div>
-      <div class="empty-sub">Comienza a registrar el diario de obra</div>
-      <button class="btn primary" onclick="abrirModalLibro()">Nuevo registro</button></div></div>`;
+      <div class="empty-sub">Usa el botón "Nuevo registro" arriba para comenzar</div></div></div>`;
     return;
   }
 
