@@ -369,6 +369,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <option value="">Selecciona un proyecto...</option>
           </select>
         </div>
+        <button id="btnLinkFormulario" style="display:none" class="btn" onclick="mostrarLinkFormulario()" title="Link formulario público">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          Link formulario
+        </button>
         <button class="btn primary" id="btnAccionPrincipal" style="display:none" onclick="accionPrincipal()">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span id="btnAccionTexto">Nuevo</span>
@@ -1266,6 +1270,33 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL LINK FORMULARIO -->
+<div class="modal-overlay" id="modalLinkFormulario">
+  <div class="modal" style="width:440px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">🔗 Link formulario público</div>
+      <button class="btn" onclick="cerrarModal('modalLinkFormulario')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <div style="font-size:12px;color:#676879;margin-bottom:12px">Comparte este link con el residente para que registre las actividades diarias</div>
+      <img id="linkFormularioQR" src="" alt="QR" style="width:180px;height:180px;border-radius:12px;border:1px solid #e6e9ef;margin-bottom:16px"/>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="linkFormularioUrl" readonly class="form-control" style="font-size:11px;color:#676879"/>
+        <button onclick="copiarLinkFormulario()" class="btn primary" style="flex-shrink:0;gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copiar
+        </button>
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:#676879">
+        Escanea el QR con el celular para abrir directo 📱
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalLinkFormulario')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1464,6 +1495,8 @@ function navTo(page, btn){
   currentPage = page;
   const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
+  const btnLink = document.getElementById('btnLinkFormulario');
+  if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
@@ -1714,6 +1747,20 @@ function renderRubros(rubros){
           </tr>`;}).join('')}
       </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega los rubros del contrato para este proyecto</div><button class="btn primary" onclick="toast('Próximamente','info')">Agregar rubro</button></div>`}
     </div>`;
+}
+
+function mostrarLinkFormulario(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const url = `https://nicolasparducci65-lab.github.io/HidivoGdP/registro-obra.html?proyecto=${currentProyecto}`;
+  document.getElementById('linkFormularioUrl').value = url;
+  // QR usando API gratuita
+  document.getElementById('linkFormularioQR').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  document.getElementById('modalLinkFormulario').classList.add('show');
+}
+
+function copiarLinkFormulario(){
+  const url = document.getElementById('linkFormularioUrl').value;
+  navigator.clipboard.writeText(url).then(()=>toast('Link copiado al portapapeles ✓','success'));
 }
 
 // ── LIBRO DE OBRA ──
