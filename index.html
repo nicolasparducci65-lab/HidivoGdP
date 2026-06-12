@@ -2556,6 +2556,7 @@ async function guardarNuevoCanal(){
   cerrarModal('modalNuevoCanal');
   cargarCanalesChat();
 }
+async function abrirModalNuevoDM(){
   const { data: perfiles } = await sb.from('perfiles').select('id,nombre,apellido').neq('id', currentUser.id);
   if(!perfiles?.length){ toast('No hay otros usuarios disponibles','info'); return; }
   const opciones = perfiles.map((p,i)=>`${i+1}. ${p.nombre} ${p.apellido}`).join('\n');
