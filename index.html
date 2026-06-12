@@ -859,6 +859,27 @@ select.form-control{appearance:none}
   </div>
 </div>
 
+<!-- MODAL INVITAR A CANAL PRIVADO -->
+<div class="modal-overlay" id="modalInvitarCanal">
+  <div class="modal" style="width:380px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title" id="invitarCanalNombre">Canal privado</div>
+      <button class="btn" onclick="cerrarModal('modalInvitarCanal')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Email del usuario</label>
+        <input type="email" class="form-control" id="invitarCanalEmail" placeholder="usuario@empresa.com"/>
+        <div style="font-size:11px;color:#676879;margin-top:4px">El usuario debe estar registrado en la plataforma</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalInvitarCanal')">Cancelar</button>
+      <button class="btn primary" onclick="guardarInvitarCanal()">Agregar al canal</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL NUEVO CANAL -->
 <div class="modal-overlay" id="modalNuevoCanal">
   <div class="modal" style="width:380px;max-width:98vw">
@@ -875,6 +896,17 @@ select.form-control{appearance:none}
             onkeydown="if(event.key==='Enter') guardarNuevoCanal()"/>
         </div>
         <div style="font-size:11px;color:#676879;margin-top:4px">Sin espacios ni mayúsculas</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción (opcional)</label>
+        <input type="text" class="form-control" id="nuevoCanalDesc" placeholder="Ej: Seguimiento de excavación"/>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f5f6f8;border-radius:8px">
+        <input type="checkbox" id="nuevoCanalPrivado" style="width:16px;height:16px;cursor:pointer"/>
+        <div>
+          <div style="font-size:13px;font-weight:600">🔒 Canal privado</div>
+          <div style="font-size:11px;color:#676879">Solo visible para miembros invitados por el admin</div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -2349,28 +2381,41 @@ async function cargarCanalesChat(){
     .select('*').eq('proyecto_id', currentProyecto).eq('tipo','canal').order('nombre');
   const el = document.getElementById('chatCanales');
   if(!canales?.length){
-    // Crear canal #general solo una vez
     const { error } = await sb.from('canales_chat').insert({
       proyecto_id: currentProyecto,
       nombre:'general',
       tipo:'canal',
-      descripcion:'Canal general del proyecto'
+      descripcion:'Canal general del proyecto',
+      es_privado: false
     });
     if(!error) cargarCanalesChat();
     return;
   }
-  el.innerHTML = canales.map(c=>`
+
+  // Filtrar canales privados — solo mostrar si el usuario es miembro
+  const { data: miembros } = await sb.from('canal_miembros')
+    .select('canal_id').eq('usuario_id', currentUser.id);
+  const miembrosDe = new Set((miembros||[]).map(m=>m.canal_id));
+  const esAdmin = currentPerfil?.rol === 'admin';
+
+  const canalesFiltrados = canales.filter(c => !c.es_privado || esAdmin || miembrosDe.has(c.id));
+
+  el.innerHTML = canalesFiltrados.map(c=>`
     <div onclick="abrirCanal('${c.id}','${c.nombre}','canal',null,'${(c.descripcion||'').replace(/'/g,"\\'")}')"
       id="canal-${c.id}"
       style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;display:flex;align-items:center;justify-content:space-between;
       ${chatCanalActivo?.id===c.id?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
       onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${chatCanalActivo?.id===c.id?'#ffffff20':'transparent'}'">
-      <span style="font-size:13px"># ${c.nombre}</span>
-      <span id="notif-${c.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>
+      <span style="font-size:13px">${c.es_privado?'🔒':'#'} ${c.nombre}</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        ${esAdmin&&c.es_privado?`<button onclick="event.stopPropagation();abrirModalInvitarCanal('${c.id}','${c.nombre}')"
+          title="Invitar al canal" style="background:none;border:none;color:#ffffff60;cursor:pointer;font-size:12px">+👤</button>`:''}
+        <span id="notif-${c.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>
+      </div>
     </div>`).join('');
 
-  if(!chatCanalActivo && canales.length){
-    const general = canales.find(c=>c.nombre==='general')||canales[0];
+  if(!chatCanalActivo && canalesFiltrados.length){
+    const general = canalesFiltrados.find(c=>c.nombre==='general')||canalesFiltrados[0];
     abrirCanal(general.id, general.nombre, 'canal', null, general.descripcion||'');
   }
 }
@@ -2556,14 +2601,44 @@ function abrirModalNuevoCanal(){
 async function guardarNuevoCanal(){
   const nombre = document.getElementById('nuevoCanalnombre').value.trim();
   if(!nombre){ toast('Ingresa un nombre','error'); return; }
-  await sb.from('canales_chat').insert({
+  const desc = document.getElementById('nuevoCanalDesc').value.trim();
+  const privado = document.getElementById('nuevoCanalPrivado').checked;
+  const { data: canal, error } = await sb.from('canales_chat').insert({
     proyecto_id: currentProyecto,
     nombre: nombre.toLowerCase().replace(/\s+/g,'-'),
     tipo: 'canal',
-    descripcion: ''
-  });
+    descripcion: desc||null,
+    es_privado: privado
+  }).select().single();
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  // Si es privado, agregar al admin como miembro
+  if(privado && canal){
+    await sb.from('canal_miembros').insert({canal_id: canal.id, usuario_id: currentUser.id});
+  }
   toast('Canal creado ✓','success');
   cerrarModal('modalNuevoCanal');
+  cargarCanalesChat();
+}
+
+function abrirModalInvitarCanal(canalId, canalNombre){
+  window._invitarCanalId = canalId;
+  document.getElementById('invitarCanalNombre').textContent = '🔒 '+canalNombre;
+  document.getElementById('invitarCanalEmail').value='';
+  document.getElementById('modalInvitarCanal').classList.add('show');
+}
+
+async function guardarInvitarCanal(){
+  const email = document.getElementById('invitarCanalEmail').value.trim();
+  if(!email){ toast('Ingresa un email','error'); return; }
+  const { data: perfil } = await sb.from('perfiles').select('id,nombre').eq('email',email).single();
+  if(!perfil){ toast('Usuario no encontrado','error'); return; }
+  const { error } = await sb.from('canal_miembros').insert({
+    canal_id: window._invitarCanalId,
+    usuario_id: perfil.id
+  });
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(`${perfil.nombre} agregado al canal ✓`,'success');
+  cerrarModal('modalInvitarCanal');
   cargarCanalesChat();
 }
 async function abrirModalNuevoDM(){
