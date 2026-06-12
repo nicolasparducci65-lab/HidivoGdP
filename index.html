@@ -1269,7 +1269,7 @@ function navTo(page, btn){
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
-  if(page==='chat') cargarChat();
+  if(page==='chat') { cargarChat(); setTimeout(cargarDMsChat, 300); }
   if(page==='usuarios') cargarUsuarios();
 }
 
