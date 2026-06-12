@@ -1684,24 +1684,16 @@ async function parsearExcelCronograma(file){
   const data = await file.arrayBuffer();
   const wb = XLSX.read(data, {type:'array', cellDates:false});
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, {raw:true});
+  // Leer desde fila 3 (índice 2) donde están los encabezados reales
+  const rows = XLSX.utils.sheet_to_json(ws, {raw:true, range:2});
   let importados=0;
-  rows.forEach((row, i)=>{
-    // Intentar match por número (#) primero
-    const num = parseInt(row['#']||row['N°']||row['No']||0);
-    const desc = (row['Descripcion']||row['descripcion']||'').toString().trim();
-    
-    let match = null;
+  rows.forEach(row=>{
+    const num = parseInt(row['#']||0);
     if(num >= 1 && num <= cronogramaData.length){
-      match = cronogramaData[num-1]; // match directo por índice
-    } else if(desc){
-      match = cronogramaData.find(r=>r.descripcion.substring(0,30)===desc.substring(0,30));
-    }
-    
-    if(match){
-      const fi = row['FechaInicio']||row['fecha_inicio']||row['Fecha Inicio']||null;
-      const ff = row['FechaFin']||row['fecha_fin']||row['Fecha Fin']||null;
-      const p  = row['Peso']||row['peso']||null;
+      const match = cronogramaData[num-1];
+      const fi = row['FechaInicio']||null;
+      const ff = row['FechaFin']||null;
+      const p  = row['Peso']||null;
       if(fi) match.fecha_inicio = excelFechaToISO(fi);
       if(ff) match.fecha_fin    = excelFechaToISO(ff);
       if(p)  match.peso         = parseFloat(p)||null;
