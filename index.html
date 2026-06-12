@@ -1955,19 +1955,18 @@ function verPlano(id, url, nombre, tipo){
   planoActivo = {id, url, nombre, tipo};
   const visor = document.getElementById('planoVisor');
   if(!visor) return;
-  if(tipo.includes('pdf')){
-    visor.innerHTML = `
-      <div style="position:relative;width:100%;height:100%;min-height:500px">
-        <iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px"></iframe>
-        <div id="pinsOverlay" style="position:absolute;top:0;left:0;width:100%;height:600px;pointer-events:none"></div>
-      </div>`;
-  } else {
-    visor.innerHTML = `
-      <div style="position:relative;width:100%;height:100%;min-height:500px;cursor:${pinModo?'crosshair':'default'}" id="imgVisorContainer" onclick="pinModo&&colocarPin(event,this)">
-        <img src="${url}" style="width:100%;height:600px;object-fit:contain;border-radius:12px" id="planoImg"/>
-        <div id="pinsOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%"></div>
-      </div>`;
-  }
+  visor.innerHTML = `
+    <div style="position:relative;width:100%;height:600px" id="imgVisorContainer">
+      ${tipo.includes('pdf')
+        ? `<iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px;pointer-events:${pinModo?'none':'auto'}"></iframe>`
+        : `<img src="${url}" style="width:100%;height:600px;object-fit:contain;border-radius:12px" id="planoImg"/>`
+      }
+      <div id="pinsOverlay" onclick="pinModo&&colocarPin(event,this)"
+        style="position:absolute;top:0;left:0;width:100%;height:100%;
+        cursor:${pinModo?'crosshair':'default'};
+        pointer-events:${pinModo?'all':'none'};
+        z-index:5"></div>
+    </div>`;
   cargarPinsPlano(id);
 }
 
@@ -1994,17 +1993,23 @@ function activarPinModo(planoId){
     return;
   }
   pinModo = true;
-  toast('Haz click en el plano para colocar el pin de la observación 📍','info');
-  const container = document.getElementById('imgVisorContainer');
-  if(container) container.style.cursor = 'crosshair';
+  toast('Haz click sobre el plano para colocar el pin 📍','info');
+  const overlay = document.getElementById('pinsOverlay');
+  if(overlay){ overlay.style.cursor='crosshair'; overlay.style.pointerEvents='all'; }
+  const iframe = document.querySelector('#imgVisorContainer iframe');
+  if(iframe) iframe.style.pointerEvents='none';
 }
 
-function colocarPin(event, container){
+function colocarPin(event, overlay){
+  const container = overlay.parentElement;
   const rect = container.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width * 100).toFixed(1);
   const y = ((event.clientY - rect.top) / rect.height * 100).toFixed(1);
   pinModo = false;
-  container.style.cursor = 'default';
+  overlay.style.cursor='default';
+  overlay.style.pointerEvents='none';
+  const iframe = document.querySelector('#imgVisorContainer iframe');
+  if(iframe) iframe.style.pointerEvents='auto';
   abrirModalObservacion(planoActivo?.id, parseFloat(x), parseFloat(y));
 }
 
