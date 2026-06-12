@@ -1886,16 +1886,32 @@ async function cargarPlanos(){
 
   const lista = document.getElementById('planoLista');
   lista.innerHTML = planos.map(p=>`
-    <div onclick="verPlano('${p.id}','${p.url}','${p.nombre.replace(/'/g,"\\'")}','${p.tipo||'pdf'}')"
+    <div class="plano-item" data-id="${p.id}" data-url="${p.url}" data-nombre="${p.nombre.replace(/"/g,'&quot;')}" data-tipo="${p.tipo||'pdf'}"
       style="padding:10px 12px;border-radius:8px;border:1px solid #e6e9ef;background:#fff;cursor:pointer;transition:all .15s"
       onmouseover="this.style.borderColor='#0073ea'" onmouseout="this.style.borderColor='#e6e9ef'">
       <div style="font-size:13px;font-weight:600;color:#323338;margin-bottom:2px">${iconoTipoPlano(p.tipo)} ${p.nombre}</div>
       <div style="font-size:11px;color:#676879">${new Date(p.created_at).toLocaleDateString('es-EC')}</div>
       <div style="display:flex;gap:6px;margin-top:6px">
-        <button onclick="event.stopPropagation();activarPinModo('${p.id}')" class="btn" style="padding:3px 8px;font-size:11px">📍 Pin</button>
-        <button onclick="event.stopPropagation();eliminarPlano('${p.id}','${p.url}')" class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c">🗑</button>
+        <button class="btn btn-pin" data-plano-id="${p.id}" style="padding:3px 8px;font-size:11px">📍 Pin</button>
+        <button class="btn btn-del-plano" data-plano-id="${p.id}" data-url="${p.url}" style="padding:3px 8px;font-size:11px;color:#e2445c">🗑</button>
       </div>
     </div>`).join('');
+
+  // Event listeners con delegación
+  lista.addEventListener('click', e=>{
+    const item = e.target.closest('.plano-item');
+    if(!item) return;
+    if(e.target.closest('.btn-pin')){
+      activarPinModo(e.target.closest('.btn-pin').dataset.planoId);
+      return;
+    }
+    if(e.target.closest('.btn-del-plano')){
+      const btn = e.target.closest('.btn-del-plano');
+      eliminarPlano(btn.dataset.planoId, btn.dataset.url);
+      return;
+    }
+    verPlano(item.dataset.id, item.dataset.url, item.dataset.nombre, item.dataset.tipo);
+  });
 }
 
 function iconoTipoPlano(tipo){
