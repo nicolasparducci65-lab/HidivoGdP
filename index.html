@@ -2661,20 +2661,22 @@ async function enviarMensaje(){
 }
 
 async function adjuntarArchivoChat(input){
-  const file = input.files[0];
-  if(!file||!chatCanalActivo) return;
-  const path=`chat/${chatCanalActivo.id}/${Date.now()}_${file.name}`;
-  const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
-  if(error){ toast('Error subiendo archivo','error'); return; }
-  const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-  await sb.from('mensajes_chat').insert({
-    canal_id: chatCanalActivo.id,
-    autor_id: currentUser?.id,
-    contenido: '',
-    archivo_url: urlData.publicUrl,
-    archivo_nombre: file.name,
-    hilo_id: chatHiloActivo||null
-  });
+  const files = [...input.files];
+  if(!files.length||!chatCanalActivo) return;
+  for(const file of files){
+    const path=`chat/${chatCanalActivo.id}/${Date.now()}_${file.name}`;
+    const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
+    if(error){ toast('Error subiendo '+file.name,'error'); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    await sb.from('mensajes_chat').insert({
+      canal_id: chatCanalActivo.id,
+      autor_id: currentUser?.id,
+      contenido: '',
+      archivo_url: urlData.publicUrl,
+      archivo_nombre: file.name,
+      hilo_id: chatHiloActivo||null
+    });
+  }
   input.value='';
 }
 
@@ -2761,21 +2763,23 @@ async function cargarMensajesHilo(msgId){
 }
 
 async function adjuntarArchivoHilo(input){
-  const file = input.files[0];
-  if(!file||!chatCanalActivo||!chatHiloActivo) return;
-  const path=`chat/${chatCanalActivo.id}/hilos/${Date.now()}_${file.name}`;
-  const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
-  if(error){ toast('Error subiendo archivo','error'); return; }
-  const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-  await sb.from('mensajes_chat').insert({
-    canal_id: chatCanalActivo.id,
-    autor_id: currentUser?.id,
-    contenido: '',
-    archivo_url: urlData.publicUrl,
-    archivo_nombre: file.name,
-    hilo_id: chatHiloActivo
-  });
-  await sb.rpc('incrementar_hilo', {msg_id: chatHiloActivo});
+  const files = [...input.files];
+  if(!files.length||!chatCanalActivo||!chatHiloActivo) return;
+  for(const file of files){
+    const path=`chat/${chatCanalActivo.id}/hilos/${Date.now()}_${file.name}`;
+    const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
+    if(error){ toast('Error subiendo '+file.name,'error'); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    await sb.from('mensajes_chat').insert({
+      canal_id: chatCanalActivo.id,
+      autor_id: currentUser?.id,
+      contenido: '',
+      archivo_url: urlData.publicUrl,
+      archivo_nombre: file.name,
+      hilo_id: chatHiloActivo
+    });
+    await sb.rpc('incrementar_hilo', {msg_id: chatHiloActivo});
+  }
   input.value='';
   cargarMensajesHilo(chatHiloActivo);
   cargarMensajes(chatCanalActivo.id);
