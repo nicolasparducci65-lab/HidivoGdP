@@ -12,7 +12,7 @@ jobs:
       - name: Instalar jq
         run: sudo apt-get install -y jq
 
-      - name: Procesar invitaciones pendientes
+      - name: Procesar invitaciones
         env:
           SUPABASE_URL: https://kpswaoqxaxvhrgxntkcq.supabase.co
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -23,11 +23,10 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_KEY" \
             "$SUPABASE_URL/rest/v1/invitaciones?estado=eq.pendiente&select=id,email,rol")
 
-          echo "Invitaciones pendientes: $INVITACIONES"
           COUNT=$(echo $INVITACIONES | jq 'length')
-          echo "Total: $COUNT"
+          echo "Invitaciones pendientes: $COUNT"
 
-          if [ "$COUNT" = "0" ]; then
+          if [ "$COUNT" = "0" ] || [ -z "$COUNT" ]; then
             echo "No hay invitaciones pendientes"
             exit 0
           fi
@@ -36,10 +35,9 @@ jobs:
             EMAIL=$(echo $inv | jq -r '.email')
             ID=$(echo $inv | jq -r '.id')
             ROL=$(echo $inv | jq -r '.rol')
+            echo "Invitando: $EMAIL"
 
-            echo "Invitando a: $EMAIL (rol: $ROL)"
-
-            RESPONSE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            HTTP=$(curl -s -o /tmp/res.json -w "%{http_code}" \
               -X POST \
               -H "apikey: $SUPABASE_KEY" \
               -H "Authorization: Bearer $SUPABASE_KEY" \
@@ -47,18 +45,15 @@ jobs:
               -d "{\"email\":\"$EMAIL\",\"data\":{\"rol\":\"$ROL\"},\"redirect_to\":\"$REDIRECT_URL\"}" \
               "$SUPABASE_URL/auth/v1/invite")
 
-            echo "HTTP: $RESPONSE"
-            cat /tmp/response.json
+            echo "HTTP $HTTP: $(cat /tmp/res.json)"
 
-            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "201" ]; then
+            if [ "$HTTP" = "200" ] || [ "$HTTP" = "201" ]; then
               curl -s -X PATCH \
                 -H "apikey: $SUPABASE_KEY" \
                 -H "Authorization: Bearer $SUPABASE_KEY" \
                 -H "Content-Type: application/json" \
                 -d '{"estado":"enviada"}' \
                 "$SUPABASE_URL/rest/v1/invitaciones?id=eq.$ID"
-              echo "Invitacion enviada a $EMAIL"
-            else
-              echo "Error enviando a $EMAIL"
+              echo "OK: $EMAIL"
             fi
           done
