@@ -1095,6 +1095,7 @@ function cambiarProyecto(id){
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
+  if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
 function abrirProyecto(id){ navTo('rubros', document.querySelector('.nav-item:nth-child(3)')); document.getElementById('selectProyecto').value=id; cambiarProyecto(id); }
