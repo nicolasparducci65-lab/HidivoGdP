@@ -826,6 +826,12 @@ select.form-control{appearance:none}
         <label class="form-label">Agregar respuesta</label>
         <textarea class="form-control" id="obsRespuestaTexto" rows="2" placeholder="Escribe una respuesta..."></textarea>
       </div>
+      <div class="form-group">
+        <label class="form-label">Adjuntar foto o archivo (opcional)</label>
+        <input type="file" id="obsRespuestaArchivo" accept="image/*,.pdf,.dwg,.xlsx,.docx" class="form-control"
+          onchange="previewRespuestaArchivo(this)"/>
+        <div id="obsRespuestaArchivoPreview" style="margin-top:6px"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalObsDetalle')">Cerrar</button>
@@ -2394,25 +2400,60 @@ async function verObservacion(id){
   document.getElementById('obsDetalleRespuestas').innerHTML = (resps||[]).map(r=>`
     <div style="background:#f5f6f8;border-radius:8px;padding:10px 12px;margin-bottom:8px">
       <div style="font-size:11px;color:#676879;margin-bottom:4px">${new Date(r.created_at).toLocaleDateString('es-EC')}</div>
-      <div style="font-size:13px;color:#323338">${r.texto}</div>
-    </div>`).join('') || '<div style="color:#676879;font-size:13px">Sin respuestas aún</div>';
+      ${r.texto?`<div style="font-size:13px;color:#323338;margin-bottom:${r.archivo_url?'8px':'0'}">${r.texto}</div>`:''}
+      ${r.archivo_url?(r.archivo_nombre?.match(/\.(jpg|jpeg|png|gif|webp)$/i)?`<a href="${r.archivo_url}" target="_blank"><img src="${r.archivo_url}" style="max-width:200px;max-height:150px;object-fit:cover;border-radius:6px"/></a>`:`<a href="${r.archivo_url}" target="_blank" style="font-size:12px;color:#0073ea">📎 ${r.archivo_nombre||'Archivo'}</a>`):''}
+    </div>`).join('')' || '<div style="color:#676879;font-size:13px">Sin respuestas aún</div>';
   document.getElementById('modalObsDetalle').classList.add('show');
+}
+
+function previewRespuestaArchivo(input){
+  const preview = document.getElementById('obsRespuestaArchivoPreview');
+  if(!input.files[0]){ preview.innerHTML=''; return; }
+  const file = input.files[0];
+  const esImagen = file.type.startsWith('image/');
+  if(esImagen){
+    const url = URL.createObjectURL(file);
+    preview.innerHTML = `<img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+  } else {
+    preview.innerHTML = `<span style="font-size:12px;color:#676879">📎 ${file.name}</span>`;
+  }
 }
 
 async function guardarRespuesta(){
   const texto = document.getElementById('obsRespuestaTexto').value.trim();
-  if(!texto||!window._obsActiva) return;
-  await sb.from('observacion_respuestas').insert({
-    observacion_id: window._obsActiva.id,
-    texto,
-    autor_id: currentUser?.id||null
-  });
+  const archivoInput = document.getElementById('obsRespuestaArchivo');
+  const archivo = archivoInput?.files[0];
+  if(!texto && !archivo){ toast('Escribe una respuesta o adjunta un archivo','error'); return; }
+  if(!window._obsActiva) return;
+
+  let archivoUrl = null;
+  let archivoNombre = null;
+  if(archivo){
+    const path = `observaciones/${window._obsActiva.id}/respuestas/${Date.now()}_${archivo.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, archivo, {contentType: archivo.type, upsert:true});
+    if(upErr){ toast('Error subiendo archivo','error'); return; }
+    const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+    archivoUrl = urlData.publicUrl;
+    archivoNombre = archivo.name;
+  }
+
   // Actualizar estado si cambió
   const nuevoEstado = document.getElementById('obsDetalleEstado').value;
   if(nuevoEstado !== window._obsActiva.estado){
     await sb.from('observaciones').update({estado: nuevoEstado}).eq('id', window._obsActiva.id);
   }
+
+  await sb.from('observacion_respuestas').insert({
+    observacion_id: window._obsActiva.id,
+    texto: texto||null,
+    archivo_url: archivoUrl,
+    archivo_nombre: archivoNombre,
+    autor_id: currentUser?.id||null
+  });
+
   document.getElementById('obsRespuestaTexto').value='';
+  if(archivoInput) archivoInput.value='';
+  document.getElementById('obsRespuestaArchivoPreview').innerHTML='';
   toast('Respuesta guardada ✓','success');
   verObservacion(window._obsActiva.id);
   cargarObservaciones();
