@@ -1224,18 +1224,52 @@ function mostrarApp(){
   cargarProyectosSelector();
   setTimeout(()=>{
     const rol = currentPerfil?.rol;
-    // Mostrar nav de usuarios solo para admin
-    if(rol==='admin') document.getElementById('navUsuarios').style.display='flex';
-    // Ocultar botón de nuevo proyecto para residente y visualizador
-    if(rol==='residente'||rol==='visualizador'){
-      const btnAccion = document.getElementById('btnAccionPrincipal');
-      if(btnAccion) btnAccion.style.display='none';
-    }
-    // Ocultar nav de proyectos para visualizador
-    if(rol==='visualizador'){
-      // Solo puede ver rubros, libro, curva S, fiscalización en modo lectura
-    }
+    aplicarAccesosPorRol(rol);
   }, 500);
+}
+
+function aplicarAccesosPorRol(rol){
+  // Mostrar/ocultar items del nav según rol
+  const accesos = {
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','chat'],
+    residente:    ['dashboard','fiscalizacion','chat'],
+    visualizador: ['dashboard','rubros','libro','curvaS','fiscalizacion','chat']
+  };
+
+  const permitidos = accesos[rol] || ['dashboard'];
+
+  // Mapeo de página a nav-item
+  const navItems = {
+    dashboard:      document.querySelector('.nav-item[onclick*="dashboard"]'),
+    proyectos:      document.querySelector('.nav-item[onclick*="proyectos"]'),
+    rubros:         document.querySelector('.nav-item[onclick*="rubros"]'),
+    libro:          document.querySelector('.nav-item[onclick*="libro"]'),
+    curvaS:         document.querySelector('.nav-item[onclick*="curvaS"]'),
+    fiscalizacion:  document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    chat:           document.querySelector('.nav-item[onclick*="chat"]'),
+    usuarios:       document.getElementById('navUsuarios')
+  };
+
+  Object.entries(navItems).forEach(([page, el])=>{
+    if(!el) return;
+    if(page==='usuarios'){
+      el.style.display = rol==='admin' ? 'flex' : 'none';
+    } else {
+      el.style.display = permitidos.includes(page) ? 'flex' : 'none';
+    }
+  });
+
+  // Ocultar botón de acción principal para roles sin permisos de creación
+  if(rol==='residente'||rol==='visualizador'){
+    const btnAccion = document.getElementById('btnAccionPrincipal');
+    if(btnAccion) btnAccion.style.display='none';
+  }
+
+  // Redirigir al dashboard si están en una página no permitida
+  if(!permitidos.includes(currentPage)){
+    navTo('dashboard', document.querySelector('.nav-item[onclick*="dashboard"]'));
+  }
 }
 
 function toggleSidebar(){
@@ -1256,7 +1290,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Fiscalización', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
