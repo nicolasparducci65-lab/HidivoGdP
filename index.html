@@ -983,7 +983,7 @@ function navTo(page, btn){
   currentPage = page;
   const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Fiscalización', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -2333,23 +2333,33 @@ let chatHiloActivo = null; // mensaje_id del hilo activo
 let chatNotifCount = {};
 
 async function cargarChat(){
-  if(!currentProyecto){ return; }
+  if(!currentProyecto){
+    document.getElementById('chatMensajes').innerHTML='<div style="text-align:center;color:#676879;font-size:13px;margin-top:40px">Selecciona un proyecto para usar el chat</div>';
+    return;
+  }
   document.getElementById('chatProyectoNombre').textContent = proyectos.find(p=>p.id===currentProyecto)?.nombre||'Proyecto';
   await cargarCanalesChat();
   await cargarDMsChat();
 }
 
 async function cargarCanalesChat(){
+  if(!currentProyecto) return;
   const { data: canales } = await sb.from('canales_chat')
     .select('*').eq('proyecto_id', currentProyecto).eq('tipo','canal').order('nombre');
   const el = document.getElementById('chatCanales');
   if(!canales?.length){
-    // Crear canal #general automáticamente
-    await sb.from('canales_chat').insert({proyecto_id:currentProyecto, nombre:'general', tipo:'canal', descripcion:'Canal general del proyecto'});
-    return cargarCanalesChat();
+    // Crear canal #general solo una vez
+    const { error } = await sb.from('canales_chat').insert({
+      proyecto_id: currentProyecto,
+      nombre:'general',
+      tipo:'canal',
+      descripcion:'Canal general del proyecto'
+    });
+    if(!error) cargarCanalesChat();
+    return;
   }
   el.innerHTML = canales.map(c=>`
-    <div onclick="abrirCanal('${c.id}','${c.nombre}','canal',null,'${c.descripcion||''}')"
+    <div onclick="abrirCanal('${c.id}','${c.nombre}','canal',null,'${(c.descripcion||'').replace(/'/g,"\\'")}')"
       id="canal-${c.id}"
       style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;display:flex;align-items:center;justify-content:space-between;
       ${chatCanalActivo?.id===c.id?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
@@ -2358,7 +2368,6 @@ async function cargarCanalesChat(){
       <span id="notif-${c.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>
     </div>`).join('');
 
-  // Abrir #general por defecto si no hay canal activo
   if(!chatCanalActivo && canales.length){
     const general = canales.find(c=>c.nombre==='general')||canales[0];
     abrirCanal(general.id, general.nombre, 'canal', null, general.descripcion||'');
