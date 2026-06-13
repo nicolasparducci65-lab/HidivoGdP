@@ -171,7 +171,13 @@ select.form-control{appearance:none}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;background:#323338;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
-/* Modo visualizador */
+/* Modo residente - en libro de obra solo puede crear, no editar ni eliminar */
+body.modo-residente #btnEliminarDetalle,
+body.modo-residente button[onclick*="abrirEditarRegistro"],
+body.modo-residente button[onclick*="abrirModalReporte"],
+body.modo-residente #btnImportarRubros {
+  display: none !important;
+}
 body.modo-visualizador .btn.primary{display:none!important}
 body.modo-visualizador .btn.danger{display:none!important}
 body.modo-visualizador input[type="file"]{display:none!important}
@@ -1891,7 +1897,7 @@ function aplicarAccesosPorRol(rol){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','chat'],
     bodeguero:    ['materiales','chat'],
     visualizador: ['rubros','curvaS','chat']
   };
@@ -1903,6 +1909,12 @@ function aplicarAccesosPorRol(rol){
     document.body.classList.add('modo-visualizador');
   } else {
     document.body.classList.remove('modo-visualizador');
+  }
+  // Aplicar modo residente
+  if(rol === 'residente'){
+    document.body.classList.add('modo-residente');
+  } else {
+    document.body.classList.remove('modo-residente');
   }
 
   // Mapeo de página a nav-item
@@ -2139,7 +2151,7 @@ function aplicarModulosProyecto(modulos){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','chat'],
     bodeguero:    ['materiales','chat'],
     visualizador: ['rubros','curvaS','chat']
   };
