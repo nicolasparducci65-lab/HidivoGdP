@@ -2350,8 +2350,8 @@ async function importarRubrosExcel(input){
       if(!rows.length){ toast('Excel vacío','error'); return; }
 
       // Detectar fila de encabezado principal
-      let startRow = 0;
       let headerRow = -1;
+      let startRow = 0;
       for(let i=0;i<Math.min(10,rows.length);i++){
         const r = rows[i].map(c=>String(c||'').toLowerCase().trim());
         if(r.some(c=>c==='descripción'||c==='descripcion'||c==='rubro'||c==='detalle')){
@@ -2361,17 +2361,7 @@ async function importarRubrosExcel(input){
         }
       }
 
-      // Saltar filas de subencabezado — ignorar filas que no tienen datos numéricos ni descripciones reales
-      while(startRow < rows.length){
-        const r = rows[startRow];
-        const desc = String(r[colIdx.descrip>=0?colIdx.descrip:2]||'').trim();
-        const tieneNumero = r.some(c=>typeof c==='number'&&c>0);
-        const esSubHeader = !desc || /^(opcional|obligatorio|ej:|número|automático|dd\/)/i.test(desc);
-        if(!esSubHeader || tieneNumero) break;
-        startRow++;
-      }
-
-      // Columnas desde fila de encabezado
+      // Columnas desde fila de encabezado — se declara ANTES de usarse
       const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c||'').toLowerCase().trim()) : [];
       const colIdx = {
         codigo:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='código'||h==='codigo'||h==='item'),
@@ -2386,6 +2376,16 @@ async function importarRubrosExcel(input){
       // Fallback si no se detectaron columnas
       if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
       if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio=colIdx.cantidad+1;
+
+      // Saltar filas de subencabezado después de detectar columnas
+      while(startRow < rows.length){
+        const r = rows[startRow];
+        const desc = String(r[colIdx.descrip>=0?colIdx.descrip:2]||'').trim();
+        const tieneNumero = r.some(c=>typeof c==='number'&&c>0);
+        const esSubHeader = !desc || /^(opcional|obligatorio|ej:|número|automático|dd\/)/i.test(desc);
+        if(!esSubHeader || tieneNumero) break;
+        startRow++;
+      }
 
       const dataRows = rows.slice(startRow).filter(r=>{
         const desc = String(r[colIdx.descrip]||'').trim();
