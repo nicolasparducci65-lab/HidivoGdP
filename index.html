@@ -331,6 +331,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         Solicitudes
         <span id="solicitudesBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
+      <div class="nav-item" onclick="navTo('planillas',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Planillas de Pago
+        <span id="planillasBadge" style="display:none;background:#ff9f00;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -443,6 +448,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
         <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- PLANILLAS -->
+      <div class="page" id="page-planillas">
+        <div id="planillasContent"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- SOLICITUDES -->
@@ -1175,6 +1185,146 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL NUEVA PLANILLA -->
+<div class="modal-overlay" id="modalNuevaPlanilla">
+  <div class="modal" style="width:900px;max-width:98vw;max-height:95vh">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">📊 Nueva Planilla de Pago — N° <span id="planNumero"></span></div>
+      </div>
+      <button class="btn" onclick="cerrarModal('modalNuevaPlanilla')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <!-- Período -->
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha inicio *</label>
+          <input type="date" class="form-control" id="planFechaInicio"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fecha fin *</label>
+          <input type="date" class="form-control" id="planFechaFin"/>
+        </div>
+        <button id="btnCargarRubros" onclick="cargarRubrosPlanilla()" class="btn primary" style="gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+          Cargar rubros
+        </button>
+      </div>
+
+      <!-- Tabla de rubros -->
+      <div style="overflow-x:auto;margin-bottom:16px">
+        <table>
+          <thead><tr>
+            <th>Descripción</th>
+            <th style="text-align:center">Unidad</th>
+            <th style="text-align:right">Cant. contrato</th>
+            <th style="text-align:right">Cant. anterior</th>
+            <th style="text-align:center">Cant. período</th>
+            <th style="text-align:right">Acumulado</th>
+            <th style="text-align:right">Monto período</th>
+          </tr></thead>
+          <tbody id="planRubrosTabla">
+            <tr><td colspan="7" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>
+          </tbody>
+          <tfoot>
+            <tr style="background:#1a1a2e">
+              <td colspan="6" style="text-align:right;font-weight:700;color:#fff;padding:10px 8px">TOTAL PLANILLA</td>
+              <td style="text-align:right;font-weight:800;color:#00c2ff;padding:10px 8px;font-size:16px" id="planTotal">$0.00</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Observaciones y archivos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Observaciones</label>
+          <textarea class="form-control" id="planObservaciones" rows="3" placeholder="Notas o comentarios de la planilla..."></textarea>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Adjuntar documentos</label>
+          <input type="file" class="form-control" id="planArchivos" multiple accept=".pdf,.xlsx,.docx,.jpg,.png"/>
+          <div style="font-size:11px;color:#676879;margin-top:4px">Memorias de cálculo, fotos, actas...</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalNuevaPlanilla')">Cancelar</button>
+      <button id="btnGuardarPlanilla" class="btn" onclick="guardarPlanilla('borrador')" style="gap:6px">
+        📝 Guardar borrador
+      </button>
+      <button class="btn primary" onclick="guardarPlanilla('enviada')" style="gap:6px">
+        📤 Enviar a revisión
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VER PLANILLA -->
+<div class="modal-overlay" id="modalVerPlanilla">
+  <div class="modal" style="width:900px;max-width:98vw;max-height:95vh">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="planDetalleNumero">Planilla</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+          <div id="planDetalleEstado"></div>
+          <span style="font-size:12px;color:#676879" id="planDetallePeriodo"></span>
+          <span style="font-size:14px;font-weight:700;color:#0073ea" id="planDetalleTotal"></span>
+        </div>
+      </div>
+      <button class="btn" onclick="cerrarModal('modalVerPlanilla')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <!-- Tabla rubros -->
+      <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Rubros</div>
+      <div style="overflow-x:auto;margin-bottom:16px">
+        <table>
+          <thead><tr>
+            <th>Descripción</th>
+            <th style="text-align:center">Unidad</th>
+            <th style="text-align:right">Ant.</th>
+            <th style="text-align:right">Período</th>
+            <th style="text-align:right">Acumulado</th>
+            <th style="text-align:right">P. Unit.</th>
+            <th style="text-align:right">Monto</th>
+          </tr></thead>
+          <tbody id="planDetalleRubros"></tbody>
+        </table>
+      </div>
+      <!-- Archivos -->
+      <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Documentos adjuntos</div>
+      <div id="planDetalleArchivos" style="margin-bottom:16px"></div>
+      <!-- Historial -->
+      <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Historial</div>
+      <div id="planDetalleHistorial"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalVerPlanilla')">Cerrar</button>
+      <div id="planDetalleBtns" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ACCIÓN PLANILLA -->
+<div class="modal-overlay" id="modalAccionPlanilla">
+  <div class="modal" style="width:400px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title" id="planAccionLabel">Acción</div>
+      <button class="btn" onclick="cerrarModal('modalAccionPlanilla')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Comentario (opcional)</label>
+        <textarea class="form-control" id="planAccionComentario" rows="3" placeholder="Agrega un comentario..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalAccionPlanilla')">Cancelar</button>
+      <button id="btnConfirmarAccion" class="btn primary" onclick="confirmarAccionPlanilla()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL NUEVA SOLICITUD -->
 <div class="modal-overlay" id="modalNuevaSolicitud">
   <div class="modal" style="width:520px;max-width:98vw;max-height:92vh">
@@ -1481,9 +1631,9 @@ function ocultarBotonesAccion(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','chat'],
-    residente:    ['fiscalizacion','solicitudes','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','chat'],
     visualizador: ['rubros','curvaS','chat']
   };
 
@@ -1505,6 +1655,7 @@ function aplicarAccesosPorRol(rol){
     curvaS:         document.querySelector('.nav-item[onclick*="curvaS"]'),
     fiscalizacion:  document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
     solicitudes:    document.querySelector('.nav-item[onclick*="solicitudes"]'),
+    planillas:      document.querySelector('.nav-item[onclick*="planillas"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios')
   };
@@ -1549,11 +1700,11 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -1565,6 +1716,7 @@ function navTo(page, btn){
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
+  if(page==='planillas'&&currentProyecto) cargarPlanillas();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -1701,6 +1853,7 @@ function cambiarProyecto(id){
   if(currentPage==='curvaS') cargarCurvaS();
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
   if(currentPage==='solicitudes') cargarSolicitudes();
+  if(currentPage==='planillas') cargarPlanillas();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
@@ -3124,6 +3277,347 @@ async function guardarObservacionNueva(){
   cargarObservaciones();
 }
 
+
+// ── PLANILLAS DE PAGO ──
+const ESTADOS_PLANILLA = {
+  borrador:    { label:'Borrador',          color:'#676879', bg:'#f5f6f8', emoji:'📝' },
+  enviada:     { label:'Enviada',           color:'#0073ea', bg:'#e8f4ff', emoji:'📤' },
+  en_revision: { label:'En revisión',       color:'#ff9f00', bg:'#fff3e0', emoji:'🔵' },
+  aprobada:    { label:'Aprobada',          color:'#00c875', bg:'#e8f5e9', emoji:'✅' },
+  pagada:      { label:'Pagada',            color:'#9b59b6', bg:'#f3e5f5', emoji:'💰' },
+  rechazada:   { label:'Rechazada',         color:'#e2445c', bg:'#fce4ec', emoji:'❌' }
+};
+
+async function cargarPlanillas(){
+  if(!currentProyecto){
+    document.getElementById('planillasContent').innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  const rol = currentPerfil?.rol;
+  const puedeCrear = ['admin','fiscalizador','residente'].includes(rol);
+
+  const { data: planillas } = await sb.from('planillas_pago')
+    .select('*,creado_por:perfiles!planillas_pago_creado_por_fkey(nombre,apellido)')
+    .eq('proyecto_id', currentProyecto).order('numero', {ascending:false});
+
+  // Badge de planillas en revisión
+  const enRevision = (planillas||[]).filter(p=>p.estado==='enviada'||p.estado==='en_revision').length;
+  const badge = document.getElementById('planillasBadge');
+  if(badge){ badge.style.display=enRevision>0?'inline':'none'; badge.textContent=enRevision; }
+
+  document.getElementById('planillasContent').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#323338">Planillas de Pago</div>
+      <div style="font-size:13px;color:#676879">${planillas?.length||0} planillas en este proyecto</div>
+    </div>
+    ${puedeCrear?`<button onclick="abrirModalNuevaPlanilla()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nueva planilla
+    </button>`:''}
+  </div>
+
+  ${!planillas?.length?`<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin planillas</div><div class="empty-sub">Crea la primera planilla de pago del proyecto</div></div>`:`
+  <div style="display:flex;flex-direction:column;gap:10px">
+    ${planillas.map(p=>{
+      const est = ESTADOS_PLANILLA[p.estado]||ESTADOS_PLANILLA.borrador;
+      return `<div onclick="verPlanilla('${p.id}')" style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s;border-left:4px solid ${est.color}"
+        onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <span style="font-weight:700;font-size:15px;color:#323338">Planilla N° ${p.numero}</span>
+              <span style="background:${est.bg};color:${est.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${est.emoji} ${est.label}</span>
+            </div>
+            <div style="font-size:12px;color:#676879">
+              📅 ${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}
+              &nbsp;·&nbsp; Por: ${p.creado_por?.nombre||''} ${p.creado_por?.apellido||''}
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:20px;font-weight:800;color:#0073ea">$${Number(p.total_monto||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</div>
+            <div style="font-size:11px;color:#676879">${new Date(p.created_at).toLocaleDateString('es-EC')}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`}`;
+}
+
+async function abrirModalNuevaPlanilla(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  // Calcular número de planilla
+  const { data: ultimas } = await sb.from('planillas_pago').select('numero').eq('proyecto_id',currentProyecto).order('numero',{ascending:false}).limit(1);
+  const numero = (ultimas?.[0]?.numero||0) + 1;
+  document.getElementById('planNumero').textContent = numero;
+  // Fechas por defecto: mes actual
+  const hoy = new Date();
+  const primerDia = new Date(hoy.getFullYear(),hoy.getMonth(),1).toISOString().split('T')[0];
+  document.getElementById('planFechaInicio').value = primerDia;
+  document.getElementById('planFechaFin').value = hoy.toISOString().split('T')[0];
+  document.getElementById('planObservaciones').value='';
+  document.getElementById('planArchivos').value='';
+  document.getElementById('planRubrosTabla').innerHTML='<tr><td colspan="7" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>';
+  document.getElementById('planTotal').textContent='$0.00';
+  document.getElementById('modalNuevaPlanilla').classList.add('show');
+}
+
+async function cargarRubrosPlanilla(){
+  const fechaInicio = document.getElementById('planFechaInicio').value;
+  const fechaFin = document.getElementById('planFechaFin').value;
+  if(!fechaInicio||!fechaFin){ toast('Selecciona el período','error'); return; }
+
+  const btn = document.getElementById('btnCargarRubros');
+  btn.disabled=true; btn.textContent='Cargando...';
+
+  // Obtener todos los rubros del proyecto
+  const { data: rubros } = await sb.from('rubros').select('*').eq('proyecto_id',currentProyecto).order('orden');
+  if(!rubros?.length){ toast('No hay rubros en este proyecto','error'); btn.disabled=false; btn.textContent='Cargar rubros'; return; }
+
+  // Obtener planillas anteriores para calcular acumulado anterior
+  const { data: planillasAnt } = await sb.from('planillas_pago')
+    .select('id').eq('proyecto_id',currentProyecto)
+    .in('estado',['aprobada','pagada']).order('numero',{ascending:false});
+
+  // Cantidad ejecutada anterior por rubro (suma de planillas aprobadas/pagadas)
+  const cantAnt = {};
+  if(planillasAnt?.length){
+    const idsAnt = planillasAnt.map(p=>p.id);
+    const { data: rubrosAnt } = await sb.from('planilla_rubros').select('rubro_id,cantidad_periodo').in('planilla_id',idsAnt);
+    (rubrosAnt||[]).forEach(r=>{ cantAnt[r.rubro_id] = (cantAnt[r.rubro_id]||0) + (r.cantidad_periodo||0); });
+  }
+
+  // Obtener producción del período del Libro de Obra
+  const { data: libroItems } = await sb.from('libro_obra_rubros')
+    .select('rubro_id,cantidad')
+    .gte('created_at', fechaInicio+'T00:00:00')
+    .lte('created_at', fechaFin+'T23:59:59');
+
+  const prodPeriodo = {};
+  (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad||0); });
+
+  // Renderizar tabla
+  let total = 0;
+  const rows = rubros.map(r=>{
+    const cantAnterior = cantAnt[r.rubro_id]||0;
+    const cantPeriodo = prodPeriodo[r.rubro_id]||0;
+    const cantAcumulada = cantAnterior + cantPeriodo;
+    const montoPeriodo = cantPeriodo * (r.precio_unitario||0);
+    total += montoPeriodo;
+    const pct = r.cantidad_contrato>0 ? Math.min(cantAcumulada/r.cantidad_contrato*100,100) : 0;
+    return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}">
+      <td style="font-size:11px;max-width:160px">${r.descripcion}</td>
+      <td style="text-align:center">${r.unidad||'—'}</td>
+      <td style="text-align:right">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right">${Number(cantAnterior).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:center">
+        <input type="number" value="${cantPeriodo.toFixed(3)}" min="0" step="0.001"
+          style="width:90px;padding:4px;border:1px solid #c5c7d4;border-radius:6px;font-size:11px;text-align:right"
+          onchange="recalcularFilaPlanilla(this,'${r.id}',${r.precio_unitario||0})"/>
+      </td>
+      <td style="text-align:right">${Number(cantAcumulada).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right;font-weight:600;color:#0073ea" id="monto-${r.id}">$${Number(montoPeriodo).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('planRubrosTabla').innerHTML = rows;
+  document.getElementById('planTotal').textContent = '$'+total.toLocaleString('es-EC',{minimumFractionDigits:2});
+  btn.disabled=false; btn.textContent='Cargar rubros';
+}
+
+function recalcularFilaPlanilla(input, rubroId, precio){
+  const cant = parseFloat(input.value)||0;
+  const monto = cant * precio;
+  document.getElementById('monto-'+rubroId).textContent = '$'+monto.toLocaleString('es-EC',{minimumFractionDigits:2});
+  // Recalcular total
+  let total = 0;
+  document.querySelectorAll('[id^="monto-"]').forEach(el=>{
+    total += parseFloat(el.textContent.replace('$','').replace(/,/g,''))||0;
+  });
+  document.getElementById('planTotal').textContent = '$'+total.toLocaleString('es-EC',{minimumFractionDigits:2});
+}
+
+async function guardarPlanilla(estado){
+  const fechaInicio = document.getElementById('planFechaInicio').value;
+  const fechaFin = document.getElementById('planFechaFin').value;
+  if(!fechaInicio||!fechaFin){ toast('Selecciona el período','error'); return; }
+
+  const rows = document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]');
+  if(!rows.length){ toast('Carga los rubros primero','error'); return; }
+
+  const btn = document.getElementById('btnGuardarPlanilla');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  // Número de planilla
+  const numero = parseInt(document.getElementById('planNumero').textContent);
+  const totalMonto = parseFloat(document.getElementById('planTotal').textContent.replace('$','').replace(/,/g,''))||0;
+
+  // Crear planilla
+  const { data: planilla, error } = await sb.from('planillas_pago').insert({
+    proyecto_id: currentProyecto,
+    numero, fecha_inicio: fechaInicio, fecha_fin: fechaFin,
+    estado, total_monto: totalMonto,
+    observaciones: document.getElementById('planObservaciones').value||null,
+    creado_por: currentUser?.id
+  }).select().single();
+
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+
+  // Guardar rubros
+  const rubrosPayload = [];
+  rows.forEach(row=>{
+    const rubroId = row.dataset.rubroId;
+    const precio = parseFloat(row.dataset.precio)||0;
+    const cantPeriodo = parseFloat(row.querySelector('input').value)||0;
+    const cantAnt = parseFloat(row.cells[3].textContent.replace(/,/g,''))||0;
+    rubrosPayload.push({
+      planilla_id: planilla.id, rubro_id: rubroId,
+      cantidad_anterior: cantAnt, cantidad_periodo: cantPeriodo,
+      cantidad_acumulada: cantAnt + cantPeriodo,
+      precio_unitario: precio, monto_periodo: cantPeriodo * precio
+    });
+  });
+  if(rubrosPayload.length) await sb.from('planilla_rubros').insert(rubrosPayload);
+
+  // Subir archivos
+  const files = document.getElementById('planArchivos').files;
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    const path=`planillas/${planilla.id}/${Date.now()}_${f.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
+    if(!upErr){
+      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+      await sb.from('planilla_archivos').insert({planilla_id:planilla.id, url:urlData.publicUrl, nombre:f.name, tipo:f.type});
+    }
+  }
+
+  // Historial
+  await sb.from('planilla_historial').insert({
+    planilla_id: planilla.id,
+    accion: estado==='enviada'?'Planilla enviada a revisión':'Planilla guardada como borrador',
+    autor_id: currentUser?.id
+  });
+
+  toast(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalNuevaPlanilla');
+  cargarPlanillas();
+}
+
+async function verPlanilla(id){
+  const { data: p } = await sb.from('planillas_pago')
+    .select('*,creado_por:perfiles!planillas_pago_creado_por_fkey(nombre,apellido)')
+    .eq('id',id).single();
+  const { data: rubros } = await sb.from('planilla_rubros')
+    .select('*,rubro:rubros(descripcion,unidad)').eq('planilla_id',id);
+  const { data: archivos } = await sb.from('planilla_archivos').select('*').eq('planilla_id',id);
+  const { data: historial } = await sb.from('planilla_historial')
+    .select('*,autor:perfiles!planilla_historial_autor_id_fkey(nombre,apellido)')
+    .eq('planilla_id',id).order('created_at');
+
+  window._planillaActiva = p;
+  const est = ESTADOS_PLANILLA[p.estado]||ESTADOS_PLANILLA.borrador;
+  const rol = currentPerfil?.rol;
+
+  document.getElementById('planDetalleNumero').textContent = `Planilla N° ${p.numero}`;
+  document.getElementById('planDetalleEstado').innerHTML = `<span style="background:${est.bg};color:${est.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">${est.emoji} ${est.label}</span>`;
+  document.getElementById('planDetallePeriodo').textContent = `${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}`;
+  document.getElementById('planDetalleTotal').textContent = '$'+Number(p.total_monto||0).toLocaleString('es-EC',{minimumFractionDigits:2});
+
+  // Tabla rubros
+  document.getElementById('planDetalleRubros').innerHTML = (rubros||[]).map(r=>`
+    <tr>
+      <td style="font-size:11px">${r.rubro?.descripcion||'—'}</td>
+      <td style="text-align:center">${r.rubro?.unidad||'—'}</td>
+      <td style="text-align:right">${Number(r.cantidad_anterior||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right;font-weight:600;color:#0073ea">${Number(r.cantidad_periodo||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right">${Number(r.cantidad_acumulada||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+      <td style="text-align:right">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;font-weight:700;color:#0073ea">$${Number(r.monto_periodo||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+    </tr>`).join('');
+
+  // Archivos
+  document.getElementById('planDetalleArchivos').innerHTML = (archivos||[]).map(a=>`
+    <a href="${a.url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#f5f6f8;border-radius:8px;padding:6px 10px;font-size:12px;color:#323338;text-decoration:none;margin:4px">
+      📎 ${a.nombre}
+    </a>`).join('') || '<span style="font-size:12px;color:#676879">Sin archivos</span>';
+
+  // Historial
+  document.getElementById('planDetalleHistorial').innerHTML = (historial||[]).map(h=>`
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="width:8px;height:8px;border-radius:50%;background:#0073ea;flex-shrink:0;margin-top:5px"></div>
+      <div>
+        <div style="font-size:13px;color:#323338">${h.accion}</div>
+        ${h.comentario?`<div style="font-size:12px;color:#676879;margin-top:2px">${h.comentario}</div>`:''}
+        <div style="font-size:11px;color:#676879;margin-top:2px">${h.autor?.nombre||''} · ${new Date(h.created_at).toLocaleDateString('es-EC')}</div>
+      </div>
+    </div>`).join('');
+
+  // Botones según rol y estado
+  const btns = document.getElementById('planDetalleBtns');
+  btns.innerHTML='';
+  if(p.estado==='borrador' && ['admin','fiscalizador','residente'].includes(rol)){
+    btns.innerHTML+=`<button onclick="cambiarEstadoPlanilla('enviada','Planilla enviada a revisión')" class="btn primary" style="gap:6px">📤 Enviar a revisión</button>`;
+    btns.innerHTML+=`<button onclick="eliminarPlanilla('${p.id}')" class="btn" style="color:#e2445c">🗑 Eliminar</button>`;
+  }
+  if(p.estado==='enviada' && ['admin','fiscalizador'].includes(rol)){
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('en_revision','Planilla en revisión')" class="btn" style="background:#ff9f00;color:#fff;border-color:#ff9f00">🔵 Iniciar revisión</button>`;
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('rechazada','Planilla rechazada')" class="btn" style="background:#e2445c;color:#fff;border-color:#e2445c">❌ Rechazar</button>`;
+  }
+  if(p.estado==='en_revision' && ['admin','fiscalizador'].includes(rol)){
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('aprobada','Planilla aprobada por fiscalizador')" class="btn" style="background:#00c875;color:#fff;border-color:#00c875">✅ Aprobar</button>`;
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('rechazada','Planilla rechazada')" class="btn" style="background:#e2445c;color:#fff;border-color:#e2445c">❌ Rechazar</button>`;
+  }
+  if(p.estado==='aprobada' && rol==='admin'){
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('pagada','Planilla marcada como pagada')" class="btn" style="background:#9b59b6;color:#fff;border-color:#9b59b6">💰 Marcar como pagada</button>`;
+  }
+
+  document.getElementById('modalVerPlanilla').classList.add('show');
+}
+
+function abrirAccionPlanilla(nuevoEstado, accionLabel){
+  window._planillaAccion = {nuevoEstado, accionLabel};
+  document.getElementById('planAccionComentario').value='';
+  document.getElementById('planAccionLabel').textContent = accionLabel;
+  document.getElementById('modalAccionPlanilla').classList.add('show');
+}
+
+async function confirmarAccionPlanilla(){
+  const {nuevoEstado, accionLabel} = window._planillaAccion;
+  const comentario = document.getElementById('planAccionComentario').value.trim();
+  const btn = document.getElementById('btnConfirmarAccion');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  await sb.from('planillas_pago').update({
+    estado: nuevoEstado,
+    updated_at: new Date().toISOString(),
+    ...(nuevoEstado==='aprobada'?{revisado_por:currentUser?.id}:{}),
+    ...(nuevoEstado==='pagada'?{aprobado_por:currentUser?.id, fecha_pago:new Date().toISOString().split('T')[0]}:{})
+  }).eq('id', window._planillaActiva.id);
+
+  await sb.from('planilla_historial').insert({
+    planilla_id: window._planillaActiva.id,
+    accion: accionLabel, comentario: comentario||null,
+    autor_id: currentUser?.id
+  });
+
+  toast(accionLabel+' ✓','success');
+  btn.disabled=false; btn.textContent='Confirmar';
+  cerrarModal('modalAccionPlanilla');
+  cerrarModal('modalVerPlanilla');
+  cargarPlanillas();
+}
+
+async function eliminarPlanilla(id){
+  if(!confirm('¿Eliminar esta planilla? Esta acción no se puede deshacer.')) return;
+  await sb.from('planilla_rubros').delete().eq('planilla_id',id);
+  await sb.from('planilla_archivos').delete().eq('planilla_id',id);
+  await sb.from('planilla_historial').delete().eq('planilla_id',id);
+  await sb.from('planillas_pago').delete().eq('id',id);
+  toast('Planilla eliminada','success');
+  cerrarModal('modalVerPlanilla');
+  cargarPlanillas();
+}
 
 // ── MENSAJES NO LEÍDOS ──
 async function actualizarBadgeChat(){
