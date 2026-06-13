@@ -876,6 +876,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <label id="rptFiscalizacionLabel" style="display:none;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="rptFiscalizacion" checked style="width:16px;height:16px;accent-color:#0073ea"/> Observaciones de fiscalización
           </label>
+          <label id="rptPlanillasLabel" style="display:none;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptPlanillas" checked style="width:16px;height:16px;accent-color:#0073ea"/> Planillas de pago
+          </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="rptCuadroRubros" checked style="width:16px;height:16px;accent-color:#0073ea"/> Cuadro de rubros completo
           </label>
@@ -5933,6 +5936,7 @@ function seleccionarTipoReporte(tipo){
   document.getElementById('tipoGerenteBtn').style.borderColor = tipo==='gerente'?'#0073ea':'#e6e9ef';
   document.getElementById('tipoGerenteBtn').style.background = tipo==='gerente'?'#f0f7ff':'#fff';
   document.getElementById('rptFiscalizacionLabel').style.display = tipo==='gerente'?'flex':'none';
+  document.getElementById('rptPlanillasLabel').style.display = tipo==='gerente'?'flex':'none';
 }
 
 function abrirModalReporte(){
@@ -6050,6 +6054,7 @@ async function generarReportePDF(){
   const actividadesSiguiente = document.getElementById('rptActividadesSiguiente').value.trim();
   const incCurvaS = document.getElementById('rptCurvaS').checked;
   const incFiscalizacion = document.getElementById('rptFiscalizacion')?.checked && tipoReporte==='gerente';
+  const incPlanillas = document.getElementById('rptPlanillas')?.checked && tipoReporte==='gerente';
   const incCuadroRubros = document.getElementById('rptCuadroRubros').checked;
   const tituloReporte = tipoReporte==='gerente' ? 'Reporte de Gestión — Gerente de Proyecto' : 'Reporte de Avance — Cliente';
 
@@ -6061,8 +6066,15 @@ async function generarReportePDF(){
     todosRubros = rubs||[];
   }
 
-  // Obtener observaciones de fiscalización si aplica
-  let observaciones = [];
+  // Obtener planillas del período si aplica
+  let planillas = [];
+  if(incPlanillas){
+    const { data: plans } = await sb.from('planillas_pago')
+      .select('*').eq('proyecto_id', currentProyecto)
+      .gte('fecha_inicio', fechaInicio).lte('fecha_fin', fechaFin)
+      .order('numero');
+    planillas = plans||[];
+  }
   if(incFiscalizacion){
     const { data: obs } = await sb.from('observaciones')
       .select('*').eq('proyecto_id', currentProyecto)
@@ -6247,6 +6259,39 @@ ${novedadesPeriodo||actividadesSiguiente ? `
   <div class="section-title" style="margin-top:20px">Actividades Planificadas — Siguiente Período</div>
   <div style="border:1px dashed #c5c7d4;border-radius:8px;padding:14px;min-height:100px;background:#fafafa"></div>
 </div>`}
+
+${incPlanillas && planillas.length ? `
+<div class="section">
+  <div class="section-title">Planillas de Pago — ${planillas.length} planilla(s)</div>
+  <table>
+    <thead><tr>
+      <th style="width:40px">N°</th>
+      <th>Período</th>
+      <th style="text-align:center">Estado</th>
+      <th style="text-align:right">Monto</th>
+    </tr></thead>
+    <tbody>
+      ${planillas.map(p=>{
+        const est = {borrador:'Borrador',enviada:'Enviada',en_revision:'En revisión',aprobada:'Aprobada',pagada:'Pagada',rechazada:'Rechazada'}[p.estado]||p.estado;
+        const color = {aprobada:'#00c875',pagada:'#9b59b6',rechazada:'#e2445c',en_revision:'#ff9f00',enviada:'#0073ea',borrador:'#676879'}[p.estado]||'#676879';
+        return `<tr>
+          <td style="text-align:center;font-weight:700">${p.numero}</td>
+          <td>${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}</td>
+          <td style="text-align:center;font-weight:600;color:${color}">${est}</td>
+          <td style="text-align:right;font-weight:700;color:#0073ea">$${Number(p.total_monto||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:#1a1a2e">
+        <td colspan="3" style="text-align:right;font-weight:700;color:#fff;padding:8px">TOTAL PLANILLADO</td>
+        <td style="text-align:right;font-weight:800;color:#00c2ff;padding:8px;font-size:12px">
+          $${planillas.reduce((s,p)=>s+(p.total_monto||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>` : ''}
 
 ${incFiscalizacion && observaciones.length ? `
 <div class="section">
