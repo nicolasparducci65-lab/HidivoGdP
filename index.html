@@ -2540,14 +2540,12 @@ async function abrirModalLibro(){
   document.getElementById('lNumRegistro').value = (count||0)+1;
   document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('lClima').value = 'Soleado';
-  document.getElementById('lTempMin').value = '';
-  document.getElementById('lTempMax').value = '';
+  if(document.getElementById('lTempMin')) document.getElementById('lTempMin').value = '';
+  if(document.getElementById('lTempMax')) document.getElementById('lTempMax').value = '';
   document.getElementById('lPersonal').value = '';
   document.getElementById('lActividades').value = '';
-  document.getElementById('lEquipos').value = '';
-  document.getElementById('lMateriales').value = '';
-  document.getElementById('lNovedades').value = '';
-  document.getElementById('lResoluciones').value = '';
+  if(document.getElementById('lNovedades')) document.getElementById('lNovedades').value = '';
+  if(document.getElementById('lResoluciones')) document.getElementById('lResoluciones').value = '';
   document.getElementById('libroFotosPreview').innerHTML = '';
   document.getElementById('libroRubrosLista').innerHTML = '<div style="color:#676879;font-size:13px">Cargando rubros...</div>';
   libroEquiposSeleccionados = [];
