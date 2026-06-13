@@ -6577,6 +6577,8 @@ if(isIOS && !isStandalone){
 }
 
 // ── INIT ──
+// Mover todos los modales al body para evitar problemas de z-index
+document.querySelectorAll('.modal-overlay').forEach(m => document.body.appendChild(m));
 checkAuth();
 </script>
 </body>
