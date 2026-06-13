@@ -3642,7 +3642,7 @@ async function verPlanilla(id){
   btns.innerHTML='';
   if(p.estado==='borrador' && ['admin','fiscalizador','residente'].includes(rol)){
     btns.innerHTML+=`<button onclick="editarPlanilla('${p.id}')" class="btn" style="gap:6px">✏️ Editar</button>`;
-    btns.innerHTML+=`<button onclick="cambiarEstadoPlanilla('enviada','Planilla enviada a revisión')" class="btn primary" style="gap:6px">📤 Enviar a revisión</button>`;
+    btns.innerHTML+=`<button onclick="abrirAccionPlanilla('enviada','Planilla enviada a revisión')" class="btn primary" style="gap:6px">📤 Enviar a revisión</button>`;
     btns.innerHTML+=`<button onclick="eliminarPlanilla('${p.id}')" class="btn" style="color:#e2445c">🗑 Eliminar</button>`;
   }
   if(p.estado==='enviada' && ['admin','fiscalizador'].includes(rol)){
