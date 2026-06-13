@@ -2941,6 +2941,7 @@ function renderCurvaS(proy){
           <th style="text-align:center">Peso %</th>
           <th style="text-align:center">Inicio plan.</th>
           <th style="text-align:center">Fin plan.</th>
+          <th style="text-align:center">Días</th>
           <th style="text-align:center">Avance real</th>
           <th style="text-align:center">Estado</th>
         </tr></thead>
@@ -2960,6 +2961,7 @@ function renderCurvaS(proy){
       <td style="text-align:center;font-weight:600">${r.pesoEfectivo.toFixed(1)}%</td>
       <td style="text-align:center;font-size:12px">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
       <td style="text-align:center;font-size:12px">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
+      <td style="text-align:center;font-weight:700;color:#0073ea">${r.fecha_inicio&&r.fecha_fin?Math.round((new Date(r.fecha_fin)-new Date(r.fecha_inicio))/(1000*60*60*24))+'d':'—'}</td>
       <td style="text-align:center">
         <span style="font-weight:600;color:#0073ea">${r.avance_real.toFixed(1)}%</span>
         <div class="progress-bg" style="margin-top:3px"><div class="progress-fill" style="width:${r.avance_real}%;background:#0073ea"></div></div>
