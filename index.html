@@ -400,6 +400,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           Importar Excel
         </button>
         <input type="file" id="inputImportarRubros" accept=".xlsx,.xls" style="display:none" onchange="importarRubrosExcel(this)"/>
+        <button id="btnDescargarPlantilla" style="display:none" class="btn" onclick="descargarPlantillaRubros()" title="Descargar plantilla Excel">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Plantilla
+        </button>
         <button id="btnLinkFormulario" style="display:none" class="btn" onclick="mostrarLinkFormulario()" title="Link formulario público">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Link formulario
@@ -1986,6 +1990,8 @@ function navTo(page, btn){
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
   const btnImportar = document.getElementById('btnImportarRubros');
   if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto) ? 'flex' : 'none';
+  const btnPlantilla = document.getElementById('btnDescargarPlantilla');
+  if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
@@ -4199,6 +4205,15 @@ async function abrirModalEquipo(equipo=null){
   document.getElementById('equipoEstado').value=equipo?.estado||'activo';
   document.querySelector('#modalEquipo .modal-title').textContent=equipo?'✏️ Editar equipo':'🚜 Agregar equipo';
   document.getElementById('modalEquipo').classList.add('show');
+}
+
+function descargarPlantillaRubros(){
+  // URL pública de la plantilla en Supabase Storage
+  const url = 'https://kpswaoqxaxvhrgxntkcq.supabase.co/storage/v1/object/public/hidivo-archivos/plantillas/plantilla_rubros_hidivo.xlsx';
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'plantilla_rubros_hidivo.xlsx';
+  a.click();
 }
 
 function toggleNuevoEquipo(sel){
