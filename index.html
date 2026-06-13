@@ -3297,7 +3297,7 @@ async function cargarPlanillas(){
   const puedeCrear = ['admin','fiscalizador','residente'].includes(rol);
 
   const { data: planillas } = await sb.from('planillas_pago')
-    .select('*,creado_por:perfiles!planillas_pago_creado_por_fkey(nombre,apellido)')
+    .select('*,creado_por:perfiles(nombre,apellido)')
     .eq('proyecto_id', currentProyecto).order('numero', {ascending:false});
 
   // Badge de planillas en revisión
@@ -3389,12 +3389,12 @@ async function cargarRubrosPlanilla(){
 
   // Obtener producción del período del Libro de Obra
   const { data: libroItems } = await sb.from('libro_obra_rubros')
-    .select('rubro_id,cantidad')
+    .select('rubro_id,cantidad_dia')
     .gte('created_at', fechaInicio+'T00:00:00')
     .lte('created_at', fechaFin+'T23:59:59');
 
   const prodPeriodo = {};
-  (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad||0); });
+  (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad_dia||0); });
 
   // Renderizar tabla
   let total = 0;
@@ -3506,13 +3506,13 @@ async function guardarPlanilla(estado){
 
 async function verPlanilla(id){
   const { data: p } = await sb.from('planillas_pago')
-    .select('*,creado_por:perfiles!planillas_pago_creado_por_fkey(nombre,apellido)')
+    .select('*,creado_por:perfiles(nombre,apellido)')
     .eq('id',id).single();
   const { data: rubros } = await sb.from('planilla_rubros')
     .select('*,rubro:rubros(descripcion,unidad)').eq('planilla_id',id);
   const { data: archivos } = await sb.from('planilla_archivos').select('*').eq('planilla_id',id);
   const { data: historial } = await sb.from('planilla_historial')
-    .select('*,autor:perfiles!planilla_historial_autor_id_fkey(nombre,apellido)')
+    .select('*,autor:perfiles(nombre,apellido)')
     .eq('planilla_id',id).order('created_at');
 
   window._planillaActiva = p;
