@@ -2383,8 +2383,7 @@ async function importarRubrosExcel(input){
           fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
           fecha_fin: parseFechaExcel(r[colIdx.fechaFin]),
           estado: 'planificado',
-          cantidad_ejecutada: 0,
-          total_produccion: 0
+          cantidad_ejecutada: 0
         };
       });
 
@@ -2437,7 +2436,6 @@ async function guardarRubro(){
     descripcion, unidad,
     cantidad_contrato: cantidad,
     precio_unitario: precio,
-    monto_contrato: cantidad * precio,
     codigo: codigo||null
   };
 
