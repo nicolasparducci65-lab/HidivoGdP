@@ -356,6 +356,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         Materiales
         <span id="materialesBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
+      <div class="nav-item" onclick="navTo('archivos',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Archivos
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -481,6 +485,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
         <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- ARCHIVOS -->
+      <div class="page" id="page-archivos">
+        <div id="archivosGlobalContent"><div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- MATERIALES -->
@@ -1908,11 +1917,11 @@ function ocultarBotonesAccion(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','chat'],
-    bodeguero:    ['materiales','chat'],
-    visualizador: ['rubros','curvaS','chat']
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
+    bodeguero:    ['materiales','archivos','chat'],
+    visualizador: ['rubros','curvaS','archivos','chat']
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
@@ -1942,6 +1951,7 @@ function aplicarAccesosPorRol(rol){
     planillas:      document.querySelector('.nav-item[onclick*="planillas"]'),
     equipos:        document.querySelector('.nav-item[onclick*="equipos"]'),
     materiales:     document.querySelector('.nav-item[onclick*="materiales"]'),
+    archivos:       document.querySelector('.nav-item[onclick*="archivos"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios')
   };
@@ -1988,7 +1998,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -1998,7 +2008,7 @@ function navTo(page, btn){
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -2013,6 +2023,7 @@ function navTo(page, btn){
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
   if(page==='equipos'&&currentProyecto) cargarEquipos();
   if(page==='materiales'&&currentProyecto) cargarMateriales();
+  if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -2160,17 +2171,18 @@ function cambiarProyecto(id){
   if(currentPage==='planillas') cargarPlanillas();
   if(currentPage==='equipos') cargarEquipos();
   if(currentPage==='materiales') cargarMateriales();
+  if(currentPage==='archivos') cargarArchivosGlobal();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','chat'],
-    bodeguero:    ['materiales','chat'],
-    visualizador: ['rubros','curvaS','chat']
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
+    bodeguero:    ['materiales','archivos','chat'],
+    visualizador: ['rubros','curvaS','archivos','chat']
   };
   const permitidos = accesos[rol]||['dashboard'];
 
@@ -3796,6 +3808,180 @@ function toggleNuevoMaterial(sel){
   const esNuevo = sel.value==='nuevo';
   document.getElementById('matNuevoNombre').style.display=esNuevo?'block':'none';
   document.getElementById('matNuevoUnidad').style.display=esNuevo?'block':'none';
+}
+
+// ── ARCHIVOS GLOBALES ──
+const MODULO_LABELS = {
+  rubros:'Rubros', libro:'Libro de Obra', curvaS:'Curva S',
+  fiscalizacion:'Observaciones', solicitudes:'Solicitudes',
+  planillas:'Planillas', equipos:'Equipos', materiales:'Materiales'
+};
+
+async function cargarArchivosGlobal(){
+  if(!currentProyecto){
+    document.getElementById('archivosGlobalContent').innerHTML='<div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  const rol = currentPerfil?.rol;
+  const puedeEliminar = ['admin','fiscalizador'].includes(rol);
+
+  const { data: archivos } = await sb.from('archivos')
+    .select('*').eq('proyecto_id', currentProyecto)
+    .order('created_at',{ascending:false});
+
+  // Plantillas disponibles
+  const plantillas = [
+    { nombre:'Plantilla Rubros HIDIVO.xlsx', descripcion:'Plantilla Excel para importar rubros y cronograma', url:'https://kpswaoqxaxvhrgxntkcq.supabase.co/storage/v1/object/public/hidivo-archivos/plantillas/plantilla_rubros_hidivo.xlsx', tipo:'plantilla' }
+  ];
+
+  document.getElementById('archivosGlobalContent').innerHTML = `
+  <!-- Plantillas -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div class="card-title">📋 Plantillas disponibles</div></div>
+    <div style="padding:0 16px 12px">
+      ${plantillas.map(p=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f5f6f8">
+        <div style="width:36px;height:36px;background:#e8f5e9;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📊</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${p.nombre}</div>
+          <div style="font-size:12px;color:#676879">${p.descripcion}</div>
+        </div>
+        <a href="${p.url}" download class="btn" style="gap:6px;flex-shrink:0">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar
+        </a>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Archivos del proyecto -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">📁 Archivos del proyecto</div>
+        <div class="card-subtitle">${archivos?.length||0} archivos subidos</div>
+      </div>
+    </div>
+    ${!archivos?.length ? `
+    <div style="padding:32px;text-align:center;color:#676879">
+      <div style="font-size:32px;margin-bottom:8px">📂</div>
+      <div>No hay archivos subidos en este proyecto</div>
+    </div>` : `
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Archivo</th>
+          <th style="text-align:center">Sección</th>
+          <th>Descripción IA</th>
+          <th style="text-align:center">Fecha</th>
+          <th style="text-align:center">Acciones</th>
+        </tr></thead>
+        <tbody>
+          ${archivos.map(a=>{
+            const ext = a.nombre?.split('.').pop()?.toLowerCase()||'';
+            const esImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
+            const esPDF = ext==='pdf';
+            const icono = esImg?'🖼️':esPDF?'📄':['xlsx','xls'].includes(ext)?'📊':['docx','doc'].includes(ext)?'📝':'📎';
+            const modLabel = MODULO_LABELS[a.modulo]||a.modulo||'—';
+            return `<tr>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:20px">${icono}</span>
+                  <div>
+                    <a href="${a.url}" target="_blank" style="font-weight:500;font-size:13px;color:#0073ea;text-decoration:none">${a.nombre||'Archivo'}</a>
+                    ${a.tamanio?`<div style="font-size:11px;color:#676879">${(a.tamanio/1024/1024).toFixed(2)} MB</div>`:''}
+                  </div>
+                </div>
+              </td>
+              <td style="text-align:center">
+                <span style="background:#f0f7ff;color:#0060c0;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600">${modLabel}</span>
+              </td>
+              <td style="max-width:280px">
+                ${a.descripcion_ia ? `
+                  <div style="font-size:12px;color:#323338;line-height:1.5">${a.descripcion_ia}</div>
+                ` : `
+                  <button onclick="describirArchivoIA('${a.id}','${a.url.replace(/'/g,"\\'")}','${a.nombre?.replace(/'/g,"\\'")||''}')" 
+                    class="btn" style="gap:5px;font-size:11px;padding:4px 10px">
+                    ✨ Describir con IA
+                  </button>
+                `}
+              </td>
+              <td style="text-align:center;font-size:12px;color:#676879;white-space:nowrap">
+                ${new Date(a.created_at).toLocaleDateString('es-EC')}
+              </td>
+              <td style="text-align:center;white-space:nowrap">
+                <a href="${a.url}" target="_blank" class="btn" style="padding:4px 8px;font-size:11px" title="Ver">👁</a>
+                ${puedeEliminar?`<button onclick="eliminarArchivoGlobal('${a.id}','${a.url.replace(/'/g,"\\'")}','${a.modulo||''}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>`:''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`}
+  </div>`;
+}
+
+async function describirArchivoIA(id, url, nombre){
+  const btn = document.querySelector(`button[onclick*="describirArchivoIA('${id}'"]`);
+  if(btn){ btn.disabled=true; btn.textContent='✨ Analizando...'; }
+
+  try {
+    const ext = nombre.split('.').pop()?.toLowerCase()||'';
+    const esImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
+    const esPDF = ext==='pdf';
+
+    let prompt = `Analiza este archivo llamado "${nombre}" y proporciona una descripción concisa (máximo 2 oraciones) indicando: qué tipo de documento es, su contenido principal y para qué sirve en el contexto de gestión de obras civiles. Responde solo con la descripción, sin formato adicional.`;
+
+    let messages;
+    if(esImg){
+      // Para imágenes — usar visión
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const base64 = await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
+      messages = [{ role:'user', content:[
+        { type:'image', source:{ type:'base64', media_type:blob.type, data:base64 }},
+        { type:'text', text:prompt }
+      ]}];
+    } else {
+      // Para otros archivos — usar solo nombre y extensión
+      messages = [{ role:'user', content:`${prompt}\n\nNota: Solo tengo el nombre del archivo, no su contenido. Basándote en el nombre "${nombre}" y la extensión ".${ext}", describe qué tipo de documento podría ser.` }];
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:200, messages })
+    });
+
+    const data = await response.json();
+    const descripcion = data.content?.[0]?.text?.trim()||'No se pudo generar descripción.';
+
+    // Guardar en BD
+    await sb.from('archivos').update({ descripcion_ia: descripcion }).eq('id',id);
+    toast('Descripción generada ✓','success');
+    cargarArchivosGlobal();
+
+  } catch(err){
+    console.error(err);
+    toast('Error al generar descripción','error');
+    if(btn){ btn.disabled=false; btn.textContent='✨ Describir con IA'; }
+  }
+}
+
+async function eliminarArchivoGlobal(id, url, modulo){
+  if(!confirm('¿Eliminar este archivo?')) return;
+  // Eliminar del storage
+  try {
+    const path = url.split('/hidivo-archivos/')[1]||url.split('/hidivo-fotos/')[1];
+    if(path){
+      const bucket = url.includes('hidivo-fotos')?'hidivo-fotos':'hidivo-archivos';
+      await sb.storage.from(bucket).remove([path]);
+    }
+  } catch(e){ console.log('Error eliminando storage:', e); }
+  // Eliminar de la BD
+  await sb.from('archivos').delete().eq('id',id);
+  toast('Archivo eliminado','success');
+  cargarArchivosGlobal();
 }
 
 // ── CONTROL DE MATERIALES ──
