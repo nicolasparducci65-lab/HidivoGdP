@@ -4497,6 +4497,10 @@ async function verPlanilla(id){
   if(p.estado==='aprobada' && rol==='admin'){
     btns.innerHTML+=`<button onclick="abrirAccionPlanilla('pagada','Planilla marcada como pagada')" class="btn" style="background:#9b59b6;color:#fff;border-color:#9b59b6">💰 Marcar como pagada</button>`;
   }
+  // Admin puede eliminar cualquier planilla
+  if(rol==='admin' && p.estado!=='borrador'){
+    btns.innerHTML+=`<button onclick="eliminarPlanilla('${p.id}')" class="btn" style="color:#e2445c;margin-left:auto">🗑 Eliminar</button>`;
+  }
 
   document.getElementById('modalVerPlanilla').classList.add('show');
 }
