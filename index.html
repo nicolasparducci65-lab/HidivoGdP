@@ -3378,6 +3378,7 @@ async function abrirModalNuevaPlanilla(){
   // Calcular número de planilla
   const { data: ultimas } = await sb.from('planillas_pago').select('numero').eq('proyecto_id',currentProyecto).order('numero',{ascending:false}).limit(1);
   const numero = (ultimas?.[0]?.numero||0) + 1;
+  window._planillaNumero = numero;
   document.getElementById('planNumero').textContent = numero;
   // Fechas por defecto: mes actual
   const hoy = new Date();
@@ -3474,6 +3475,7 @@ async function editarPlanilla(id){
   const { data: p } = await sb.from('planillas_pago').select('*').eq('id',id).single();
   if(!p) return;
   window._editandoPlanillaId = id;
+  window._planillaNumero = p.numero;
   document.getElementById('planNumero').textContent = p.numero;
   document.getElementById('planFechaInicio').value = p.fecha_inicio;
   document.getElementById('planFechaFin').value = p.fecha_fin;
@@ -3504,8 +3506,8 @@ async function guardarPlanilla(estado){
   const btn = document.getElementById('btnGuardarPlanilla');
   btn.disabled=true; btn.textContent='Guardando...';
 
-  // Número de planilla
-  const numero = parseInt(document.getElementById('planNumero').textContent);
+  // Número de planilla — desde variable o DOM
+  const numero = window._planillaNumero || parseInt(document.getElementById('planNumero')?.textContent||'0');
   const totalMonto = parseFloat(document.getElementById('planTotal').textContent.replace('$','').replace(/,/g,''))||0;
 
   // Si es edición, actualizar en lugar de crear
