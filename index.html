@@ -336,6 +336,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         Planillas de Pago
         <span id="planillasBadge" style="display:none;background:#ff9f00;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
+      <div class="nav-item" onclick="navTo('equipos',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Equipos
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -448,6 +452,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
         <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- EQUIPOS -->
+      <div class="page" id="page-equipos">
+        <div id="equiposContent"><div class="empty-state"><div class="empty-icon">🚜</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- PLANILLAS -->
@@ -1185,6 +1194,95 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL NUEVO/EDITAR EQUIPO -->
+<div class="modal-overlay" id="modalEquipo">
+  <div class="modal" style="width:500px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">🚜 Nuevo equipo</div>
+      <button class="btn" onclick="cerrarModal('modalEquipo')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="equipoId"/>
+      <div class="form-group">
+        <label class="form-label">Nombre *</label>
+        <input type="text" class="form-control" id="equipoNombre" placeholder="Ej: Excavadora CAT 320"/>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Tipo</label>
+          <input type="text" class="form-control" id="equipoTipo" placeholder="Ej: Excavadora, Volquete"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Propietario</label>
+          <input type="text" class="form-control" id="equipoPropietario" placeholder="Ej: HIDIVO, Contratista, Empresa X"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Modelo</label>
+          <input type="text" class="form-control" id="equipoModelo" placeholder="Ej: CAT 320D"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Placa</label>
+          <input type="text" class="form-control" id="equipoPlaca" placeholder="Ej: GHJ-1234"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Costo por hora ($)</label>
+          <input type="number" class="form-control" id="equipoCostoHora" placeholder="0.00" step="0.01" min="0"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estado</label>
+          <select class="form-control" id="equipoEstado">
+            <option value="activo">✅ Activo</option>
+            <option value="mantenimiento">🔧 En mantenimiento</option>
+            <option value="retirado">❌ Retirado</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalEquipo')">Cancelar</button>
+      <button id="btnGuardarEquipo" class="btn primary" onclick="guardarEquipo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REGISTRO HORAS -->
+<div class="modal-overlay" id="modalRegistroHoras">
+  <div class="modal" style="width:440px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">⏱ Registrar horas</div>
+      <button class="btn" onclick="cerrarModal('modalRegistroHoras')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Equipo *</label>
+        <select class="form-control" id="horasEquipoSelect"></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Fecha *</label>
+          <input type="date" class="form-control" id="horasFecha"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Horas trabajadas *</label>
+          <input type="number" class="form-control" id="horasCantidad" placeholder="0.0" step="0.5" min="0" max="24"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Operador</label>
+        <input type="text" class="form-control" id="horasOperador" placeholder="Nombre del operador"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observación</label>
+        <textarea class="form-control" id="horasObservacion" rows="2" placeholder="Actividad realizada..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalRegistroHoras')">Cancelar</button>
+      <button id="btnGuardarHoras" class="btn primary" onclick="guardarRegistroHoras()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL NUEVA PLANILLA -->
 <div class="modal-overlay" id="modalNuevaPlanilla">
   <div class="modal" style="width:900px;max-width:98vw;max-height:95vh">
@@ -1631,9 +1729,9 @@ function ocultarBotonesAccion(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','chat'],
     visualizador: ['rubros','curvaS','chat']
   };
 
@@ -1656,6 +1754,7 @@ function aplicarAccesosPorRol(rol){
     fiscalizacion:  document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
     solicitudes:    document.querySelector('.nav-item[onclick*="solicitudes"]'),
     planillas:      document.querySelector('.nav-item[onclick*="planillas"]'),
+    equipos:        document.querySelector('.nav-item[onclick*="equipos"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios')
   };
@@ -1700,11 +1799,11 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -1717,6 +1816,7 @@ function navTo(page, btn){
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
+  if(page==='equipos'&&currentProyecto) cargarEquipos();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -1854,6 +1954,7 @@ function cambiarProyecto(id){
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
   if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='planillas') cargarPlanillas();
+  if(currentPage==='equipos') cargarEquipos();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
@@ -3277,6 +3378,213 @@ async function guardarObservacionNueva(){
   cargarObservaciones();
 }
 
+
+// ── CONTROL DE EQUIPOS ──
+let equiposTab = 'catalogo';
+
+async function cargarEquipos(){
+  if(!currentProyecto){
+    document.getElementById('equiposContent').innerHTML='<div class="empty-state"><div class="empty-icon">🚜</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  renderEquiposShell();
+  if(equiposTab==='catalogo') cargarCatalogoEquipos();
+  else if(equiposTab==='horas') cargarRegistroHoras();
+  else cargarReportesEquipos();
+}
+
+function renderEquiposShell(){
+  const rol = currentPerfil?.rol;
+  const puedeEditar = ['admin','fiscalizador'].includes(rol);
+  document.getElementById('equiposContent').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="switchEquiposTab('catalogo')" class="btn ${equiposTab==='catalogo'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">🚜 Catálogo</button>
+      <button onclick="switchEquiposTab('horas')" class="btn ${equiposTab==='horas'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">⏱ Registro horas</button>
+      <button onclick="switchEquiposTab('reportes')" class="btn ${equiposTab==='reportes'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">📊 Reportes</button>
+    </div>
+    ${puedeEditar && equiposTab==='catalogo'?`<button onclick="abrirModalEquipo()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nuevo equipo
+    </button>`:''}
+    ${equiposTab==='horas'?`<button onclick="abrirModalRegistroHoras()" class="btn primary" style="gap:6px">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Registrar horas
+    </button>`:''}
+  </div>
+  <div id="equiposBody"></div>`;
+}
+
+function switchEquiposTab(tab){
+  equiposTab=tab;
+  renderEquiposShell();
+  if(tab==='catalogo') cargarCatalogoEquipos();
+  else if(tab==='horas') cargarRegistroHoras();
+  else cargarReportesEquipos();
+}
+
+async function cargarCatalogoEquipos(){
+  const { data: equipos } = await sb.from('equipos_proyecto').select('*').eq('proyecto_id',currentProyecto).order('nombre');
+  const el = document.getElementById('equiposBody');
+  const estadoColor={activo:'#00c875',mantenimiento:'#ff9f00',retirado:'#e2445c'};
+  const estadoLabel={activo:'✅ Activo',mantenimiento:'🔧 Mantenimiento',retirado:'❌ Retirado'};
+  const puedeEditar=['admin','fiscalizador'].includes(currentPerfil?.rol);
+  if(!equipos?.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">🚜</div><div class="empty-title">Sin equipos</div><div class="empty-sub">Agrega los equipos del proyecto</div></div>'; return; }
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+    ${equipos.map(e=>`
+    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;border-left:4px solid ${estadoColor[e.estado]||'#676879'}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+        <div><div style="font-weight:700;font-size:14px;color:#323338">${e.nombre}</div>
+        <div style="font-size:12px;color:#676879">${e.tipo||''} ${e.modelo?'· '+e.modelo:''}</div></div>
+        <span style="background:${estadoColor[e.estado]||'#676879'}20;color:${estadoColor[e.estado]||'#676879'};padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">${estadoLabel[e.estado]||e.estado}</span>
+      </div>
+      <div style="font-size:12px;color:#676879;margin-bottom:8px">${e.propietario?'👤 '+e.propietario:''} ${e.placa?'· 🚗 '+e.placa:''}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;font-weight:600;color:#0073ea">$${Number(e.costo_hora||0).toFixed(2)}/hora</span>
+        ${puedeEditar?`<div style="display:flex;gap:6px">
+          <button onclick="abrirModalEquipo(${JSON.stringify(e).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
+          <button onclick="cambiarEstadoEquipo('${e.id}','${e.estado}')" class="btn" style="padding:4px 8px;font-size:11px">🔄</button>
+          <button onclick="eliminarEquipo('${e.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
+        </div>`:''}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+async function cargarRegistroHoras(){
+  const hace30=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+  const { data: horas } = await sb.from('equipos_horas').select('*,equipo:equipos_proyecto(nombre,tipo)').eq('proyecto_id',currentProyecto).gte('fecha',hace30).order('fecha',{ascending:false});
+  const el=document.getElementById('equiposBody');
+  el.innerHTML=`<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr><th>Fecha</th><th>Equipo</th><th style="text-align:center">Horas</th><th>Operador</th><th>Observación</th><th></th></tr></thead>
+    <tbody>${!horas?.length?`<tr><td colspan="6" style="text-align:center;color:#676879;padding:20px">Sin registros en los últimos 30 días</td></tr>`:
+    horas.map(h=>`<tr>
+      <td>${new Date(h.fecha+'T00:00:00').toLocaleDateString('es-EC')}</td>
+      <td style="font-weight:500">${h.equipo?.nombre||'—'} <span style="color:#676879;font-size:11px">${h.equipo?.tipo||''}</span></td>
+      <td style="text-align:center;font-weight:700;color:#0073ea">${h.horas}h</td>
+      <td style="font-size:12px">${h.operador||'—'}</td>
+      <td style="font-size:12px;color:#676879">${h.observacion||'—'}</td>
+      <td><button onclick="eliminarRegistroHoras('${h.id}')" class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c">🗑</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`;
+}
+
+async function cargarReportesEquipos(){
+  const { data: equipos } = await sb.from('equipos_proyecto').select('*').eq('proyecto_id',currentProyecto);
+  const { data: horas } = await sb.from('equipos_horas').select('*').eq('proyecto_id',currentProyecto);
+  const el=document.getElementById('equiposBody');
+  if(!equipos?.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin equipos registrados</div></div>'; return; }
+  const horasPorEquipo={};
+  (horas||[]).forEach(h=>{ horasPorEquipo[h.equipo_id]=(horasPorEquipo[h.equipo_id]||0)+(h.horas||0); });
+  const totalHoras=Object.values(horasPorEquipo).reduce((s,v)=>s+v,0);
+  const totalCosto=equipos.reduce((s,e)=>s+((horasPorEquipo[e.id]||0)*(e.costo_hora||0)),0);
+  const estadoColor={activo:'#00c875',mantenimiento:'#ff9f00',retirado:'#e2445c'};
+  el.innerHTML=`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+    <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div><div class="metric-value">${totalHoras.toFixed(1)}h</div><div class="metric-label">Horas totales</div></div></div>
+    <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="metric-value">$${totalCosto.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Costo total</div></div></div>
+    <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+      <div><div class="metric-value">${equipos.filter(e=>e.estado==='activo').length}</div><div class="metric-label">Equipos activos</div></div></div>
+  </div>
+  <div class="card"><div class="card-header"><div class="card-title">Detalle por equipo</div></div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Equipo</th><th>Propietario</th><th style="text-align:center">Estado</th><th style="text-align:right">$/hora</th><th style="text-align:right">Horas</th><th style="text-align:right">Costo</th><th style="text-align:right">% uso</th></tr></thead>
+      <tbody>${equipos.map(e=>{
+        const hrs=horasPorEquipo[e.id]||0;
+        const costo=hrs*(e.costo_hora||0);
+        const pct=totalHoras>0?(hrs/totalHoras*100).toFixed(1):'0.0';
+        return `<tr>
+          <td style="font-weight:500">${e.nombre}<br><span style="font-size:11px;color:#676879">${e.tipo||''} ${e.modelo?'· '+e.modelo:''}</span></td>
+          <td style="font-size:12px">${e.propietario||'—'}</td>
+          <td style="text-align:center"><span style="color:${estadoColor[e.estado]||'#676879'};font-weight:600;font-size:12px">${e.estado}</span></td>
+          <td style="text-align:right">$${Number(e.costo_hora||0).toFixed(2)}</td>
+          <td style="text-align:right;font-weight:700;color:#0073ea">${hrs.toFixed(1)}h</td>
+          <td style="text-align:right;font-weight:700">$${costo.toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+          <td style="text-align:right"><span style="font-size:12px;font-weight:600;color:#0073ea">${pct}%</span>
+            <div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:#0073ea"></div></div></td>
+        </tr>`;}).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function abrirModalEquipo(equipo=null){
+  document.getElementById('equipoId').value=equipo?.id||'';
+  document.getElementById('equipoNombre').value=equipo?.nombre||'';
+  document.getElementById('equipoTipo').value=equipo?.tipo||'';
+  document.getElementById('equipoPropietario').value=equipo?.propietario||'';
+  document.getElementById('equipoModelo').value=equipo?.modelo||'';
+  document.getElementById('equipoPlaca').value=equipo?.placa||'';
+  document.getElementById('equipoCostoHora').value=equipo?.costo_hora||'';
+  document.getElementById('equipoEstado').value=equipo?.estado||'activo';
+  document.querySelector('#modalEquipo .modal-title').textContent=equipo?'✏️ Editar equipo':'🚜 Nuevo equipo';
+  document.getElementById('modalEquipo').classList.add('show');
+}
+
+async function guardarEquipo(){
+  const id=document.getElementById('equipoId').value;
+  const nombre=document.getElementById('equipoNombre').value.trim();
+  if(!nombre){ toast('El nombre es obligatorio','error'); return; }
+  const payload={proyecto_id:currentProyecto,nombre,tipo:document.getElementById('equipoTipo').value.trim()||null,propietario:document.getElementById('equipoPropietario').value.trim()||null,modelo:document.getElementById('equipoModelo').value.trim()||null,placa:document.getElementById('equipoPlaca').value.trim()||null,costo_hora:parseFloat(document.getElementById('equipoCostoHora').value)||0,estado:document.getElementById('equipoEstado').value};
+  const btn=document.getElementById('btnGuardarEquipo');
+  btn.disabled=true; btn.textContent='Guardando...';
+  const {error}=id?await sb.from('equipos_proyecto').update(payload).eq('id',id):await sb.from('equipos_proyecto').insert(payload);
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  toast(id?'Equipo actualizado ✓':'Equipo creado ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalEquipo');
+  cargarCatalogoEquipos();
+}
+
+async function cambiarEstadoEquipo(id, estadoActual){
+  const estados=['activo','mantenimiento','retirado'];
+  const nuevo=estados[(estados.indexOf(estadoActual)+1)%3];
+  await sb.from('equipos_proyecto').update({estado:nuevo}).eq('id',id);
+  toast('Estado → '+nuevo,'success');
+  cargarCatalogoEquipos();
+}
+
+async function eliminarEquipo(id){
+  if(!confirm('¿Eliminar este equipo?')) return;
+  await sb.from('equipos_horas').delete().eq('equipo_id',id);
+  await sb.from('equipos_proyecto').delete().eq('id',id);
+  toast('Equipo eliminado','success');
+  cargarCatalogoEquipos();
+}
+
+async function abrirModalRegistroHoras(){
+  const {data:equipos}=await sb.from('equipos_proyecto').select('id,nombre,tipo').eq('proyecto_id',currentProyecto).eq('estado','activo').order('nombre');
+  document.getElementById('horasEquipoSelect').innerHTML=equipos?.map(e=>`<option value="${e.id}">${e.nombre}${e.tipo?' ('+e.tipo+')':''}</option>`).join('')||'<option>Sin equipos activos</option>';
+  document.getElementById('horasFecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('horasCantidad').value='';
+  document.getElementById('horasOperador').value='';
+  document.getElementById('horasObservacion').value='';
+  document.getElementById('modalRegistroHoras').classList.add('show');
+}
+
+async function guardarRegistroHoras(){
+  const equipoId=document.getElementById('horasEquipoSelect').value;
+  const fecha=document.getElementById('horasFecha').value;
+  const horas=parseFloat(document.getElementById('horasCantidad').value)||0;
+  if(!equipoId||!fecha||!horas){ toast('Equipo, fecha y horas son obligatorios','error'); return; }
+  const btn=document.getElementById('btnGuardarHoras');
+  btn.disabled=true; btn.textContent='Guardando...';
+  const {error}=await sb.from('equipos_horas').insert({equipo_id:equipoId,proyecto_id:currentProyecto,fecha,horas,operador:document.getElementById('horasOperador').value.trim()||null,observacion:document.getElementById('horasObservacion').value.trim()||null});
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  toast('Horas registradas ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalRegistroHoras');
+  cargarRegistroHoras();
+}
+
+async function eliminarRegistroHoras(id){
+  if(!confirm('¿Eliminar este registro?')) return;
+  await sb.from('equipos_horas').delete().eq('id',id);
+  toast('Registro eliminado','success');
+  cargarRegistroHoras();
+}
 
 async function notificarFiscalizadorViaDM(titulo, detalle){
   if(!currentProyecto) return;
