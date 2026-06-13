@@ -4201,12 +4201,18 @@ async function cargarPlanillas(){
 async function abrirModalNuevaPlanilla(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   window._editandoPlanillaId = null;
-  document.querySelector('#modalNuevaPlanilla .modal-title').textContent = '📊 Nueva Planilla de Pago — N° ';
+  // Esperar a que el modal esté en el DOM
+  await new Promise(r=>setTimeout(r,0));
+  const modal = document.getElementById('modalNuevaPlanilla');
+  if(!modal){ toast('Error al abrir el modal','error'); return; }
+  const titleEl = modal.querySelector('.modal-title');
+  if(titleEl) titleEl.textContent = '📊 Nueva Planilla de Pago';
   // Calcular número de planilla
   const { data: ultimas } = await sb.from('planillas_pago').select('numero').eq('proyecto_id',currentProyecto).order('numero',{ascending:false}).limit(1);
   const numero = (ultimas?.[0]?.numero||0) + 1;
   window._planillaNumero = numero;
-  document.getElementById('planNumero').textContent = numero;
+  const spanNumero = document.getElementById('planNumero');
+  if(spanNumero) spanNumero.textContent = numero;
   // Fechas por defecto: mes actual
   const hoy = new Date();
   const primerDia = new Date(hoy.getFullYear(),hoy.getMonth(),1).toISOString().split('T')[0];
@@ -4303,7 +4309,8 @@ async function editarPlanilla(id){
   if(!p) return;
   window._editandoPlanillaId = id;
   window._planillaNumero = p.numero;
-  document.getElementById('planNumero').textContent = p.numero;
+  const spanNum = document.getElementById('planNumero');
+  if(spanNum) spanNum.textContent = p.numero;
   document.getElementById('planFechaInicio').value = p.fecha_inicio;
   document.getElementById('planFechaFin').value = p.fecha_fin;
   document.getElementById('planObservaciones').value = p.observaciones||'';
