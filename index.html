@@ -2349,58 +2349,59 @@ async function importarRubrosExcel(input){
 
       if(!rows.length){ toast('Excel vacío','error'); return; }
 
-      // Detectar fila de encabezado — buscar fila con "Descripcion" o similar
+      // Detectar fila de encabezado principal
       let startRow = 0;
       let headerRow = -1;
       for(let i=0;i<Math.min(10,rows.length);i++){
-        const r = rows[i].map(c=>String(c).toLowerCase().trim());
-        if(r.some(c=>c.includes('descrip')||c.includes('rubro')||c.includes('detalle'))){
+        const r = rows[i].map(c=>String(c||'').toLowerCase().trim());
+        if(r.some(c=>c==='descripción'||c==='descripcion'||c==='rubro'||c==='detalle')){
           headerRow = i;
           startRow = i+1;
-          // Saltar filas de subencabezado (si la siguiente fila tiene notas cortas)
-          if(startRow < rows.length){
-            const next = rows[startRow].map(c=>String(c).toLowerCase().trim());
-            if(next.some(c=>c.includes('obligat')||c.includes('opcio')||c.includes('ej:')||c.includes('número')||c.includes('dd/'))){
-              startRow++;
-            }
-          }
           break;
         }
       }
 
-      // Si no se encontró encabezado, buscar la primera fila con datos numéricos
-      if(headerRow===-1){
-        for(let i=0;i<Math.min(10,rows.length);i++){
-          if(rows[i].some(c=>typeof c==='number'&&c>0)){
-            startRow=i; break;
-          }
-        }
+      // Saltar filas de subencabezado — ignorar filas que no tienen datos numéricos ni descripciones reales
+      while(startRow < rows.length){
+        const r = rows[startRow];
+        const desc = String(r[colIdx.descrip>=0?colIdx.descrip:2]||'').trim();
+        const tieneNumero = r.some(c=>typeof c==='number'&&c>0);
+        const esSubHeader = !desc || /^(opcional|obligatorio|ej:|número|automático|dd\/)/i.test(desc);
+        if(!esSubHeader || tieneNumero) break;
+        startRow++;
       }
 
-      // Columnas — usar la fila de encabezado detectada
-      const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c).toLowerCase().trim()) : [];
+      // Columnas desde fila de encabezado
+      const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c||'').toLowerCase().trim()) : [];
       const colIdx = {
-        codigo:   headers.findIndex(h=>h.includes('cod')||h==='#'||h==='n°'||h==='n'||h==='item'),
-        descrip:  headers.findIndex(h=>h.includes('descrip')||h.includes('rubro')||h.includes('detalle')),
-        unidad:   headers.findIndex(h=>h.includes('unidad')||h.includes('unit')||h==='u'||h==='u.'),
-        cantidad: headers.findIndex(h=>h.includes('cantidad')||h.includes('cant')||h.includes('vol')),
-        precio:   headers.findIndex(h=>h.includes('precio')||h.includes('p.u')||h==='pu'||h.includes('unit price')||h.includes('valor unit')),
-        fechaIni: headers.findIndex(h=>h.includes('inicio')||h.includes('start')||h.includes('desde')),
-        fechaFin: headers.findIndex(h=>h.includes('fin')||h.includes('end')||h.includes('hasta')||h.includes('término')),
+        codigo:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='código'||h==='codigo'||h==='item'),
+        descrip:  headers.findIndex(h=>h==='descripción'||h==='descripcion'||h==='rubro'||h==='detalle'||h.includes('descrip')),
+        unidad:   headers.findIndex(h=>h==='unidad'||h==='u'||h==='u.'||h.includes('unid')),
+        cantidad: headers.findIndex(h=>h==='cantidad'||h.includes('cant')||h==='vol'),
+        precio:   headers.findIndex(h=>h==='p.u. ($)'||h==='p.u.'||h==='p.u'||h==='pu'||h.includes('precio')||h.includes('p.unit')||h.includes('unitario')),
+        fechaIni: headers.findIndex(h=>h==='fecha inicio'||h.includes('inicio')||h.includes('start')||h.includes('desde')),
+        fechaFin: headers.findIndex(h=>h==='fecha fin'||h.includes('fin')||h.includes('end')||h.includes('hasta')),
       };
 
-      // Fallback: orden fijo si no se detectan columnas
-      if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=1; colIdx.unidad=2; colIdx.cantidad=3; colIdx.precio=4; colIdx.fechaIni=5; colIdx.fechaFin=6; }
-      if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio = colIdx.cantidad+1;
+      // Fallback si no se detectaron columnas
+      if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
+      if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio=colIdx.cantidad+1;
 
       const dataRows = rows.slice(startRow).filter(r=>{
         const desc = String(r[colIdx.descrip]||'').trim();
         if(!desc) return false;
-        // Ignorar filas que son notas o encabezados repetidos
+        // Ignorar filas que son notas, encabezados o solo números
         const descLow = desc.toLowerCase();
-        if(descLow.includes('completa los campos')||descLow.includes('instruc')||
-           descLow.includes('total general')||descLow==='descripción'||
-           descLow==='descripcion'||descLow.includes('obligatori')) return false;
+        if(descLow.includes('completa los campos')) return false;
+        if(descLow.includes('instruc')) return false;
+        if(descLow.includes('total general')) return false;
+        if(descLow==='descripción'||descLow==='descripcion') return false;
+        if(descLow.includes('obligatori')) return false;
+        if(descLow.includes('hidivo')) return false;
+        // Ignorar si la descripción es solo un número (fila de índice)
+        if(/^\d+$/.test(desc)) return false;
+        // Ignorar si la descripción es "N°" o similar
+        if(/^n[°o]?$/i.test(desc)) return false;
         return true;
       });
 
