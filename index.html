@@ -2449,6 +2449,28 @@ async function importarRubrosExcel(input){
       const { error } = await sb.from('rubros').insert(payload);
       if(error){ toast('Error importando: '+error.message,'error'); return; }
 
+      // Sincronizar fechas con cronograma_rubros para la Curva S
+      const { data: rubrosInsertados } = await sb.from('rubros')
+        .select('id,orden,fecha_inicio,fecha_fin,monto_contrato')
+        .eq('proyecto_id', currentProyecto).order('orden');
+
+      const totalMonto = rubrosInsertados.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
+
+      const cronPayload = rubrosInsertados
+        .filter(r=>r.fecha_inicio||r.fecha_fin)
+        .map(r=>({
+          proyecto_id: currentProyecto,
+          rubro_id: r.id,
+          fecha_inicio: r.fecha_inicio,
+          fecha_fin: r.fecha_fin,
+          peso_pct: totalMonto>0 ? ((r.monto_contrato||0)/totalMonto*100) : 0
+        }));
+
+      if(cronPayload.length){
+        await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto);
+        await sb.from('cronograma_rubros').insert(cronPayload);
+      }
+
       toast(`✅ ${payload.length} rubros importados correctamente`,'success');
       cargarRubros();
 
