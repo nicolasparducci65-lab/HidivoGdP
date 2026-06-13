@@ -1346,14 +1346,23 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     <div class="modal-body">
       <input type="hidden" id="equipoId"/>
       <div class="form-group">
-        <label class="form-label">Nombre *</label>
-        <input type="text" class="form-control" id="equipoNombre" placeholder="Ej: Excavadora CAT 320"/>
+        <label class="form-label">Equipo *</label>
+        <select class="form-control" id="equipoCatalogoSelect" onchange="toggleNuevoEquipo(this)">
+          <option value="">— Seleccionar del catálogo —</option>
+          <option value="nuevo">➕ Nuevo equipo...</option>
+        </select>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div id="equipoNuevoNombreDiv" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Nombre del equipo *</label>
+          <input type="text" class="form-control" id="equipoNombre" placeholder="Ej: Excavadora CAT 320"/>
+        </div>
         <div class="form-group">
           <label class="form-label">Tipo</label>
-          <input type="text" class="form-control" id="equipoTipo" placeholder="Ej: Excavadora, Volquete"/>
+          <input type="text" class="form-control" id="equipoTipo" placeholder="Ej: Excavadora, Volquete, Compactador"/>
         </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
           <label class="form-label">Propietario</label>
           <input type="text" class="form-control" id="equipoPropietario" placeholder="Ej: HIDIVO, Contratista, Empresa X"/>
@@ -1370,14 +1379,14 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <label class="form-label">Costo por hora ($)</label>
           <input type="number" class="form-control" id="equipoCostoHora" placeholder="0.00" step="0.01" min="0"/>
         </div>
-        <div class="form-group">
-          <label class="form-label">Estado</label>
-          <select class="form-control" id="equipoEstado">
-            <option value="activo">✅ Activo</option>
-            <option value="mantenimiento">🔧 En mantenimiento</option>
-            <option value="retirado">❌ Retirado</option>
-          </select>
-        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estado</label>
+        <select class="form-control" id="equipoEstado">
+          <option value="activo">✅ Activo</option>
+          <option value="mantenimiento">🔧 En mantenimiento</option>
+          <option value="retirado">❌ Retirado</option>
+        </select>
       </div>
     </div>
     <div class="modal-footer">
@@ -4038,29 +4047,81 @@ async function cargarReportesEquipos(){
   </div>`;
 }
 
-function abrirModalEquipo(equipo=null){
+async function abrirModalEquipo(equipo=null){
+  // Cargar catálogo de equipos
+  const { data: catalogo } = await sb.from('catalogo_items').select('*').eq('tipo','equipo').order('nombre');
+  const sel = document.getElementById('equipoCatalogoSelect');
+  sel.innerHTML = `<option value="">— Seleccionar del catálogo —</option>` +
+    (catalogo||[]).map(c=>`<option value="${c.id}" data-nombre="${c.nombre}" data-tipo="${c.tipo_equipo||''}">${c.nombre}${c.tipo_equipo?' ('+c.tipo_equipo+')':''}</option>`).join('') +
+    `<option value="nuevo">➕ Nuevo equipo...</option>`;
+
   document.getElementById('equipoId').value=equipo?.id||'';
-  document.getElementById('equipoNombre').value=equipo?.nombre||'';
-  document.getElementById('equipoTipo').value=equipo?.tipo||'';
+  if(equipo){
+    // Modo edición — mostrar campos directamente
+    sel.value = equipo.catalogo_item_id || 'nuevo';
+    document.getElementById('equipoNuevoNombreDiv').style.display='block';
+    document.getElementById('equipoNombre').value=equipo.nombre||'';
+    document.getElementById('equipoTipo').value=equipo.tipo||'';
+  } else {
+    sel.value='';
+    document.getElementById('equipoNuevoNombreDiv').style.display='none';
+    document.getElementById('equipoNombre').value='';
+    document.getElementById('equipoTipo').value='';
+  }
   document.getElementById('equipoPropietario').value=equipo?.propietario||'';
   document.getElementById('equipoModelo').value=equipo?.modelo||'';
   document.getElementById('equipoPlaca').value=equipo?.placa||'';
   document.getElementById('equipoCostoHora').value=equipo?.costo_hora||'';
   document.getElementById('equipoEstado').value=equipo?.estado||'activo';
-  document.querySelector('#modalEquipo .modal-title').textContent=equipo?'✏️ Editar equipo':'🚜 Nuevo equipo';
+  document.querySelector('#modalEquipo .modal-title').textContent=equipo?'✏️ Editar equipo':'🚜 Agregar equipo';
   document.getElementById('modalEquipo').classList.add('show');
+}
+
+function toggleNuevoEquipo(sel){
+  const esNuevo = sel.value==='nuevo' || sel.value==='';
+  document.getElementById('equipoNuevoNombreDiv').style.display = (sel.value==='nuevo') ? 'block' : 'none';
+  if(sel.value && sel.value!=='nuevo'){
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('equipoNombre').value = opt.dataset.nombre||'';
+    document.getElementById('equipoTipo').value = opt.dataset.tipo||'';
+  }
 }
 
 async function guardarEquipo(){
   const id=document.getElementById('equipoId').value;
-  const nombre=document.getElementById('equipoNombre').value.trim();
-  if(!nombre){ toast('El nombre es obligatorio','error'); return; }
-  const payload={proyecto_id:currentProyecto,nombre,tipo:document.getElementById('equipoTipo').value.trim()||null,propietario:document.getElementById('equipoPropietario').value.trim()||null,modelo:document.getElementById('equipoModelo').value.trim()||null,placa:document.getElementById('equipoPlaca').value.trim()||null,costo_hora:parseFloat(document.getElementById('equipoCostoHora').value)||0,estado:document.getElementById('equipoEstado').value};
+  const selCat=document.getElementById('equipoCatalogoSelect').value;
+  let nombre, tipo, catalogoId=null;
+
+  if(selCat==='nuevo'){
+    nombre=document.getElementById('equipoNombre').value.trim();
+    tipo=document.getElementById('equipoTipo').value.trim();
+    if(!nombre){ toast('El nombre es obligatorio','error'); return; }
+    // Crear en catálogo
+    const {data:nuevo}=await sb.from('catalogo_items').insert({nombre,tipo_equipo:tipo,tipo:'equipo'}).select().single();
+    catalogoId=nuevo?.id;
+  } else if(selCat){
+    const opt=document.querySelector(`#equipoCatalogoSelect option[value="${selCat}"]`);
+    nombre=opt?.dataset.nombre||document.getElementById('equipoNombre').value.trim();
+    tipo=opt?.dataset.tipo||document.getElementById('equipoTipo').value.trim();
+    catalogoId=selCat;
+  } else {
+    toast('Selecciona un equipo del catálogo','error'); return;
+  }
+
+  const payload={
+    proyecto_id:currentProyecto, nombre, tipo,
+    catalogo_item_id: catalogoId,
+    propietario:document.getElementById('equipoPropietario').value.trim()||null,
+    modelo:document.getElementById('equipoModelo').value.trim()||null,
+    placa:document.getElementById('equipoPlaca').value.trim()||null,
+    costo_hora:parseFloat(document.getElementById('equipoCostoHora').value)||0,
+    estado:document.getElementById('equipoEstado').value
+  };
   const btn=document.getElementById('btnGuardarEquipo');
   btn.disabled=true; btn.textContent='Guardando...';
   const {error}=id?await sb.from('equipos_proyecto').update(payload).eq('id',id):await sb.from('equipos_proyecto').insert(payload);
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
-  toast(id?'Equipo actualizado ✓':'Equipo creado ✓','success');
+  toast(id?'Equipo actualizado ✓':'Equipo agregado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalEquipo');
   cargarCatalogoEquipos();
