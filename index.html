@@ -1265,6 +1265,27 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVO/EDITAR EQUIPO -->
+<!-- MODAL DESCRIPCIÓN ARCHIVO -->
+<div class="modal-overlay" id="modalDescripcionArchivo">
+  <div class="modal" style="width:440px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Descripción del archivo</div>
+      <button class="btn" onclick="cerrarModal('modalDescripcionArchivo')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <textarea class="form-control" id="inputDescripcionArchivo" rows="3"
+          placeholder="Describe brevemente el contenido y propósito de este archivo..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalDescripcionArchivo')">Cancelar</button>
+      <button class="btn primary" onclick="guardarDescripcionArchivo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL AGREGAR MATERIAL -->
 <div class="modal-overlay" id="modalAgregarMaterial">
   <div class="modal" style="width:440px;max-width:98vw">
@@ -3810,6 +3831,20 @@ function toggleNuevoMaterial(sel){
   document.getElementById('matNuevoUnidad').style.display=esNuevo?'block':'none';
 }
 
+function editarDescripcionArchivo(id, descripcionActual){
+  window._editDescripcionId = id;
+  document.getElementById('inputDescripcionArchivo').value = descripcionActual||'';
+  document.getElementById('modalDescripcionArchivo').classList.add('show');
+}
+
+async function guardarDescripcionArchivo(){
+  const descripcion = document.getElementById('inputDescripcionArchivo').value.trim();
+  await sb.from('archivos').update({ descripcion_ia: descripcion||null }).eq('id', window._editDescripcionId);
+  toast('Descripción guardada ✓','success');
+  cerrarModal('modalDescripcionArchivo');
+  cargarArchivosGlobal();
+}
+
 // ── ARCHIVOS GLOBALES ──
 const MODULO_LABELS = {
   rubros:'Rubros', libro:'Libro de Obra', curvaS:'Curva S',
@@ -3898,11 +3933,13 @@ async function cargarArchivosGlobal(){
               </td>
               <td style="max-width:280px">
                 ${a.descripcion_ia ? `
-                  <div style="font-size:12px;color:#323338;line-height:1.5">${a.descripcion_ia}</div>
+                  <div style="font-size:12px;color:#323338;line-height:1.5">${a.descripcion_ia}
+                    <button onclick="editarDescripcionArchivo('${a.id}','${(a.descripcion_ia||'').replace(/'/g,"\\'")}')" style="background:none;border:none;color:#0073ea;cursor:pointer;font-size:11px;margin-left:4px">✏️</button>
+                  </div>
                 ` : `
-                  <button onclick="describirArchivoIA('${a.id}','${a.url.replace(/'/g,"\\'")}','${a.nombre?.replace(/'/g,"\\'")||''}')" 
+                  <button onclick="editarDescripcionArchivo('${a.id}','')" 
                     class="btn" style="gap:5px;font-size:11px;padding:4px 10px">
-                    ✨ Describir con IA
+                    ✏️ Agregar descripción
                   </button>
                 `}
               </td>
@@ -3922,48 +3959,32 @@ async function cargarArchivosGlobal(){
 }
 
 async function describirArchivoIA(id, url, nombre){
-  const btn = document.querySelector(`button[onclick*="describirArchivoIA('${id}'"]`);
+  const btn = event?.target;
   if(btn){ btn.disabled=true; btn.textContent='✨ Analizando...'; }
 
   try {
     const ext = nombre.split('.').pop()?.toLowerCase()||'';
-    const esImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
-    const esPDF = ext==='pdf';
 
-    let prompt = `Analiza este archivo llamado "${nombre}" y proporciona una descripción concisa (máximo 2 oraciones) indicando: qué tipo de documento es, su contenido principal y para qué sirve en el contexto de gestión de obras civiles. Responde solo con la descripción, sin formato adicional.`;
-
-    let messages;
-    if(esImg){
-      // Para imágenes — usar visión
-      const resp = await fetch(url);
-      const blob = await resp.blob();
-      const base64 = await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
-      messages = [{ role:'user', content:[
-        { type:'image', source:{ type:'base64', media_type:blob.type, data:base64 }},
-        { type:'text', text:prompt }
-      ]}];
-    } else {
-      // Para otros archivos — usar solo nombre y extensión
-      messages = [{ role:'user', content:`${prompt}\n\nNota: Solo tengo el nombre del archivo, no su contenido. Basándote en el nombre "${nombre}" y la extensión ".${ext}", describe qué tipo de documento podría ser.` }];
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/bright-handler', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:200, messages })
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA`
+      },
+      body: JSON.stringify({ nombre, ext })
     });
 
     const data = await response.json();
-    const descripcion = data.content?.[0]?.text?.trim()||'No se pudo generar descripción.';
+    if(data.error){ toast('Error IA: '+data.error,'error'); return; }
+    const descripcion = data.descripcion||'Sin descripción';
 
-    // Guardar en BD
     await sb.from('archivos').update({ descripcion_ia: descripcion }).eq('id',id);
     toast('Descripción generada ✓','success');
     cargarArchivosGlobal();
 
   } catch(err){
     console.error(err);
-    toast('Error al generar descripción','error');
+    toast('Error al generar descripción: '+err.message,'error');
     if(btn){ btn.disabled=false; btn.textContent='✨ Describir con IA'; }
   }
 }
