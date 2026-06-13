@@ -2336,13 +2336,15 @@ async function importarRubrosExcel(input){
         descrip:  headers.findIndex(h=>h.includes('descrip')||h.includes('rubro')||h.includes('detalle')),
         unidad:   headers.findIndex(h=>h.includes('unidad')||h.includes('unit')||h==='u'||h==='u.'),
         cantidad: headers.findIndex(h=>h.includes('cantidad')||h.includes('cant')||h.includes('vol')),
-        precio:   headers.findIndex(h=>h.includes('precio')||h.includes('p.unit')||h.includes('pu')||h.includes('unit price')||h.includes('valor unit')),
+        precio:   headers.findIndex(h=>h.includes('precio')||h.includes('p.unit')||h==='pu'||h==='p.u.'||h==='p.u'||h.includes('unit price')||h.includes('valor unit')||h.includes('precio unit')),
         fechaIni: headers.findIndex(h=>h.includes('inicio')||h.includes('start')||h.includes('desde')),
         fechaFin: headers.findIndex(h=>h.includes('fin')||h.includes('end')||h.includes('hasta')||h.includes('término')),
       };
 
-      // Si no se detectan columnas clave, asumir orden fijo: #, Descripción, Unidad, Cantidad, P.Unit, FechaIni, FechaFin
+      // Si no se detectan columnas clave, asumir orden fijo: #, Descripción, Unidad, Cantidad, P.U., FechaIni, FechaFin
       if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=1; colIdx.unidad=2; colIdx.cantidad=3; colIdx.precio=4; colIdx.fechaIni=5; colIdx.fechaFin=6; }
+      // Si precio no se detectó pero descripción sí, buscar por posición relativa
+      if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio = colIdx.cantidad+1;
 
       const dataRows = rows.slice(startRow).filter(r=>r[colIdx.descrip]&&String(r[colIdx.descrip]).trim());
 
