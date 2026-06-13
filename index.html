@@ -404,6 +404,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Plantilla
         </button>
+        <button id="btnEliminarRubros" style="display:none" class="btn" onclick="eliminarTodosRubros()" title="Eliminar todos los rubros" style="color:#e2445c">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Limpiar rubros
+        </button>
         <button id="btnLinkFormulario" style="display:none" class="btn" onclick="mostrarLinkFormulario()" title="Link formulario público">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Link formulario
@@ -1992,6 +1996,8 @@ function navTo(page, btn){
   if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto) ? 'flex' : 'none';
   const btnPlantilla = document.getElementById('btnDescargarPlantilla');
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
+  const btnEliminarRubros = document.getElementById('btnEliminarRubros');
+  if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
@@ -4232,6 +4238,29 @@ async function abrirModalEquipo(equipo=null){
   document.getElementById('equipoEstado').value=equipo?.estado||'activo';
   document.querySelector('#modalEquipo .modal-title').textContent=equipo?'✏️ Editar equipo':'🚜 Agregar equipo';
   document.getElementById('modalEquipo').classList.add('show');
+}
+
+async function eliminarTodosRubros(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  if(!confirm('⚠️ ¿Estás seguro de eliminar TODOS los rubros del proyecto?\n\nEsta acción también eliminará el cronograma asociado y no se puede deshacer.')) return;
+
+  const btn = document.getElementById('btnEliminarRubros');
+  btn.disabled=true; btn.textContent='Eliminando...';
+
+  // Eliminar cronograma de rubros
+  await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto);
+  // Eliminar rubros del libro de obra
+  const { data: registros } = await sb.from('libro_obra').select('id').eq('proyecto_id', currentProyecto);
+  if(registros?.length){
+    const ids = registros.map(r=>r.id);
+    await sb.from('libro_obra_rubros').delete().in('registro_id', ids);
+  }
+  // Eliminar rubros
+  await sb.from('rubros').delete().eq('proyecto_id', currentProyecto);
+
+  toast('Rubros eliminados. Ya puedes importar un nuevo Excel ✓','success');
+  btn.disabled=false; btn.textContent='Limpiar rubros';
+  cargarRubros();
 }
 
 function descargarPlantillaRubros(){
