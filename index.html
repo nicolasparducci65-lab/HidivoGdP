@@ -384,6 +384,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <option value="">Selecciona un proyecto...</option>
           </select>
         </div>
+        <button id="btnImportarRubros" style="display:none" class="btn" onclick="document.getElementById('inputImportarRubros').click()" title="Importar desde Excel">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Importar Excel
+        </button>
+        <input type="file" id="inputImportarRubros" accept=".xlsx,.xls" style="display:none" onchange="importarRubrosExcel(this)"/>
         <button id="btnLinkFormulario" style="display:none" class="btn" onclick="mostrarLinkFormulario()" title="Link formulario público">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Link formulario
@@ -1962,6 +1967,8 @@ function navTo(page, btn){
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
+  const btnImportar = document.getElementById('btnImportarRubros');
+  if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto) ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
@@ -2295,6 +2302,105 @@ function renderRubros(rubros){
           </tr>`;}).join('')}
       </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Usa el botón "Nuevo rubro" arriba para agregar</div></div>`}
     </div>`;
+}
+
+async function importarRubrosExcel(input){
+  const file = input.files[0];
+  if(!file) return;
+  input.value='';
+
+  // Cargar XLSX
+  const reader = new FileReader();
+  reader.onload = async(e)=>{
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+      if(!rows.length){ toast('Excel vacío','error'); return; }
+
+      // Detectar fila de encabezado — buscar fila con "Descripcion" o similar
+      let startRow = 0;
+      for(let i=0;i<Math.min(5,rows.length);i++){
+        const r = rows[i].map(c=>String(c).toLowerCase());
+        if(r.some(c=>c.includes('descrip')||c.includes('rubro'))){
+          startRow = i+1; break;
+        }
+      }
+
+      // Detectar columnas por encabezado
+      const headers = rows[startRow-1]?.map(c=>String(c).toLowerCase())||[];
+      const colIdx = {
+        codigo:   headers.findIndex(h=>h.includes('cod')||h.includes('#')||h==='n°'||h==='n'||h==='item'),
+        descrip:  headers.findIndex(h=>h.includes('descrip')||h.includes('rubro')||h.includes('detalle')),
+        unidad:   headers.findIndex(h=>h.includes('unidad')||h.includes('unit')||h==='u'||h==='u.'),
+        cantidad: headers.findIndex(h=>h.includes('cantidad')||h.includes('cant')||h.includes('vol')),
+        precio:   headers.findIndex(h=>h.includes('precio')||h.includes('p.unit')||h.includes('pu')||h.includes('unit price')||h.includes('valor unit')),
+        fechaIni: headers.findIndex(h=>h.includes('inicio')||h.includes('start')||h.includes('desde')),
+        fechaFin: headers.findIndex(h=>h.includes('fin')||h.includes('end')||h.includes('hasta')||h.includes('término')),
+      };
+
+      // Si no se detectan columnas clave, asumir orden fijo: #, Descripción, Unidad, Cantidad, P.Unit, FechaIni, FechaFin
+      if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=1; colIdx.unidad=2; colIdx.cantidad=3; colIdx.precio=4; colIdx.fechaIni=5; colIdx.fechaFin=6; }
+
+      const dataRows = rows.slice(startRow).filter(r=>r[colIdx.descrip]&&String(r[colIdx.descrip]).trim());
+
+      if(!dataRows.length){ toast('No se encontraron rubros en el Excel','error'); return; }
+
+      // Confirmar importación
+      if(!confirm(`Se importarán ${dataRows.length} rubros al proyecto.\n\n¿Deseas reemplazar los rubros existentes o agregar a los existentes?\n\nAceptar = Reemplazar\nCancelar = Cancelar importación`)){ return; }
+
+      // Eliminar rubros existentes
+      await sb.from('rubros').delete().eq('proyecto_id', currentProyecto);
+
+      // Función para parsear fecha Excel (número de serie o string)
+      function parseFechaExcel(val){
+        if(!val) return null;
+        if(typeof val==='number'){
+          const d = new Date(Math.round((val-25569)*86400*1000));
+          return d.toISOString().split('T')[0];
+        }
+        const s = String(val).trim();
+        if(s.match(/^\d{4}-\d{2}-\d{2}$/)) return s;
+        if(s.match(/^\d{2}\/\d{2}\/\d{4}$/)){
+          const [d,m,y]=s.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+        }
+        return null;
+      }
+
+      const payload = dataRows.map((r,i)=>{
+        const cantidad = parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0;
+        const precio = parseFloat(String(r[colIdx.precio]).replace(',','.'))||0;
+        return {
+          proyecto_id: currentProyecto,
+          orden: i+1,
+          codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
+          descripcion: String(r[colIdx.descrip]).trim(),
+          unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
+          cantidad_contrato: cantidad,
+          precio_unitario: precio,
+          monto_contrato: cantidad*precio,
+          fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
+          fecha_fin: parseFechaExcel(r[colIdx.fechaFin]),
+          estado: 'planificado',
+          cantidad_ejecutada: 0,
+          total_produccion: 0
+        };
+      });
+
+      const { error } = await sb.from('rubros').insert(payload);
+      if(error){ toast('Error importando: '+error.message,'error'); return; }
+
+      toast(`✅ ${payload.length} rubros importados correctamente`,'success');
+      cargarRubros();
+
+    } catch(err){
+      console.error(err);
+      toast('Error leyendo el Excel: '+err.message,'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 function actualizarMontoRubro(){
