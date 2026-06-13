@@ -2380,7 +2380,6 @@ async function importarRubrosExcel(input){
           unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
           cantidad_contrato: cantidad,
           precio_unitario: precio,
-          monto_contrato: cantidad*precio,
           fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
           fecha_fin: parseFechaExcel(r[colIdx.fechaFin]),
           estado: 'planificado',
