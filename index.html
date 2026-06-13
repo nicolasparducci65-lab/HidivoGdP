@@ -642,7 +642,30 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <label class="form-label">Descripción</label>
         <textarea class="form-control" id="pDescripcion" placeholder="Descripción general del proyecto..."></textarea>
       </div>
-    </div>
+      <!-- Módulos activos -->
+      <div class="form-group">
+        <label class="form-label">Módulos activos en este proyecto</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modCurvaS" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📈 Curva S
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modObservaciones" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🔍 Observaciones
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modSolicitudes" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📋 Solicitudes
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modPlanillas" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📊 Planillas de Pago
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modEquipos" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🚜 Equipos
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modMateriales" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📦 Materiales
+          </label>
+        </div>
+      </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalProyecto')">Cancelar</button>
       <button class="btn primary" onclick="guardarProyecto()">Guardar proyecto</button>
@@ -2067,6 +2090,9 @@ async function cargarProyectosSelector(){
 function cambiarProyecto(id){
   currentProyecto = id;
   if(!id) return;
+  // Aplicar módulos del proyecto seleccionado
+  const proy = proyectos.find(p=>p.id===id);
+  aplicarModulosProyecto(proy?.modulos);
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
@@ -2076,6 +2102,50 @@ function cambiarProyecto(id){
   if(currentPage==='equipos') cargarEquipos();
   if(currentPage==='materiales') cargarMateriales();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
+}
+
+function aplicarModulosProyecto(modulos){
+  const rol = currentPerfil?.rol;
+  const accesos = {
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    bodeguero:    ['materiales','chat'],
+    visualizador: ['rubros','curvaS','chat']
+  };
+  const permitidos = accesos[rol]||['dashboard'];
+
+  // Módulos que dependen de la configuración del proyecto
+  const modulosProyecto = {
+    curvaS:        modulos?.curvaS !== false,
+    fiscalizacion: modulos?.observaciones !== false,
+    solicitudes:   modulos?.solicitudes !== false,
+    planillas:     modulos?.planillas !== false,
+    equipos:       modulos?.equipos !== false,
+    materiales:    modulos?.materiales !== false,
+  };
+
+  const navItems = {
+    curvaS:       document.querySelector('.nav-item[onclick*="curvaS"]'),
+    fiscalizacion:document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    solicitudes:  document.querySelector('.nav-item[onclick*="solicitudes"]'),
+    planillas:    document.querySelector('.nav-item[onclick*="planillas"]'),
+    equipos:      document.querySelector('.nav-item[onclick*="equipos"]'),
+    materiales:   document.querySelector('.nav-item[onclick*="materiales"]'),
+  };
+
+  Object.entries(navItems).forEach(([page, el])=>{
+    if(!el) return;
+    const tieneAcceso = permitidos.includes(page);
+    const moduloActivo = modulosProyecto[page] !== false;
+    el.style.display = (tieneAcceso && moduloActivo) ? 'flex' : 'none';
+  });
+
+  // Si está en una página que se desactivó, redirigir
+  if(currentPage && navItems[currentPage] && navItems[currentPage].style.display==='none'){
+    const paginaInicio = rol==='residente'?'fiscalizacion':rol==='visualizador'?'rubros':rol==='bodeguero'?'materiales':'dashboard';
+    navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
+  }
 }
 
 function abrirProyecto(id){ navTo('rubros', document.querySelector('.nav-item:nth-child(3)')); document.getElementById('selectProyecto').value=id; cambiarProyecto(id); }
@@ -2093,11 +2163,27 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('pFechaFin').value = proyecto?.fecha_fin_planificada||'';
   document.getElementById('pUbicacion').value = proyecto?.ubicacion||'';
   document.getElementById('pDescripcion').value = proyecto?.descripcion||'';
+  // Cargar módulos
+  const mods = proyecto?.modulos || {};
+  document.getElementById('modCurvaS').checked = mods.curvaS !== false;
+  document.getElementById('modObservaciones').checked = mods.observaciones !== false;
+  document.getElementById('modSolicitudes').checked = mods.solicitudes !== false;
+  document.getElementById('modPlanillas').checked = mods.planillas !== false;
+  document.getElementById('modEquipos').checked = mods.equipos !== false;
+  document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
 
 async function guardarProyecto(){
   const id = document.getElementById('editProyectoId').value;
+  const modulos = {
+    curvaS: document.getElementById('modCurvaS').checked,
+    observaciones: document.getElementById('modObservaciones').checked,
+    solicitudes: document.getElementById('modSolicitudes').checked,
+    planillas: document.getElementById('modPlanillas').checked,
+    equipos: document.getElementById('modEquipos').checked,
+    materiales: document.getElementById('modMateriales').checked,
+  };
   const data = {
     nombre: document.getElementById('pNombre').value.trim(),
     contratante: document.getElementById('pContratante').value.trim(),
@@ -2108,6 +2194,7 @@ async function guardarProyecto(){
     fecha_fin_planificada: document.getElementById('pFechaFin').value||null,
     ubicacion: document.getElementById('pUbicacion').value.trim(),
     descripcion: document.getElementById('pDescripcion').value.trim(),
+    modulos
   };
   if(!data.nombre){ toast('El nombre es obligatorio','error'); return; }
   let error;
@@ -2119,7 +2206,6 @@ async function guardarProyecto(){
       .select()
       .single();
     error = errIns;
-    // Auto-agregar al creador como director del proyecto
     if(!error && nuevo){
       await sb.from('proyecto_miembros').insert({
         proyecto_id: nuevo.id,
