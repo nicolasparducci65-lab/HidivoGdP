@@ -2029,15 +2029,18 @@ async function renderProyectosTabla(containerId, lista){
       avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
     } else { avances[p.id] = 0; }
   }
+  const rol = currentPerfil?.rol;
+  const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
-    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th></tr></thead>
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>`
-      <tr onclick="abrirProyecto('${p.id}')">
-        <td><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
-        <td>${p.contratante||'—'}</td>
-        <td>${p.monto_contrato ? '$'+Number(p.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
-        <td><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
-        <td><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
+      <tr>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.monto_contrato ? '$'+Number(p.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
+        ${puedeEditar?`<td><button onclick="event.stopPropagation();abrirModalProyecto(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 10px;font-size:12px">✏️ Editar</button></td>`:''}
       </tr>`).join('')}
     </tbody>
   </table>`;
