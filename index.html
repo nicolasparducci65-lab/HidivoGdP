@@ -3387,14 +3387,18 @@ async function cargarRubrosPlanilla(){
     (rubrosAnt||[]).forEach(r=>{ cantAnt[r.rubro_id] = (cantAnt[r.rubro_id]||0) + (r.cantidad_periodo||0); });
   }
 
-  // Obtener producción del período del Libro de Obra
-  const { data: libroItems } = await sb.from('libro_obra_rubros')
-    .select('rubro_id,cantidad_dia')
-    .gte('created_at', fechaInicio+'T00:00:00')
-    .lte('created_at', fechaFin+'T23:59:59');
+  // Obtener producción del período via libro_obra (join por registro_id)
+  const { data: registros } = await sb.from('libro_obra')
+    .select('id').eq('proyecto_id', currentProyecto)
+    .gte('fecha', fechaInicio).lte('fecha', fechaFin);
 
   const prodPeriodo = {};
-  (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad_dia||0); });
+  if(registros?.length){
+    const registroIds = registros.map(r=>r.id);
+    const { data: libroItems } = await sb.from('libro_obra_rubros')
+      .select('rubro_id,cantidad_dia').in('registro_id', registroIds);
+    (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad_dia||0); });
+  }
 
   // Renderizar tabla
   let total = 0;
