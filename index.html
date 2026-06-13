@@ -1930,6 +1930,8 @@ function toggleSidebar(){
 }
 
 function navTo(page, btn){
+  // Cerrar todos los modales al navegar
+  document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
   // Cerrar sidebar en móvil al navegar
   if(window.innerWidth <= 768){
     document.querySelector('.sidebar')?.classList.remove('open');
@@ -2093,6 +2095,8 @@ async function cargarProyectosSelector(){
 function cambiarProyecto(id){
   currentProyecto = id;
   if(!id) return;
+  // Cerrar modales abiertos
+  document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
   // Aplicar módulos del proyecto seleccionado
   const proy = proyectos.find(p=>p.id===id);
   aplicarModulosProyecto(proy?.modulos);
