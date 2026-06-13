@@ -340,6 +340,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         Equipos
       </div>
+      <div class="nav-item" onclick="navTo('materiales',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        Materiales
+        <span id="materialesBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -452,6 +457,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
         <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- MATERIALES -->
+      <div class="page" id="page-materiales">
+        <div id="materialesContent"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- EQUIPOS -->
@@ -1054,6 +1064,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <option value="fiscalizador">Fiscalizador</option>
             <option value="residente">Residente</option>
             <option value="visualizador">Visualizador</option>
+            <option value="bodeguero">Bodeguero</option>
           </select>
         </div>
         <div style="background:#fff3cd;border-radius:8px;padding:10px 12px;font-size:12px;color:#856404">
@@ -1195,6 +1206,111 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVO/EDITAR EQUIPO -->
+<!-- MODAL AGREGAR MATERIAL -->
+<div class="modal-overlay" id="modalAgregarMaterial">
+  <div class="modal" style="width:440px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📦 Agregar material</div>
+      <button class="btn" onclick="cerrarModal('modalAgregarMaterial')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Material *</label>
+        <select class="form-control" id="matCatalogoSelect" onchange="toggleNuevoMaterial(this)"></select>
+      </div>
+      <div id="matNuevoNombre" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Nombre del nuevo material *</label>
+          <input type="text" class="form-control" id="matNuevoNombreInput" placeholder="Ej: Cemento Portland"/>
+        </div>
+      </div>
+      <div id="matNuevoUnidad" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Unidad</label>
+          <input type="text" class="form-control" id="matNuevoUnidadInput" placeholder="Ej: sacos, kg, m³"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Stock mínimo (alerta)</label>
+        <input type="number" class="form-control" id="matStockMinimo" placeholder="0" step="0.01" min="0"/>
+        <div style="font-size:11px;color:#676879;margin-top:4px">Se mostrará alerta cuando el stock baje de este valor</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalAgregarMaterial')">Cancelar</button>
+      <button id="btnGuardarMaterial" class="btn primary" onclick="guardarMaterialStock()">Agregar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR STOCK MÍNIMO -->
+<div class="modal-overlay" id="modalEditarStock">
+  <div class="modal" style="width:380px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Editar stock mínimo</div>
+      <button class="btn" onclick="cerrarModal('modalEditarStock')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-weight:600;font-size:14px;color:#323338;margin-bottom:12px" id="editStockNombre"></div>
+      <div class="form-group">
+        <label class="form-label">Stock mínimo</label>
+        <input type="number" class="form-control" id="editStockMinimo" placeholder="0" step="0.01" min="0"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalEditarStock')">Cancelar</button>
+      <button class="btn primary" onclick="guardarEditarStock()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL MOVIMIENTO -->
+<div class="modal-overlay" id="modalMovimiento">
+  <div class="modal" style="width:460px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title" id="movTipoLabel">Movimiento</div>
+      <button class="btn" onclick="cerrarModal('modalMovimiento')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="movTipo"/>
+      <div class="form-group">
+        <label class="form-label">Material *</label>
+        <select class="form-control" id="movMaterialSelect"></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Fecha *</label>
+          <input type="date" class="form-control" id="movFecha"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cantidad *</label>
+          <input type="number" class="form-control" id="movCantidad" placeholder="0.00" step="0.01" min="0"/>
+        </div>
+      </div>
+      <div id="movCamposIngreso">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group">
+            <label class="form-label">Proveedor</label>
+            <input type="text" class="form-control" id="movProveedor" placeholder="Nombre del proveedor"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">N° Factura</label>
+            <input type="text" class="form-control" id="movFactura" placeholder="001-001-000001"/>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observación</label>
+        <textarea class="form-control" id="movObservacion" rows="2" placeholder="Destino, uso, observaciones..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalMovimiento')">Cancelar</button>
+      <button id="btnGuardarMovimiento" class="btn primary" onclick="guardarMovimiento()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalEquipo">
   <div class="modal" style="width:500px;max-width:98vw">
     <div class="modal-header">
@@ -1729,9 +1845,10 @@ function ocultarBotonesAccion(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat','usuarios'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','chat'],
+    bodeguero:    ['materiales','chat'],
     visualizador: ['rubros','curvaS','chat']
   };
 
@@ -1755,6 +1872,7 @@ function aplicarAccesosPorRol(rol){
     solicitudes:    document.querySelector('.nav-item[onclick*="solicitudes"]'),
     planillas:      document.querySelector('.nav-item[onclick*="planillas"]'),
     equipos:        document.querySelector('.nav-item[onclick*="equipos"]'),
+    materiales:     document.querySelector('.nav-item[onclick*="materiales"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios')
   };
@@ -1776,7 +1894,7 @@ function aplicarAccesosPorRol(rol){
 
   // Redirigir al dashboard si están en una página no permitida
   if(!permitidos.includes(currentPage)){
-    const paginaInicio = rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : 'dashboard';
+    const paginaInicio = rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : 'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
@@ -1799,11 +1917,11 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
   const accion = acciones[page];
@@ -1817,6 +1935,7 @@ function navTo(page, btn){
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
   if(page==='equipos'&&currentProyecto) cargarEquipos();
+  if(page==='materiales'&&currentProyecto) cargarMateriales();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -1955,6 +2074,7 @@ function cambiarProyecto(id){
   if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='planillas') cargarPlanillas();
   if(currentPage==='equipos') cargarEquipos();
+  if(currentPage==='materiales') cargarMateriales();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
@@ -3378,6 +3498,316 @@ async function guardarObservacionNueva(){
   cargarObservaciones();
 }
 
+
+function toggleNuevoMaterial(sel){
+  const esNuevo = sel.value==='nuevo';
+  document.getElementById('matNuevoNombre').style.display=esNuevo?'block':'none';
+  document.getElementById('matNuevoUnidad').style.display=esNuevo?'block':'none';
+}
+
+// ── CONTROL DE MATERIALES ──
+let materialesTab = 'stock';
+
+async function cargarMateriales(){
+  if(!currentProyecto){
+    document.getElementById('materialesContent').innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  renderMaterialesShell();
+  if(materialesTab==='stock') cargarStockMateriales();
+  else if(materialesTab==='movimientos') cargarMovimientosMateriales();
+  else cargarReportesMateriales();
+}
+
+function renderMaterialesShell(){
+  document.getElementById('materialesContent').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="switchMaterialesTab('stock')" class="btn ${materialesTab==='stock'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">📦 Stock</button>
+      <button onclick="switchMaterialesTab('movimientos')" class="btn ${materialesTab==='movimientos'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">🔄 Movimientos</button>
+      <button onclick="switchMaterialesTab('reportes')" class="btn ${materialesTab==='reportes'?'primary':''}" style="padding:6px 14px;font-size:12px;border-radius:6px">📊 Reportes</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      ${materialesTab==='stock'?`<button onclick="abrirModalAgregarMaterial()" class="btn" style="gap:6px">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Agregar material
+      </button>`:''}
+      ${materialesTab!=='reportes'?`
+      <button onclick="abrirModalMovimiento('ingreso')" class="btn primary" style="gap:6px;background:#00c875;border-color:#00c875">
+        ⬇️ Ingreso
+      </button>
+      <button onclick="abrirModalMovimiento('salida')" class="btn primary" style="gap:6px;background:#e2445c;border-color:#e2445c">
+        ⬆️ Salida
+      </button>`:''}
+    </div>
+  </div>
+  <div id="materialesBody"></div>`;
+}
+
+function switchMaterialesTab(tab){
+  materialesTab=tab;
+  renderMaterialesShell();
+  if(tab==='stock') cargarStockMateriales();
+  else if(tab==='movimientos') cargarMovimientosMateriales();
+  else cargarReportesMateriales();
+}
+
+async function cargarStockMateriales(){
+  const { data: stock } = await sb.from('materiales_stock').select('*').eq('proyecto_id',currentProyecto).order('nombre');
+  const el = document.getElementById('materialesBody');
+
+  // Actualizar badge de alertas
+  const alertas = (stock||[]).filter(s=>s.stock_actual<=s.stock_minimo && s.stock_minimo>0).length;
+  const badge = document.getElementById('materialesBadge');
+  if(badge){ badge.style.display=alertas>0?'inline':'none'; badge.textContent=alertas; }
+
+  if(!stock?.length){
+    el.innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin materiales</div><div class="empty-sub">Agrega los materiales del proyecto</div></div>';
+    return;
+  }
+
+  el.innerHTML=`<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>Material</th>
+      <th style="text-align:center">Unidad</th>
+      <th style="text-align:right">Stock actual</th>
+      <th style="text-align:right">Stock mínimo</th>
+      <th style="text-align:center">Estado</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      ${stock.map(s=>{
+        const enAlerta = s.stock_minimo>0 && s.stock_actual<=s.stock_minimo;
+        const enCritico = s.stock_minimo>0 && s.stock_actual<=s.stock_minimo*0.5;
+        const color = enCritico?'#e2445c':enAlerta?'#ff9f00':'#00c875';
+        const label = enCritico?'🔴 Crítico':enAlerta?'🟡 Bajo':'✅ OK';
+        return `<tr style="${enAlerta?'background:#fff8f0':''}">
+          <td style="font-weight:500">${s.nombre}</td>
+          <td style="text-align:center">${s.unidad||'—'}</td>
+          <td style="text-align:right;font-weight:700;font-size:15px;color:${color}">${Number(s.stock_actual||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+          <td style="text-align:right;color:#676879">${Number(s.stock_minimo||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
+          <td style="text-align:center"><span style="background:${color}20;color:${color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${label}</span></td>
+          <td style="white-space:nowrap">
+            <button onclick="abrirModalEditarStock('${s.id}','${s.nombre.replace(/'/g,"\\'")}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
+            <button onclick="eliminarMaterialStock('${s.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div></div>`;
+}
+
+async function cargarMovimientosMateriales(){
+  const hace30=new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+  const { data: movs } = await sb.from('materiales_movimientos')
+    .select('*,material:materiales_stock(nombre,unidad)')
+    .eq('proyecto_id',currentProyecto)
+    .gte('fecha',hace30).order('fecha',{ascending:false}).order('created_at',{ascending:false});
+  const el=document.getElementById('materialesBody');
+  el.innerHTML=`<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>Fecha</th><th>Tipo</th><th>Material</th>
+      <th style="text-align:right">Cantidad</th>
+      <th>Proveedor/Destino</th><th>Factura</th><th>Observación</th><th></th>
+    </tr></thead>
+    <tbody>
+      ${!movs?.length?`<tr><td colspan="8" style="text-align:center;color:#676879;padding:20px">Sin movimientos en los últimos 30 días</td></tr>`:
+      movs.map(m=>`<tr>
+        <td>${new Date(m.fecha+'T00:00:00').toLocaleDateString('es-EC')}</td>
+        <td><span style="background:${m.tipo==='ingreso'?'#e8f5e9':'#fce4ec'};color:${m.tipo==='ingreso'?'#2e7d32':'#c62828'};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600">${m.tipo==='ingreso'?'⬇️ Ingreso':'⬆️ Salida'}</span></td>
+        <td style="font-weight:500">${m.material?.nombre||'—'}</td>
+        <td style="text-align:right;font-weight:700;color:${m.tipo==='ingreso'?'#2e7d32':'#c62828'}">${m.tipo==='ingreso'?'+':'-'}${Number(m.cantidad).toLocaleString('es-EC',{maximumFractionDigits:3})} ${m.material?.unidad||''}</td>
+        <td style="font-size:12px">${m.proveedor||'—'}</td>
+        <td style="font-size:12px">${m.factura||'—'}</td>
+        <td style="font-size:12px;color:#676879">${m.observacion||'—'}</td>
+        <td><button onclick="eliminarMovimiento('${m.id}','${m.material_id}','${m.tipo}',${m.cantidad})" class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c">🗑</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div></div>`;
+}
+
+async function cargarReportesMateriales(){
+  const { data: stock } = await sb.from('materiales_stock').select('*').eq('proyecto_id',currentProyecto).order('nombre');
+  const { data: movs } = await sb.from('materiales_movimientos').select('*').eq('proyecto_id',currentProyecto);
+  const el=document.getElementById('materialesBody');
+  if(!stock?.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin materiales</div></div>'; return; }
+
+  const alertas=stock.filter(s=>s.stock_minimo>0&&s.stock_actual<=s.stock_minimo).length;
+  const totalIngresos=(movs||[]).filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+m.cantidad,0);
+  const totalSalidas=(movs||[]).filter(m=>m.tipo==='salida').reduce((s,m)=>s+m.cantidad,0);
+
+  el.innerHTML=`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+    <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+      <div><div class="metric-value">${stock.length}</div><div class="metric-label">Materiales</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${alertas>0?'purple':'green'}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></div>
+      <div><div class="metric-value" style="color:${alertas>0?'#e2445c':'#00c875'}">${alertas}</div><div class="metric-label">En alerta</div></div></div>
+    <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="7 10 12 15 17 10"/></svg></div>
+      <div><div class="metric-value">${totalIngresos.toFixed(1)}</div><div class="metric-label">Total ingresos</div></div></div>
+    <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 14 12 9 7 14"/></svg></div>
+      <div><div class="metric-value">${totalSalidas.toFixed(1)}</div><div class="metric-label">Total salidas</div></div></div>
+  </div>
+  <div class="card"><div class="card-header"><div class="card-title">Stock por material</div></div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Material</th><th>Unidad</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Salidas</th><th style="text-align:right">Stock actual</th><th style="text-align:right">Mínimo</th><th style="text-align:center">Estado</th></tr></thead>
+      <tbody>${stock.map(s=>{
+        const ingresos=(movs||[]).filter(m=>m.material_id===s.id&&m.tipo==='ingreso').reduce((t,m)=>t+m.cantidad,0);
+        const salidas=(movs||[]).filter(m=>m.material_id===s.id&&m.tipo==='salida').reduce((t,m)=>t+m.cantidad,0);
+        const enAlerta=s.stock_minimo>0&&s.stock_actual<=s.stock_minimo;
+        const color=enAlerta?'#e2445c':'#00c875';
+        return `<tr style="${enAlerta?'background:#fff8f0':''}">
+          <td style="font-weight:500">${s.nombre}</td>
+          <td>${s.unidad||'—'}</td>
+          <td style="text-align:right;color:#2e7d32">+${ingresos.toFixed(2)}</td>
+          <td style="text-align:right;color:#c62828">-${salidas.toFixed(2)}</td>
+          <td style="text-align:right;font-weight:700;color:${color}">${Number(s.stock_actual||0).toFixed(2)}</td>
+          <td style="text-align:right;color:#676879">${Number(s.stock_minimo||0).toFixed(2)}</td>
+          <td style="text-align:center"><span style="background:${color}20;color:${color};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">${enAlerta?'⚠️ Bajo':'✅ OK'}</span></td>
+        </tr>`;}).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+async function abrirModalAgregarMaterial(){
+  const { data: catalogo } = await sb.from('catalogo_items').select('*').eq('tipo','material').order('nombre');
+  const { data: yaAgregados } = await sb.from('materiales_stock').select('catalogo_item_id').eq('proyecto_id',currentProyecto);
+  const yaIds = new Set((yaAgregados||[]).map(s=>s.catalogo_item_id));
+  const disponibles = (catalogo||[]).filter(c=>!yaIds.has(c.id));
+
+  document.getElementById('matCatalogoSelect').innerHTML =
+    `<option value="">— Seleccionar del catálogo —</option>` +
+    (disponibles.map(c=>`<option value="${c.id}" data-nombre="${c.nombre}" data-unidad="${c.unidad||''}">${c.nombre} (${c.unidad||'—'})</option>`).join('')||'') +
+    `<option value="nuevo">➕ Nuevo material...</option>`;
+  document.getElementById('matNuevoNombre').style.display='none';
+  document.getElementById('matNuevoUnidad').style.display='none';
+  document.getElementById('matStockMinimo').value='0';
+  document.getElementById('modalAgregarMaterial').classList.add('show');
+}
+
+async function guardarMaterialStock(){
+  const sel = document.getElementById('matCatalogoSelect').value;
+  const stockMinimo = parseFloat(document.getElementById('matStockMinimo').value)||0;
+  let nombre,unidad,catalogoId=null;
+
+  if(sel==='nuevo'){
+    nombre=document.getElementById('matNuevoNombreInput').value.trim();
+    unidad=document.getElementById('matNuevoUnidadInput').value.trim();
+    if(!nombre){ toast('Ingresa el nombre','error'); return; }
+    // Crear en catálogo
+    const {data:nuevo}=await sb.from('catalogo_items').insert({nombre,unidad,tipo:'material'}).select().single();
+    catalogoId=nuevo?.id;
+  } else if(sel){
+    const opt=document.querySelector(`#matCatalogoSelect option[value="${sel}"]`);
+    nombre=opt?.dataset.nombre||'';
+    unidad=opt?.dataset.unidad||'';
+    catalogoId=sel;
+  } else { toast('Selecciona un material','error'); return; }
+
+  const btn=document.getElementById('btnGuardarMaterial');
+  btn.disabled=true; btn.textContent='Guardando...';
+  const {error}=await sb.from('materiales_stock').insert({
+    proyecto_id:currentProyecto, catalogo_item_id:catalogoId,
+    nombre, unidad, stock_actual:0, stock_minimo:stockMinimo
+  });
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Agregar'; return; }
+  toast('Material agregado ✓','success');
+  btn.disabled=false; btn.textContent='Agregar';
+  cerrarModal('modalAgregarMaterial');
+  cargarStockMateriales();
+}
+
+function abrirModalEditarStock(id, nombre){
+  window._editStockId=id;
+  document.getElementById('editStockNombre').textContent=nombre;
+  document.getElementById('editStockMinimo').value='';
+  document.getElementById('modalEditarStock').classList.add('show');
+}
+
+async function guardarEditarStock(){
+  const minimo=parseFloat(document.getElementById('editStockMinimo').value)||0;
+  await sb.from('materiales_stock').update({stock_minimo:minimo}).eq('id',window._editStockId);
+  toast('Stock mínimo actualizado ✓','success');
+  cerrarModal('modalEditarStock');
+  cargarStockMateriales();
+}
+
+async function eliminarMaterialStock(id){
+  if(!confirm('¿Eliminar este material del proyecto?')) return;
+  await sb.from('materiales_movimientos').delete().eq('material_id',id);
+  await sb.from('materiales_stock').delete().eq('id',id);
+  toast('Material eliminado','success');
+  cargarStockMateriales();
+}
+
+async function abrirModalMovimiento(tipo){
+  const {data:stock}=await sb.from('materiales_stock').select('id,nombre,unidad,stock_actual').eq('proyecto_id',currentProyecto).order('nombre');
+  if(!stock?.length){ toast('Agrega materiales primero','error'); return; }
+  document.getElementById('movTipo').value=tipo;
+  document.getElementById('movTipoLabel').textContent=tipo==='ingreso'?'⬇️ Ingreso a bodega':'⬆️ Salida a obra';
+  document.getElementById('movTipoLabel').style.color=tipo==='ingreso'?'#2e7d32':'#c62828';
+  document.getElementById('movMaterialSelect').innerHTML=stock.map(s=>`<option value="${s.id}" data-unidad="${s.unidad||''}" data-stock="${s.stock_actual}">${s.nombre} (Stock: ${Number(s.stock_actual).toFixed(2)} ${s.unidad||''})</option>`).join('');
+  document.getElementById('movFecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('movCantidad').value='';
+  document.getElementById('movProveedor').value='';
+  document.getElementById('movFactura').value='';
+  document.getElementById('movObservacion').value='';
+  // Mostrar/ocultar campos según tipo
+  document.getElementById('movCamposIngreso').style.display=tipo==='ingreso'?'block':'none';
+  document.getElementById('modalMovimiento').classList.add('show');
+}
+
+async function guardarMovimiento(){
+  const tipo=document.getElementById('movTipo').value;
+  const materialId=document.getElementById('movMaterialSelect').value;
+  const cantidad=parseFloat(document.getElementById('movCantidad').value)||0;
+  const fecha=document.getElementById('movFecha').value;
+  if(!materialId||!cantidad||!fecha){ toast('Completa los campos obligatorios','error'); return; }
+
+  // Verificar stock suficiente para salida
+  if(tipo==='salida'){
+    const opt=document.querySelector('#movMaterialSelect option:checked');
+    const stockActual=parseFloat(opt?.dataset.stock)||0;
+    if(cantidad>stockActual){ toast(`Stock insuficiente. Disponible: ${stockActual.toFixed(2)}`,'error'); return; }
+  }
+
+  const btn=document.getElementById('btnGuardarMovimiento');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const {error}=await sb.from('materiales_movimientos').insert({
+    proyecto_id:currentProyecto, material_id:materialId,
+    tipo, cantidad, fecha,
+    proveedor:document.getElementById('movProveedor').value.trim()||null,
+    factura:document.getElementById('movFactura').value.trim()||null,
+    observacion:document.getElementById('movObservacion').value.trim()||null,
+    creado_por:currentUser?.id
+  });
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+
+  // Actualizar stock
+  const delta=tipo==='ingreso'?cantidad:-cantidad;
+  const opt=document.querySelector('#movMaterialSelect option:checked');
+  const stockActual=parseFloat(opt?.dataset.stock)||0;
+  await sb.from('materiales_stock').update({stock_actual:stockActual+delta}).eq('id',materialId);
+
+  toast(tipo==='ingreso'?'Ingreso registrado ✓':'Salida registrada ✓','success');
+  btn.disabled=false; btn.textContent='Guardar';
+  cerrarModal('modalMovimiento');
+  cargarStockMateriales();
+}
+
+async function eliminarMovimiento(id, materialId, tipo, cantidad){
+  if(!confirm('¿Eliminar este movimiento? Se revertirá el stock.')) return;
+  await sb.from('materiales_movimientos').delete().eq('id',id);
+  // Revertir stock
+  const {data:mat}=await sb.from('materiales_stock').select('stock_actual').eq('id',materialId).single();
+  if(mat){
+    const delta=tipo==='ingreso'?-cantidad:cantidad;
+    await sb.from('materiales_stock').update({stock_actual:Math.max(0,(mat.stock_actual||0)+delta)}).eq('id',materialId);
+  }
+  toast('Movimiento eliminado y stock revertido','success');
+  cargarMovimientosMateriales();
+}
 
 // ── CONTROL DE EQUIPOS ──
 let equiposTab = 'catalogo';
