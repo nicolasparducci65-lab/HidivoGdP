@@ -3278,6 +3278,35 @@ async function guardarObservacionNueva(){
 }
 
 
+async function notificarFiscalizadorViaDM(titulo, detalle){
+  if(!currentProyecto) return;
+  // Obtener fiscalizadores del proyecto
+  const { data: miembros } = await sb.from('proyecto_miembros')
+    .select('usuario_id,perfiles(rol)').eq('proyecto_id', currentProyecto);
+  const { data: todosPerfiles } = await sb.from('perfiles').select('id,rol')
+    .in('rol',['admin','fiscalizador']);
+
+  const fiscalizadores = (todosPerfiles||[]).filter(p=>p.id !== currentUser?.id);
+  for(const f of fiscalizadores){
+    let { data: dms } = await sb.from('canales_chat').select('id').eq('tipo','dm')
+      .or(`and(dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${f.id}),and(dm_user1_id.eq.${f.id},dm_user2_id.eq.${currentUser.id})`);
+    let canalId;
+    if(dms?.length){ canalId=dms[0].id; }
+    else {
+      const { data: nuevoDM } = await sb.from('canales_chat').insert({
+        nombre:`dm-${currentUser.id}-${f.id}`, tipo:'dm',
+        dm_user1_id:currentUser.id, dm_user2_id:f.id
+      }).select().single();
+      canalId=nuevoDM?.id;
+    }
+    if(!canalId) continue;
+    await sb.from('mensajes_chat').insert({
+      canal_id:canalId, autor_id:currentUser?.id,
+      contenido:`${titulo}\n${detalle||''}\n_Proyecto: ${proyectos.find(p=>p.id===currentProyecto)?.nombre||''}_`
+    });
+  }
+}
+
 // ── PLANILLAS DE PAGO ──
 const ESTADOS_PLANILLA = {
   borrador:    { label:'Borrador',          color:'#676879', bg:'#f5f6f8', emoji:'📝' },
@@ -3297,8 +3326,7 @@ async function cargarPlanillas(){
   const puedeCrear = ['admin','fiscalizador','residente'].includes(rol);
 
   const { data: planillas } = await sb.from('planillas_pago')
-    .select('*,creado_por:perfiles(nombre,apellido)')
-    .eq('proyecto_id', currentProyecto).order('numero', {ascending:false});
+    .select('*').eq('proyecto_id', currentProyecto).order('numero', {ascending:false});
 
   // Badge de planillas en revisión
   const enRevision = (planillas||[]).filter(p=>p.estado==='enviada'||p.estado==='en_revision').length;
@@ -3331,7 +3359,6 @@ async function cargarPlanillas(){
             </div>
             <div style="font-size:12px;color:#676879">
               📅 ${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}
-              &nbsp;·&nbsp; Por: ${p.creado_por?.nombre||''} ${p.creado_por?.apellido||''}
             </div>
           </div>
           <div style="text-align:right;flex-shrink:0">
@@ -3505,19 +3532,18 @@ async function guardarPlanilla(estado){
   toast(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevaPlanilla');
+  // Notificar via DM si se envía a revisión
+  if(estado==='enviada'){
+    await notificarFiscalizadorViaDM(`📊 Nueva planilla N°${numero} enviada a revisión`, `Período: ${fechaInicio} → ${fechaFin} · Total: $${totalMonto.toLocaleString('es-EC',{minimumFractionDigits:2})}`);
+  }
   cargarPlanillas();
 }
 
 async function verPlanilla(id){
-  const { data: p } = await sb.from('planillas_pago')
-    .select('*,creado_por:perfiles(nombre,apellido)')
-    .eq('id',id).single();
-  const { data: rubros } = await sb.from('planilla_rubros')
-    .select('*,rubro:rubros(descripcion,unidad)').eq('planilla_id',id);
+  const { data: p } = await sb.from('planillas_pago').select('*').eq('id',id).single();
+  const { data: rubros } = await sb.from('planilla_rubros').select('*,rubro:rubros(descripcion,unidad)').eq('planilla_id',id);
   const { data: archivos } = await sb.from('planilla_archivos').select('*').eq('planilla_id',id);
-  const { data: historial } = await sb.from('planilla_historial')
-    .select('*,autor:perfiles(nombre,apellido)')
-    .eq('planilla_id',id).order('created_at');
+  const { data: historial } = await sb.from('planilla_historial').select('*').eq('planilla_id',id).order('created_at');
 
   window._planillaActiva = p;
   const est = ESTADOS_PLANILLA[p.estado]||ESTADOS_PLANILLA.borrador;
