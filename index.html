@@ -1658,6 +1658,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         </div>
       </div>
     </div>
+    <div class="modal-footer">
+      <button id="btnEliminarSolicitud" style="display:none;color:#e2445c" class="btn">🗑 Eliminar</button>
+      <button class="btn" onclick="cerrarModal('modalVerSolicitud')">Cerrar</button>
+    </div>
   </div>
 </div>
 
@@ -5349,12 +5353,27 @@ async function verSolicitud(id){
     botonesAccion.style.display='none';
   }
 
+  // Botón eliminar para admin — siempre visible
+  const btnEliminarSol = document.getElementById('btnEliminarSolicitud');
+  if(btnEliminarSol) btnEliminarSol.style.display = rol==='admin' ? 'inline-flex' : 'none';
+  if(btnEliminarSol) btnEliminarSol.onclick = ()=>eliminarSolicitud(sol.id);
+
   // Input de respuesta
   document.getElementById('solRespuestaTexto').value='';
   document.getElementById('solRespuestaArchivo').value='';
   document.getElementById('solRespuestaAccion').value='comentario';
 
   document.getElementById('modalVerSolicitud').classList.add('show');
+}
+
+async function eliminarSolicitud(id){
+  if(!confirm('¿Eliminar esta solicitud? Esta acción no se puede deshacer.')) return;
+  await sb.from('solicitud_archivos').delete().eq('solicitud_id',id);
+  await sb.from('solicitud_respuestas').delete().eq('solicitud_id',id);
+  await sb.from('solicitudes').delete().eq('id',id);
+  toast('Solicitud eliminada','success');
+  cerrarModal('modalVerSolicitud');
+  cargarSolicitudes();
 }
 
 async function responderSolicitud(accion){
