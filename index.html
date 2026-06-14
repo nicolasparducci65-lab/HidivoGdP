@@ -181,6 +181,11 @@ body.modo-residente button[onclick*="borrarArchivo"],
 body.modo-residente button[title*="Eliminar archivo"],
 body.modo-residente button[title*="Borrar archivo"],
 body.modo-residente .btn-eliminar-archivo {
+body.modo-visualizador #btnEliminarDetalle,
+body.modo-visualizador button[onclick*="abrirEditarRegistro"],
+body.modo-visualizador button[onclick*="abrirModalReporte"] {
+  display: none !important;
+}
   display: none !important;
 }
 body.modo-visualizador .btn.primary{display:none!important}
@@ -1947,7 +1952,7 @@ function aplicarAccesosPorRol(rol){
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
     bodeguero:    ['materiales','archivos','chat'],
-    visualizador: ['rubros','curvaS','archivos','chat']
+    visualizador: ['rubros','curvaS','libro','archivos','chat']
   };
 
   const permitidos = accesos[rol] || ['dashboard'];
@@ -2036,7 +2041,9 @@ function navTo(page, btn){
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
-  const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:true,texto:'Nuevo registro'} };
+  const rol = currentPerfil?.rol;
+  const esVisualizador = rol==='visualizador';
+  const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:!esVisualizador,texto:'Nuevo registro'} };
   const accion = acciones[page];
   document.getElementById('btnAccionPrincipal').style.display = accion?.show ? 'flex' : 'none';
   if(accion) document.getElementById('btnAccionTexto').textContent = accion.texto;
@@ -2208,7 +2215,7 @@ function aplicarModulosProyecto(modulos){
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
     bodeguero:    ['materiales','archivos','chat'],
-    visualizador: ['rubros','curvaS','archivos','chat']
+    visualizador: ['rubros','curvaS','libro','archivos','chat']
   };
   const permitidos = accesos[rol]||['dashboard'];
 
