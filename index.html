@@ -5623,12 +5623,16 @@ async function abrirModalInvitarCanal(canalId, canalNombre){
 
   // Cargar miembros del proyecto que NO están en el canal
   const { data: miembrosProyecto } = await sb.from('proyecto_miembros')
-    .select('usuario_id,perfiles(id,nombre,apellido)')
-    .eq('proyecto_id', currentProyecto)
-    .neq('usuario_id', currentUser.id);
+    .select('usuario_id').eq('proyecto_id', currentProyecto);
 
-  const disponibles = (miembrosProyecto||[])
-    .map(m=>m.perfiles).filter(p=>p&&!idsEnCanal.has(p.id));
+  const idsMiembros = (miembrosProyecto||[]).map(m=>m.usuario_id).filter(id=>id!==currentUser.id);
+
+  let disponibles = [];
+  if(idsMiembros.length){
+    const { data: perfilesDisp } = await sb.from('perfiles')
+      .select('id,nombre,apellido').in('id', idsMiembros);
+    disponibles = (perfilesDisp||[]).filter(p=>!idsEnCanal.has(p.id));
+  }
 
   const sel = document.getElementById('invitarCanalSelect');
   sel.innerHTML = '<option value="">— Selecciona un usuario —</option>' +
