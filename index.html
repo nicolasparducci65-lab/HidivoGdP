@@ -716,9 +716,14 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           </label>
         </div>
       </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="cerrarModal('modalProyecto')">Cancelar</button>
-      <button class="btn primary" onclick="guardarProyecto()">Guardar proyecto</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button id="btnEliminarProyecto" style="display:none" class="btn" onclick="eliminarProyecto()" style="color:#e2445c">
+        🗑 Eliminar proyecto
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="cerrarModal('modalProyecto')">Cancelar</button>
+        <button class="btn primary" onclick="guardarProyecto()">Guardar proyecto</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2270,6 +2275,9 @@ function abrirProyecto(id){ navTo('rubros', document.querySelector('.nav-item:nt
 function abrirModalProyecto(proyecto=null){
   document.getElementById('editProyectoId').value = proyecto?.id||'';
   document.getElementById('modalProyectoTitle').textContent = proyecto ? 'Editar proyecto' : 'Nuevo proyecto';
+  // Mostrar botón eliminar solo en edición y solo para admin
+  const btnEliminar = document.getElementById('btnEliminarProyecto');
+  if(btnEliminar) btnEliminar.style.display = (proyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   document.getElementById('pNombre').value = proyecto?.nombre||'';
   document.getElementById('pContratante').value = proyecto?.contratante||'';
   document.getElementById('pContratista').value = proyecto?.contratista||'';
@@ -2289,6 +2297,28 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modEquipos').checked = mods.equipos !== false;
   document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modalProyecto').classList.add('show');
+}
+
+async function eliminarProyecto(){
+  const id = document.getElementById('editProyectoId').value;
+  if(!id) return;
+  const nombre = document.getElementById('pNombre').value;
+  if(!confirm(`⚠️ ¿Estás seguro de eliminar el proyecto "${nombre}"?\n\nSe eliminarán TODOS los datos asociados: rubros, libro de obra, observaciones, solicitudes, planillas, equipos, materiales y archivos.\n\nEsta acción NO se puede deshacer.`)) return;
+
+  const btn = document.getElementById('btnEliminarProyecto');
+  btn.disabled=true; btn.textContent='Eliminando...';
+
+  // Eliminar en cascada — Supabase ON DELETE CASCADE se encarga de la mayoría
+  const { error } = await sb.from('proyectos').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='🗑 Eliminar proyecto'; return; }
+
+  toast('Proyecto eliminado ✓','success');
+  cerrarModal('modalProyecto');
+  // Resetear proyecto actual si era el eliminado
+  if(currentProyecto===id){ currentProyecto=null; }
+  cargarProyectosLista();
+  cargarProyectosSelector();
+  cargarDashboard();
 }
 
 async function guardarProyecto(){
