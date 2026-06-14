@@ -697,6 +697,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <input type="checkbox" id="modCurvaS" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📈 Curva S
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modLibro" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📖 Libro de Obra
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modObservaciones" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🔍 Observaciones
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
@@ -2229,6 +2232,7 @@ function aplicarModulosProyecto(modulos){
   // Módulos que dependen de la configuración del proyecto
   const modulosProyecto = {
     curvaS:        modulos?.curvaS !== false,
+    libro:         modulos?.libro !== false,
     fiscalizacion: modulos?.observaciones !== false,
     solicitudes:   modulos?.solicitudes !== false,
     planillas:     modulos?.planillas !== false,
@@ -2238,6 +2242,7 @@ function aplicarModulosProyecto(modulos){
 
   const navItems = {
     curvaS:       document.querySelector('.nav-item[onclick*="curvaS"]'),
+    libro:        document.querySelector('.nav-item[onclick*="libro"]'),
     fiscalizacion:document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
     solicitudes:  document.querySelector('.nav-item[onclick*="solicitudes"]'),
     planillas:    document.querySelector('.nav-item[onclick*="planillas"]'),
@@ -2277,6 +2282,7 @@ function abrirModalProyecto(proyecto=null){
   // Cargar módulos
   const mods = proyecto?.modulos || {};
   document.getElementById('modCurvaS').checked = mods.curvaS !== false;
+  document.getElementById('modLibro').checked = mods.libro !== false;
   document.getElementById('modObservaciones').checked = mods.observaciones !== false;
   document.getElementById('modSolicitudes').checked = mods.solicitudes !== false;
   document.getElementById('modPlanillas').checked = mods.planillas !== false;
@@ -2289,6 +2295,7 @@ async function guardarProyecto(){
   const id = document.getElementById('editProyectoId').value;
   const modulos = {
     curvaS: document.getElementById('modCurvaS').checked,
+    libro: document.getElementById('modLibro').checked,
     observaciones: document.getElementById('modObservaciones').checked,
     solicitudes: document.getElementById('modSolicitudes').checked,
     planillas: document.getElementById('modPlanillas').checked,
