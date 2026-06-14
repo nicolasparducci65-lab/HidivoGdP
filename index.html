@@ -1183,15 +1183,18 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label">Email del usuario *</label>
-        <input type="email" class="form-control" id="miembroEmail" placeholder="usuario@empresa.com"/>
-        <div style="font-size:11px;color:#676879;margin-top:4px">El usuario debe estar registrado en la plataforma</div>
+        <label class="form-label">Usuario *</label>
+        <select class="form-control" id="miembroSelect">
+          <option value="">— Selecciona un usuario —</option>
+        </select>
+        <div style="font-size:11px;color:#676879;margin-top:4px">Solo usuarios registrados en la plataforma</div>
       </div>
       <div class="form-group">
         <label class="form-label">Rol en este proyecto</label>
         <select class="form-control" id="miembroRol">
           <option value="residente">Residente — responder observaciones</option>
           <option value="visualizador">Visualizador — solo lectura</option>
+          <option value="bodeguero">Bodeguero — control de materiales</option>
         </select>
       </div>
     </div>
@@ -6188,24 +6191,33 @@ async function reenviarInvitacion(id, email){
   else toast('Invitación reenviada a '+email,'success');
 }
 
-function abrirModalAgregarMiembro(proyectoId, proyectoNombre){
+async function abrirModalAgregarMiembro(proyectoId, proyectoNombre){
   window._miembroProyectoId = proyectoId;
   document.getElementById('miembroProyectoNombre').textContent = proyectoNombre;
-  document.getElementById('miembroEmail').value='';
   document.getElementById('miembroRol').value='residente';
+
+  // Cargar usuarios registrados excluyendo los que ya son miembros
+  const { data: todosPerfiles } = await sb.from('perfiles').select('id,nombre,apellido,rol,email').order('nombre');
+  const { data: miembrosActuales } = await sb.from('proyecto_miembros').select('usuario_id').eq('proyecto_id', proyectoId);
+  const idsActuales = new Set((miembrosActuales||[]).map(m=>m.usuario_id));
+
+  const disponibles = (todosPerfiles||[]).filter(p=>!idsActuales.has(p.id));
+
+  const sel = document.getElementById('miembroSelect');
+  sel.innerHTML = '<option value="">— Selecciona un usuario —</option>' +
+    disponibles.map(p=>`<option value="${p.id}">${p.nombre} ${p.apellido} (${p.email||p.rol})</option>`).join('');
+
   document.getElementById('modalAgregarMiembro').classList.add('show');
 }
 
 async function guardarMiembro(){
-  const email = document.getElementById('miembroEmail').value.trim();
+  const usuarioId = document.getElementById('miembroSelect').value;
   const rol = document.getElementById('miembroRol').value;
-  if(!email){ toast('Ingresa un email','error'); return; }
-  // Buscar perfil por email
-  const { data: perfil } = await sb.from('perfiles').select('id').eq('email', email).single();
-  if(!perfil){ toast('Usuario no encontrado. Primero invítalo.','error'); return; }
+  if(!usuarioId){ toast('Selecciona un usuario','error'); return; }
+
   const { error } = await sb.from('proyecto_miembros').insert({
     proyecto_id: window._miembroProyectoId,
-    usuario_id: perfil.id,
+    usuario_id: usuarioId,
     rol
   });
   if(error){ toast('Error: '+error.message,'error'); return; }
