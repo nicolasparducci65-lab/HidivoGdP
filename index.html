@@ -5221,25 +5221,89 @@ async function cargarCanalesChat(){
 }
 
 async function cargarDMsChat(){
-  // DMs globales — sin filtro de proyecto
+  const el = document.getElementById('chatDMs');
+  if(!el) return;
+
+  // Obtener DMs existentes
   const { data: dms } = await sb.from('canales_chat')
     .select('*,dm_usuario1:perfiles!canales_chat_dm_user1_id_fkey(nombre,apellido),dm_usuario2:perfiles!canales_chat_dm_user2_id_fkey(nombre,apellido)')
     .eq('tipo','dm')
     .or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
-  const el = document.getElementById('chatDMs');
-  if(!dms?.length){ el.innerHTML=''; return; }
-  el.innerHTML = dms.map(dm=>{
+
+  // Obtener miembros del proyecto actual
+  let miembrosProyecto = [];
+  if(currentProyecto){
+    const { data: mps } = await sb.from('proyecto_miembros')
+      .select('usuario_id').eq('proyecto_id', currentProyecto)
+      .neq('usuario_id', currentUser.id);
+    const ids = (mps||[]).map(m=>m.usuario_id);
+    if(ids.length){
+      const { data: perfs } = await sb.from('perfiles').select('id,nombre,apellido').in('id', ids);
+      miembrosProyecto = perfs||[];
+    }
+  }
+
+  // Construir mapa de DMs existentes por usuario
+  const dmsPorUsuario = {};
+  (dms||[]).forEach(dm=>{
     const esUser1 = dm.dm_user1_id === currentUser.id;
+    const otroId = esUser1 ? dm.dm_user2_id : dm.dm_user1_id;
     const otro = esUser1 ? dm.dm_usuario2 : dm.dm_usuario1;
-    const nombre = otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario';
-    return `<div onclick="abrirCanal('${dm.id}','${nombre}','dm',null,'')"
-      id="canal-${dm.id}"
+    dmsPorUsuario[otroId] = { dm, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario' };
+  });
+
+  // Combinar: miembros del proyecto + DMs existentes con no-miembros
+  const usuariosVistos = new Set();
+  const items = [];
+
+  // Primero los miembros del proyecto
+  miembrosProyecto.forEach(p=>{
+    usuariosVistos.add(p.id);
+    const nombre = `${p.nombre} ${p.apellido}`;
+    const dmExistente = dmsPorUsuario[p.id];
+    items.push({ id: p.id, nombre, dm: dmExistente?.dm||null });
+  });
+
+  // Luego DMs con usuarios que no son miembros del proyecto actual
+  (dms||[]).forEach(dm=>{
+    const esUser1 = dm.dm_user1_id === currentUser.id;
+    const otroId = esUser1 ? dm.dm_user2_id : dm.dm_user1_id;
+    const otro = esUser1 ? dm.dm_usuario2 : dm.dm_usuario1;
+    if(!usuariosVistos.has(otroId)){
+      usuariosVistos.add(otroId);
+      items.push({ id: otroId, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario', dm });
+    }
+  });
+
+  if(!items.length){ el.innerHTML='<div style="padding:6px 16px;font-size:12px;color:#ffffff40">Sin contactos</div>'; return; }
+
+  el.innerHTML = items.map(item=>{
+    const esDmActivo = chatCanalActivo?.id === item.dm?.id;
+    const onclick = item.dm
+      ? `abrirCanal('${item.dm.id}','${item.nombre}','dm',null,'')`
+      : `iniciarDMCon('${item.id}','${item.nombre.replace(/'/g,"\\'")}')`;
+    return `<div onclick="${onclick}"
+      id="${item.dm ? 'canal-'+item.dm.id : 'dm-user-'+item.id}"
       style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;
-      ${chatCanalActivo?.id===dm.id?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
-      onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${chatCanalActivo?.id===dm.id?'#ffffff20':'transparent'}'">
-      👤 ${nombre}
+      ${esDmActivo?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
+      onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${esDmActivo?'#ffffff20':'transparent'}'">
+      👤 ${item.nombre}
     </div>`;
   }).join('');
+}
+
+async function iniciarDMCon(usuarioId, nombre){
+  // Crear DM si no existe y abrirlo
+  const { data: dm } = await sb.from('canales_chat').insert({
+    nombre: `dm-${currentUser.id}-${usuarioId}`,
+    tipo: 'dm',
+    dm_user1_id: currentUser.id,
+    dm_user2_id: usuarioId
+  }).select().single();
+  if(dm){
+    abrirCanal(dm.id, nombre, 'dm', usuarioId, '');
+    cargarDMsChat();
+  }
 }
 
 async function abrirCanal(id, nombre, tipo, dmUsuarioId, descripcion){
