@@ -5621,8 +5621,21 @@ async function guardarInvitarCanal(){
   cargarCanalesChat();
 }
 async function abrirModalNuevoDM(){
-  const { data: perfiles } = await sb.from('perfiles').select('id,nombre,apellido').neq('id', currentUser.id);
-  if(!perfiles?.length){ toast('No hay otros usuarios disponibles','info'); return; }
+  // Obtener solo miembros del proyecto actual
+  let perfiles = [];
+  if(currentProyecto){
+    const { data: miembros } = await sb.from('proyecto_miembros')
+      .select('usuario_id,perfiles(id,nombre,apellido)')
+      .eq('proyecto_id', currentProyecto)
+      .neq('usuario_id', currentUser.id);
+    perfiles = (miembros||[]).map(m=>m.perfiles).filter(Boolean);
+  } else {
+    // Sin proyecto — mostrar todos los usuarios
+    const { data: todos } = await sb.from('perfiles').select('id,nombre,apellido').neq('id', currentUser.id);
+    perfiles = todos||[];
+  }
+
+  if(!perfiles.length){ toast('No hay otros usuarios en este proyecto','info'); return; }
   const opciones = perfiles.map((p,i)=>`${i+1}. ${p.nombre} ${p.apellido}`).join('\n');
   const sel = prompt('Selecciona un usuario (número):\n'+opciones);
   const idx = parseInt(sel)-1;
