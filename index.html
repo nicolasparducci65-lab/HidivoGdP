@@ -3167,6 +3167,8 @@ function calcularIndicadores(rubros, proy){
   const avanceRealTotal = rubros.reduce((s,r)=>s+(r.avance_real/100)*r.pesoEfectivo,0);
   const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
 
+  const spiColor = SPI===null?'#676879':SPI>=0.95?'#00c875':SPI>=0.80?'#ff9f00':'#e2445c';
+  const spiLabel = SPI===null?'—':SPI>=0.95?'✅ En tiempo':SPI>=0.80?'⚠️ Leve atraso':'🔴 Atrasado';
   const totalProduccion = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
   const montoContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
 
