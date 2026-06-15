@@ -280,7 +280,6 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </div>
       <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="login()">Ingresar</button>
       <div class="auth-divider">o</div>
-      <button class="btn" style="width:100%;justify-content:center;padding:10px" onclick="showRegister()">Crear cuenta nueva</button>
     </div>
     <div id="registerForm" style="display:none">
       <div class="form-row">
@@ -6360,9 +6359,34 @@ async function cambiarRolUsuario(id, rolActual){
 }
 
 async function eliminarUsuario(id, nombre){
-  if(!confirm(`¿Eliminar al usuario ${nombre}? Esta acción no se puede deshacer.`)) return;
+  if(!confirm(`¿Eliminar al usuario ${nombre}?\n\nSe eliminará su cuenta y no podrá volver a entrar con ese email.\n\nEsta acción no se puede deshacer.`)) return;
+
+  const btn = event?.target;
+  if(btn){ btn.disabled=true; btn.textContent='Eliminando...'; }
+
+  // Eliminar de Auth via Edge Function
+  const resp = await fetch('https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/bright-handler', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA`
+    },
+    body: JSON.stringify({ accion: 'eliminarUsuario', userId: id })
+  });
+  const data = await resp.json();
+
+  if(data.error){
+    toast('Error eliminando de Auth: '+data.error,'error');
+    if(btn){ btn.disabled=false; btn.textContent='🗑'; }
+    return;
+  }
+
+  // Eliminar perfil de la BD
   await sb.from('perfiles').delete().eq('id', id);
-  toast('Usuario eliminado','success');
+  // Eliminar de proyecto_miembros
+  await sb.from('proyecto_miembros').delete().eq('usuario_id', id);
+
+  toast('Usuario eliminado correctamente ✓','success');
   cargarUsuarios();
 }
 
