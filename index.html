@@ -3167,12 +3167,14 @@ function calcularIndicadores(rubros, proy){
   const avanceRealTotal = rubros.reduce((s,r)=>s+(r.avance_real/100)*r.pesoEfectivo,0);
   const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
 
-  const spiColor = SPI===null?'#676879':SPI>=0.95?'#00c875':SPI>=0.80?'#ff9f00':'#e2445c';
-  const spiLabel = SPI===null?'—':SPI>=0.95?'✅ En tiempo':SPI>=0.80?'⚠️ Leve atraso':'🔴 Atrasado';
+  const totalProduccion = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
+  const montoContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
 
   document.getElementById('curvaSIndicadores').innerHTML = `
     <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
       <div><div class="metric-value">${avanceRealTotal.toFixed(1)}%</div><div class="metric-label">Avance real</div></div></div>
+    <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="metric-value">$${totalProduccion.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Total producción</div></div></div>
     <div class="metric-card"><div class="metric-icon ${SPI===null?'purple':SPI>=0.95?'green':SPI>=0.80?'orange':'purple'}">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
       <div><div class="metric-value" style="color:${spiColor}">${SPI!==null?SPI.toFixed(2):'—'}</div><div class="metric-label">SPI ${spiLabel}</div></div></div>
