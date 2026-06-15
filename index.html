@@ -498,7 +498,6 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- FISCALIZACIÓN -->
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
-        <div id="archivosPanel-fiscalizacion" style="display:none;margin-top:16px"></div>
       </div>
 
       <!-- ARCHIVOS -->
@@ -3425,7 +3424,6 @@ async function cargarFiscalizacion(){
   renderFiscalizacionShell();
   if(fiscalTab==='planos') cargarPlanos();
   else cargarObservaciones();
-  cargarArchivos('fiscalizacion');
 }
 
 function renderFiscalizacionShell(){
