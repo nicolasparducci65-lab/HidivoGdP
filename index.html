@@ -5105,7 +5105,6 @@ async function eliminarPlanilla(id){
 async function actualizarBadgeChat(){
   if(!currentUser) return;
   try {
-    // Obtener todos los DMs y canales del usuario
     const { data: dms } = await sb.from('canales_chat').select('id')
       .eq('tipo','dm')
       .or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
@@ -5116,13 +5115,11 @@ async function actualizarBadgeChat(){
     const todosCanales = [...(dms||[]), ...(canales||[])].map(c=>c.id);
     if(!todosCanales.length) return;
 
-    // Obtener últimos leídos por canal
     const { data: leidos } = await sb.from('mensajes_leidos').select('canal_id,ultimo_leido_at')
       .eq('usuario_id', currentUser.id);
     const leidosMap = {};
     (leidos||[]).forEach(l => leidosMap[l.canal_id] = l.ultimo_leido_at);
 
-    // Contar mensajes no leídos
     let totalNoLeidos = 0;
     for(const canalId of todosCanales){
       const ultimoLeido = leidosMap[canalId] || '2000-01-01';
@@ -5132,7 +5129,19 @@ async function actualizarBadgeChat(){
         .is('hilo_id', null)
         .neq('autor_id', currentUser.id)
         .gt('created_at', ultimoLeido);
-      totalNoLeidos += count||0;
+      const noLeidos = count||0;
+      totalNoLeidos += noLeidos;
+
+      // Actualizar badge individual del canal
+      const badgeEl = document.getElementById(`badge-canal-${canalId}`);
+      if(badgeEl){
+        if(noLeidos > 0){
+          badgeEl.style.display='inline';
+          badgeEl.textContent = noLeidos > 99 ? '99+' : noLeidos;
+        } else {
+          badgeEl.style.display='none';
+        }
+      }
     }
 
     const badge = document.getElementById('chatBadge');
@@ -5210,7 +5219,7 @@ async function cargarCanalesChat(){
       <div style="display:flex;align-items:center;gap:4px">
         ${esAdmin&&c.es_privado?`<button onclick="event.stopPropagation();abrirModalInvitarCanal('${c.id}','${c.nombre}')"
           title="Invitar al canal" style="background:none;border:none;color:#ffffff60;cursor:pointer;font-size:12px">+👤</button>`:''}
-        <span id="notif-${c.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>
+        <span id="badge-canal-${c.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>
       </div>
     </div>`).join('');
 
@@ -5284,10 +5293,11 @@ async function cargarDMsChat(){
       : `iniciarDMCon('${item.id}','${item.nombre.replace(/'/g,"\\'")}')`;
     return `<div onclick="${onclick}"
       id="${item.dm ? 'canal-'+item.dm.id : 'dm-user-'+item.id}"
-      style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;
+      style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;display:flex;align-items:center;justify-content:space-between;
       ${esDmActivo?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
       onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${esDmActivo?'#ffffff20':'transparent'}'">
-      👤 ${item.nombre}
+      <span>👤 ${item.nombre}</span>
+      ${item.dm?`<span id="badge-canal-${item.dm.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>`:''}
     </div>`;
   }).join('');
 }
