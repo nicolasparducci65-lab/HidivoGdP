@@ -219,6 +219,10 @@ body.modo-cliente #btnEliminarRubros{display:none!important}
 body.modo-cliente button[onclick*="abrirModalNuevoRubro"]{display:none!important}
 body.modo-cliente label[style*="cursor:pointer"]{display:none!important}
 body.modo-cliente #btnLinkFormulario{display:none!important}
+body.modo-cliente button[onclick*="abrirModalCronograma"]{display:none!important}
+body.modo-cliente #btnImportarCronograma{display:none!important}
+body.modo-cliente label[onclick*="importarCronograma"]{display:none!important}
+body.modo-cliente button[title*="cronograma"]{display:none!important}
 body.modo-visualizador #btnDescargarPlantilla{display:none!important}
 body.modo-visualizador #btnEliminarRubros{display:none!important}
 body.modo-visualizador button[onclick*="abrirModalNuevoRubro"]{display:none!important}
@@ -3202,7 +3206,7 @@ function renderCurvaS(proy){
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Ingresar cronograma
     </button>
-    <label class="btn" style="gap:6px;cursor:pointer">
+    <label id="btnImportarCronograma" class="btn" style="gap:6px;cursor:pointer">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Importar Excel
       <input type="file" accept=".xlsx,.xls,.xml,.mpx" style="display:none" onchange="importarCronograma(this)"/>
