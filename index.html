@@ -3224,11 +3224,11 @@ function calcularProyeccionesEVM(rubros, proy){
   const el = document.getElementById('curvaSProyecciones');
   if(!el) return;
 
-  if(!proy?.fecha_inicio || !proy?.fecha_fin){ el.innerHTML=''; return; }
+  if(!proy?.fecha_inicio || !proy?.fecha_fin_planificada){ el.innerHTML=''; return; }
 
   const hoy = new Date();
   const inicioProyecto = new Date(proy.fecha_inicio+'T00:00:00');
-  const finPlanificado = new Date(proy.fecha_fin+'T00:00:00');
+  const finPlanificado = new Date(proy.fecha_fin_planificada+'T00:00:00');
   const duracionPlanDias = Math.round((finPlanificado-inicioProyecto)/(1000*60*60*24));
   const diasTranscurridos = Math.max(0,Math.round((hoy-inicioProyecto)/(1000*60*60*24)));
 
