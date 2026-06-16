@@ -3113,8 +3113,12 @@ async function cargarCurvaS(){
   const cronMap = {};
   (cron||[]).forEach(c => cronMap[c.rubro_id] = c);
 
-  // Proyecto para fechas
-  const proy = proyectos.find(p=>p.id===currentProyecto)||{};
+  // Proyecto para fechas — cargar directamente para asegurar que tiene todos los campos
+  let proy = proyectos.find(p=>p.id===currentProyecto)||null;
+  if(!proy?.fecha_fin_planificada){
+    const { data: proyDB } = await sb.from('proyectos').select('*').eq('id',currentProyecto).single();
+    proy = proyDB||proy||{};
+  }
 
   cronogramaData = rubs.map(r => {
     const c = cronMap[r.id] || {};
