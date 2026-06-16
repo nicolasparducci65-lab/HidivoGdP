@@ -456,6 +456,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <div class="metric-icon purple"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
             <div><div class="metric-value" id="mRegistros">—</div><div class="metric-label">Registros libro</div></div>
           </div>
+          <div class="metric-card">
+            <div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+            <div><div class="metric-value" id="mSumaContratos">—</div><div class="metric-label">Suma contratos</div></div>
+          </div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -2122,10 +2126,15 @@ async function cargarDashboard(){
       document.getElementById('mProduccion').textContent = '$0,00';
       document.getElementById('mAvance').textContent = '0%';
     }
+
+    // Suma total de contratos
+    const sumaContratos = proyectos.reduce((s,p)=>s+(p.monto_contrato||0),0);
+    document.getElementById('mSumaContratos').textContent = '$'+sumaContratos.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
   } else {
     document.getElementById('mRegistros').textContent = '0';
     document.getElementById('mProduccion').textContent = '$0,00';
     document.getElementById('mAvance').textContent = '0%';
+    document.getElementById('mSumaContratos').textContent = '$0,00';
   }
 
   renderProyectosTabla('dashProyectosList', proyectos);
