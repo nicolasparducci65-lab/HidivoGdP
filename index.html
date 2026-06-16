@@ -2199,16 +2199,17 @@ async function renderProyectosTabla(containerId, lista){
         const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/rubros.length) : 0;
 
         let BCWP=0, BCWS=0, hayFechas=false;
+        const hoy2 = new Date(); hoy2.setHours(0,0,0,0);
         rubros.forEach(r=>{
           const c = cronMap[r.id];
-          if(!c||!c.fecha_inicio||!c.fecha_fin||!r.monto_contrato) return;
+          if(!c||!c.fecha_inicio||!c.fecha_fin) return;
           hayFechas=true;
           const pesoEfectivo = c.peso_pct!=null ? c.peso_pct : pesoAuto;
-          const avReal = Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100);
+          const avReal = r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0;
           const inicio = new Date(c.fecha_inicio+'T00:00:00');
           const fin = new Date(c.fecha_fin+'T00:00:00');
           const dur = (fin-inicio)||1;
-          const trans = Math.min(Math.max(hoy-inicio,0),dur);
+          const trans = Math.min(Math.max(hoy2-inicio,0),dur);
           const pctPlan = Math.min((trans/dur)*100,100);
           BCWP += (avReal/100)*pesoEfectivo;
           BCWS += (pctPlan/100)*pesoEfectivo;
