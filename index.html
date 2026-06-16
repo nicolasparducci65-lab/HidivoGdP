@@ -464,10 +464,15 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <div class="card">
           <div class="card-header">
             <div><div class="card-title">Mis proyectos</div><div class="card-subtitle">Vista general de todas las obras</div></div>
-            <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
-              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Nuevo proyecto
-            </button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="filtroContratante" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+                <option value="">— Todos los contratantes —</option>
+              </select>
+              <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Nuevo proyecto
+              </button>
+            </div>
           </div>
           <div id="dashProyectosList"><div class="page-loader"><div class="spinner"></div>Cargando proyectos...</div></div>
         </div>
@@ -2143,6 +2148,14 @@ async function cargarDashboard(){
   }
 
   renderProyectosTabla('dashProyectosList', proyectos);
+
+  // Poblar filtro de contratantes
+  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
+  const sel = document.getElementById('filtroContratante');
+  if(sel){
+    sel.innerHTML = '<option value="">— Todos los contratantes —</option>' +
+      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
+  }
 }
 
 async function renderProyectosTabla(containerId, lista){
@@ -2237,6 +2250,12 @@ async function renderProyectosTabla(containerId, lista){
     }).join('')}
     </tbody>
   </table>`;
+}
+
+function filtrarProyectosDashboard(){
+  const contratante = document.getElementById('filtroContratante')?.value||'';
+  const filtrados = contratante ? proyectos.filter(p=>p.contratante===contratante) : proyectos;
+  renderProyectosTabla('dashProyectosList', filtrados);
 }
 
 function estadoLabel(e){ return {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'}[e]||e; }
