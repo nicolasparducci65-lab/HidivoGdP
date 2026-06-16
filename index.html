@@ -213,6 +213,12 @@ body.modo-visualizador #btnLinkFormulario{display:none!important}
 body.modo-visualizador #btnImportarRubros{display:none!important}
 body.modo-cliente button[onclick*="abrirModalProyecto"]{display:none!important}
 body.modo-cliente #filtroContratante{display:none!important}
+body.modo-cliente #btnImportarRubros{display:none!important}
+body.modo-cliente #btnDescargarPlantilla{display:none!important}
+body.modo-cliente #btnEliminarRubros{display:none!important}
+body.modo-cliente button[onclick*="abrirModalNuevoRubro"]{display:none!important}
+body.modo-cliente label[style*="cursor:pointer"]{display:none!important}
+body.modo-cliente #btnLinkFormulario{display:none!important}
 body.modo-visualizador #btnDescargarPlantilla{display:none!important}
 body.modo-visualizador #btnEliminarRubros{display:none!important}
 body.modo-visualizador button[onclick*="abrirModalNuevoRubro"]{display:none!important}
@@ -2312,7 +2318,7 @@ async function cargarProyectosLista(){
 async function cargarProyectosSelector(){
   const rol = currentPerfil?.rol;
   let data;
-  if(rol==='residente'||rol==='visualizador'){
+  if(['residente','visualizador','bodeguero','cliente'].includes(rol)){
     const { data: miembros } = await sb.from('proyecto_miembros')
       .select('proyecto_id').eq('usuario_id', currentUser.id);
     const ids = (miembros||[]).map(m=>m.proyecto_id);
