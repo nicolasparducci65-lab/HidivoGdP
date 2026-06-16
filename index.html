@@ -2152,27 +2152,76 @@ async function renderProyectosTabla(containerId, lista){
     return;
   }
   const avances = {};
+  const spiEstados = {};
+  const hoy = new Date();
+
   for(const p of lista){
-    const { data: rubros } = await sb.from('rubros').select('cantidad_ejecutada,precio_unitario,monto_contrato').eq('proyecto_id',p.id);
+    const { data: rubros } = await sb.from('rubros')
+      .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion,fecha_inicio,fecha_fin')
+      .eq('proyecto_id',p.id);
+
     if(rubros&&rubros.length){
       const prod = rubros.reduce((a,r)=>a+((r.cantidad_ejecutada||0)*(r.precio_unitario||0)),0);
       const total = rubros.reduce((a,r)=>a+(r.monto_contrato||0),0);
       avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
-    } else { avances[p.id] = 0; }
+
+      // Calcular SPI
+      const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin&&r.monto_contrato>0);
+      if(conFechas.length){
+        const totalMonto = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
+        let BCWP=0, BCWS=0;
+        conFechas.forEach(r=>{
+          const peso = (r.monto_contrato/totalMonto)*100;
+          const avReal = r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0;
+          const inicio = new Date(r.fecha_inicio+'T00:00:00');
+          const fin = new Date(r.fecha_fin+'T00:00:00');
+          const dur = (fin-inicio)||1;
+          const trans = Math.min(Math.max(hoy-inicio,0),dur);
+          const pctPlan = Math.min((trans/dur)*100,100);
+          BCWP += (avReal/100)*peso;
+          BCWS += (pctPlan/100)*peso;
+        });
+        const SPI = BCWS>0 ? BCWP/BCWS : null;
+        spiEstados[p.id] = SPI;
+      } else {
+        spiEstados[p.id] = null;
+      }
+    } else {
+      avances[p.id] = 0;
+      spiEstados[p.id] = null;
+    }
   }
+
   const rol = currentPerfil?.rol;
   const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
-    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th>${puedeEditar?'<th></th>':''}</tr></thead>
-    <tbody>${lista.map(p=>`
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
+    <tbody>${lista.map(p=>{
+      const spi = spiEstados[p.id];
+      let tiempoLabel, tiempoColor, tiempoIcon;
+      if(spi===null){
+        tiempoLabel='N/A'; tiempoColor='#676879'; tiempoIcon='—';
+      } else if(spi>=0.95){
+        tiempoLabel='A tiempo'; tiempoColor='#00c875'; tiempoIcon='✅';
+      } else if(spi>=0.80){
+        tiempoLabel='Leve atraso'; tiempoColor='#ff9f00'; tiempoIcon='⚠️';
+      } else {
+        tiempoLabel='Atrasado'; tiempoColor='#e2445c'; tiempoIcon='🔴';
+      }
+      return `
       <tr>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.monto_contrato ? '$'+Number(p.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
+          <span style="font-size:12px;font-weight:600;color:${tiempoColor}">${tiempoIcon} ${tiempoLabel}</span>
+          ${spi!==null?`<div style="font-size:10px;color:#676879">SPI: ${spi.toFixed(2)}</div>`:''}
+        </td>
         ${puedeEditar?`<td><button onclick="event.stopPropagation();abrirModalProyecto(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 10px;font-size:12px">✏️ Editar</button></td>`:''}
-      </tr>`).join('')}
+      </tr>`;
+    }).join('')}
     </tbody>
   </table>`;
 }
