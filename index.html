@@ -6645,7 +6645,8 @@ async function eliminarSolicitud(id){
 async function responderSolicitud(accion){
   const texto = document.getElementById('solRespuestaTexto').value.trim();
   const archivo = document.getElementById('solRespuestaArchivo').files[0];
-  if(!texto&&!archivo){ toast('Escribe una respuesta o adjunta un archivo','error'); return; }
+  // Solo comentario requiere texto o archivo
+  if(accion==='comentario' && !texto && !archivo){ toast('Escribe una respuesta o adjunta un archivo','error'); return; }
   if(!window._solActiva) return;
 
   let archivoUrl=null, archivoNombre=null;
