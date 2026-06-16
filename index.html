@@ -5929,8 +5929,6 @@ async function cargarDMsChat(){
   }).join('');
 }
 
-async function iniciarDMCon
-
 async function iniciarDMCon(usuarioId, nombre){
   // Crear DM si no existe y abrirlo
   const { data: dm } = await sb.from('canales_chat').insert({
