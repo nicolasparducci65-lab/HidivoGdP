@@ -2109,11 +2109,26 @@ function formatoK(valor){
 async function cargarDashboard(){
   const { data: proy } = await sb.from('proyectos').select('*');
   proyectos = proy || [];
-  const enEjecucion = proyectos.filter(p=>p.estado==='ejecucion');
+
+  // Poblar filtro de contratantes
+  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
+  const sel = document.getElementById('filtroContratante');
+  if(sel){
+    const valorActual = sel.value;
+    sel.innerHTML = '<option value="">— Todos los contratantes —</option>' +
+      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
+    if(valorActual) sel.value = valorActual;
+  }
+
+  await actualizarMetricasDashboard(proyectos);
+  renderProyectosTabla('dashProyectosList', proyectos);
+}
+
+async function actualizarMetricasDashboard(lista){
+  const enEjecucion = lista.filter(p=>p.estado==='ejecucion');
   document.getElementById('mProyectos').textContent = enEjecucion.length;
 
-  // Calcular métricas reales
-  const ids = proyectos.map(p=>p.id);
+  const ids = lista.map(p=>p.id);
   if(ids.length){
     // Total registros libro de obra
     const { count: totalRegistros } = await sb.from('libro_obra')
@@ -2121,40 +2136,31 @@ async function cargarDashboard(){
       .in('proyecto_id', ids);
     document.getElementById('mRegistros').textContent = totalRegistros||0;
 
-    // Producción total ejecutada y avance
+    // Producción total y avance
     const { data: rubros } = await sb.from('rubros')
-      .select('cantidad_ejecutada, precio_unitario, monto_contrato')
+      .select('cantidad_ejecutada,precio_unitario,monto_contrato')
       .in('proyecto_id', ids);
 
-    if(rubros && rubros.length){
-      const produccionTotal = rubros.reduce((acc,r)=> acc + ((r.cantidad_ejecutada||0)*(r.precio_unitario||0)), 0);
-      const montoTotal = rubros.reduce((acc,r)=> acc + (r.monto_contrato||0), 0);
-      const avance = montoTotal > 0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
+    if(rubros&&rubros.length){
+      const produccionTotal = rubros.reduce((acc,r)=>acc+((r.cantidad_ejecutada||0)*(r.precio_unitario||0)),0);
+      const montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
+      const avance = montoTotal>0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
       document.getElementById('mProduccion').textContent = formatoK(produccionTotal);
       document.getElementById('mAvance').textContent = avance+'%';
     } else {
-      document.getElementById('mProduccion').textContent = '$0';
+      document.getElementById('mProduccion').textContent = '$0 K';
       document.getElementById('mAvance').textContent = '0%';
     }
 
-    // Suma total de contratos
-    const sumaContratos = proyectos.reduce((s,p)=>s+(p.monto_contrato||0),0);
+    // Suma contratos
+    const sumaContratos = lista.reduce((s,p)=>s+(p.monto_contrato||0),0);
     document.getElementById('mSumaContratos').textContent = formatoK(sumaContratos);
   } else {
+    document.getElementById('mProyectos').textContent = '0';
     document.getElementById('mRegistros').textContent = '0';
-    document.getElementById('mProduccion').textContent = '$0,00';
+    document.getElementById('mProduccion').textContent = '$0 K';
     document.getElementById('mAvance').textContent = '0%';
-    document.getElementById('mSumaContratos').textContent = '$0,00';
-  }
-
-  renderProyectosTabla('dashProyectosList', proyectos);
-
-  // Poblar filtro de contratantes
-  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
-  const sel = document.getElementById('filtroContratante');
-  if(sel){
-    sel.innerHTML = '<option value="">— Todos los contratantes —</option>' +
-      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
+    document.getElementById('mSumaContratos').textContent = '$0 K';
   }
 }
 
@@ -2252,9 +2258,10 @@ async function renderProyectosTabla(containerId, lista){
   </table>`;
 }
 
-function filtrarProyectosDashboard(){
+async function filtrarProyectosDashboard(){
   const contratante = document.getElementById('filtroContratante')?.value||'';
   const filtrados = contratante ? proyectos.filter(p=>p.contratante===contratante) : proyectos;
+  await actualizarMetricasDashboard(filtrados);
   renderProyectosTabla('dashProyectosList', filtrados);
 }
 
