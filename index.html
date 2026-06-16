@@ -2057,6 +2057,7 @@ function showRegister(){ document.getElementById('loginForm').style.display='non
 function mostrarApp(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('appScreen').style.display='flex';
+  iniciarPresencia();
   cargarDashboard();
   cargarProyectosSelector();
   setTimeout(()=>{
@@ -4664,6 +4665,36 @@ async function eliminarSubcontrato(){
   cargarSubcontratistas();
 }
 
+// ── PRESENCIA EN LÍNEA ──
+let presenciaInterval = null;
+
+async function iniciarPresencia(){
+  if(!currentUser?.id) return;
+  // Marcar como en línea
+  await sb.from('presencia').upsert({ usuario_id: currentUser.id, en_linea: true, ultimo_visto: new Date().toISOString() });
+  // Actualizar cada 30 segundos
+  if(presenciaInterval) clearInterval(presenciaInterval);
+  presenciaInterval = setInterval(async()=>{
+    await sb.from('presencia').upsert({ usuario_id: currentUser.id, en_linea: true, ultimo_visto: new Date().toISOString() });
+  }, 30000);
+  // Marcar offline al cerrar
+  window.addEventListener('beforeunload', async()=>{
+    await sb.from('presencia').upsert({ usuario_id: currentUser.id, en_linea: false, ultimo_visto: new Date().toISOString() });
+  });
+}
+
+async function obtenerPresencia(){
+  const { data } = await sb.from('presencia').select('usuario_id,en_linea,ultimo_visto');
+  const mapa = {};
+  const ahora = new Date();
+  (data||[]).forEach(p=>{
+    // Considerar en línea si marcó en_linea y el último visto fue hace menos de 2 minutos
+    const diff = (ahora - new Date(p.ultimo_visto)) / 1000;
+    mapa[p.usuario_id] = p.en_linea && diff < 120;
+  });
+  return mapa;
+}
+
 // ── CONTROL DE MATERIALES ──
 let materialesTab = 'stock';
 
@@ -5830,13 +5861,11 @@ async function cargarDMsChat(){
   const el = document.getElementById('chatDMs');
   if(!el) return;
 
-  // Obtener DMs existentes
   const { data: dms } = await sb.from('canales_chat')
     .select('*,dm_usuario1:perfiles!canales_chat_dm_user1_id_fkey(nombre,apellido),dm_usuario2:perfiles!canales_chat_dm_user2_id_fkey(nombre,apellido)')
     .eq('tipo','dm')
     .or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
 
-  // Obtener miembros del proyecto actual
   let miembrosProyecto = [];
   if(currentProyecto){
     const { data: mps } = await sb.from('proyecto_miembros')
@@ -5849,7 +5878,9 @@ async function cargarDMsChat(){
     }
   }
 
-  // Construir mapa de DMs existentes por usuario
+  // Obtener presencia
+  const presencia = await obtenerPresencia();
+
   const dmsPorUsuario = {};
   (dms||[]).forEach(dm=>{
     const esUser1 = dm.dm_user1_id === currentUser.id;
@@ -5858,26 +5889,23 @@ async function cargarDMsChat(){
     dmsPorUsuario[otroId] = { dm, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario' };
   });
 
-  // Combinar: miembros del proyecto + DMs existentes con no-miembros
   const usuariosVistos = new Set();
   const items = [];
 
-  // Primero los miembros del proyecto
   miembrosProyecto.forEach(p=>{
     usuariosVistos.add(p.id);
     const nombre = `${p.nombre} ${p.apellido}`;
     const dmExistente = dmsPorUsuario[p.id];
-    items.push({ id: p.id, nombre, dm: dmExistente?.dm||null });
+    items.push({ id: p.id, nombre, dm: dmExistente?.dm||null, enLinea: presencia[p.id]||false });
   });
 
-  // Luego DMs con usuarios que no son miembros del proyecto actual
   (dms||[]).forEach(dm=>{
     const esUser1 = dm.dm_user1_id === currentUser.id;
     const otroId = esUser1 ? dm.dm_user2_id : dm.dm_user1_id;
     const otro = esUser1 ? dm.dm_usuario2 : dm.dm_usuario1;
     if(!usuariosVistos.has(otroId)){
       usuariosVistos.add(otroId);
-      items.push({ id: otroId, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario', dm });
+      items.push({ id: otroId, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario', dm, enLinea: presencia[otroId]||false });
     }
   });
 
@@ -5888,16 +5916,20 @@ async function cargarDMsChat(){
     const onclick = item.dm
       ? `abrirCanal('${item.dm.id}','${item.nombre}','dm',null,'')`
       : `iniciarDMCon('${item.id}','${item.nombre.replace(/'/g,"\\'")}')`;
+    const dotColor = item.enLinea ? '#00c875' : '#676879';
     return `<div onclick="${onclick}"
       id="${item.dm ? 'canal-'+item.dm.id : 'dm-user-'+item.id}"
-      style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;display:flex;align-items:center;justify-content:space-between;
+      style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;font-size:13px;display:flex;align-items:center;gap:8px;
       ${esDmActivo?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
       onmouseover="this.style.background='#ffffff15'" onmouseout="this.style.background='${esDmActivo?'#ffffff20':'transparent'}'">
-      <span>👤 ${item.nombre}</span>
+      <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>
+      <span style="flex:1">${item.nombre}</span>
       ${item.dm?`<span id="badge-canal-${item.dm.id}" style="background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;display:none">0</span>`:''}
     </div>`;
   }).join('');
 }
+
+async function iniciarDMCon
 
 async function iniciarDMCon(usuarioId, nombre){
   // Crear DM si no existe y abrirlo
