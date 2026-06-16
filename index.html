@@ -2113,7 +2113,7 @@ function formatoK(valor){
 
 async function cargarDashboard(){
   let proyData;
-  if(currentPerfil?.rol === 'cliente'){
+  if(currentPerfil?.rol === 'cliente' && currentUser?.id){
     // Cliente solo ve los proyectos a los que está invitado
     const { data: membs } = await sb.from('proyecto_miembros')
       .select('proyecto_id').eq('usuario_id', currentUser.id);
