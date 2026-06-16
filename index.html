@@ -2392,7 +2392,8 @@ function aplicarModulosProyecto(modulos){
   Object.entries(navItems).forEach(([page, el])=>{
     if(!el) return;
     const tieneAcceso = permitidos.includes(page);
-    const moduloActivo = modulosProyecto[page] !== false;
+    // Cliente siempre ve lo que tiene acceso, sin restricción de módulos
+    const moduloActivo = rol==='cliente' ? true : modulosProyecto[page] !== false;
     el.style.display = (tieneAcceso && moduloActivo) ? 'flex' : 'none';
   });
 
@@ -2403,7 +2404,12 @@ function aplicarModulosProyecto(modulos){
   }
 }
 
-function abrirProyecto(id){ navTo('rubros', document.querySelector('.nav-item:nth-child(3)')); document.getElementById('selectProyecto').value=id; cambiarProyecto(id); }
+function abrirProyecto(id){
+  const destino = currentPerfil?.rol==='cliente' ? 'curvaS' : 'rubros';
+  navTo(destino, document.querySelector(`.nav-item[onclick*="${destino}"]`));
+  document.getElementById('selectProyecto').value=id;
+  cambiarProyecto(id);
+}
 
 // ── MODAL PROYECTO ──
 function abrirModalProyecto(proyecto=null){
