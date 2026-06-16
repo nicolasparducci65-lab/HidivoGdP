@@ -2096,6 +2096,11 @@ function accionPrincipal(){
 }
 
 // ── DASHBOARD ──
+function formatoK(valor){
+  if(valor >= 1000000) return '$'+(valor/1000000).toLocaleString('es-EC',{minimumFractionDigits:1,maximumFractionDigits:1})+' M';
+  return '$'+(valor/1000).toLocaleString('es-EC',{minimumFractionDigits:1,maximumFractionDigits:1})+' K';
+}
+
 async function cargarDashboard(){
   const { data: proy } = await sb.from('proyectos').select('*');
   proyectos = proy || [];
@@ -2120,16 +2125,16 @@ async function cargarDashboard(){
       const produccionTotal = rubros.reduce((acc,r)=> acc + ((r.cantidad_ejecutada||0)*(r.precio_unitario||0)), 0);
       const montoTotal = rubros.reduce((acc,r)=> acc + (r.monto_contrato||0), 0);
       const avance = montoTotal > 0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
-      document.getElementById('mProduccion').textContent = '$'+produccionTotal.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+      document.getElementById('mProduccion').textContent = formatoK(produccionTotal);
       document.getElementById('mAvance').textContent = avance+'%';
     } else {
-      document.getElementById('mProduccion').textContent = '$0,00';
+      document.getElementById('mProduccion').textContent = '$0';
       document.getElementById('mAvance').textContent = '0%';
     }
 
     // Suma total de contratos
     const sumaContratos = proyectos.reduce((s,p)=>s+(p.monto_contrato||0),0);
-    document.getElementById('mSumaContratos').textContent = '$'+sumaContratos.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('mSumaContratos').textContent = formatoK(sumaContratos);
   } else {
     document.getElementById('mRegistros').textContent = '0';
     document.getElementById('mProduccion').textContent = '$0,00';
