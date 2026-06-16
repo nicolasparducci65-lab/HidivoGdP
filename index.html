@@ -3144,6 +3144,9 @@ function renderCurvaS(proy){
   <!-- INDICADORES -->
   <div id="curvaSIndicadores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
 
+  <!-- PROYECCIONES EVM -->
+  <div id="curvaSProyecciones" style="margin-bottom:16px"></div>
+
   <!-- GRÁFICO -->
   <div class="card" style="margin-bottom:16px">
     <div class="card-header">
@@ -3198,6 +3201,7 @@ function renderCurvaS(proy){
 
   // Calcular indicadores y gráfico
   calcularIndicadores(rubrosConPeso, proy||{});
+  calcularProyeccionesEVM(rubrosConPeso, proy||{});
   dibujarGraficoCurvaS(rubrosConPeso, proy||{});
 }
 
@@ -3214,6 +3218,82 @@ function calcularAtraso(r){
   const pctPlanHoy = Math.min((transcurrido/duracion)*100, 100);
   if(r.avance_real >= pctPlanHoy - 2) return 'adelantado';
   return 'atrasado';
+}
+
+function calcularProyeccionesEVM(rubros, proy){
+  const el = document.getElementById('curvaSProyecciones');
+  if(!el) return;
+
+  if(!proy?.fecha_inicio || !proy?.fecha_fin){ el.innerHTML=''; return; }
+
+  const hoy = new Date();
+  const inicioProyecto = new Date(proy.fecha_inicio+'T00:00:00');
+  const finPlanificado = new Date(proy.fecha_fin+'T00:00:00');
+  const duracionPlanDias = Math.round((finPlanificado-inicioProyecto)/(1000*60*60*24));
+  const diasTranscurridos = Math.max(0,Math.round((hoy-inicioProyecto)/(1000*60*60*24)));
+
+  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin&&r.monto_contrato>0);
+  if(!conFechas.length){ el.innerHTML=''; return; }
+
+  const totalMonto = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
+  let BCWP=0, BCWS=0;
+  conFechas.forEach(r=>{
+    const peso = (r.monto_contrato/totalMonto)*100;
+    const avReal = Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100);
+    const inicio = new Date(r.fecha_inicio+'T00:00:00');
+    const fin = new Date(r.fecha_fin+'T00:00:00');
+    const dur = (fin-inicio)||1;
+    const trans = Math.min(Math.max(hoy-inicio,0),dur);
+    const pctPlan = Math.min((trans/dur)*100,100);
+    BCWP += (avReal/100)*peso;
+    BCWS += (pctPlan/100)*peso;
+  });
+
+  if(BCWS<=0){ el.innerHTML=''; return; }
+
+  const SPI = BCWP/BCWS;
+  const SV = BCWP - BCWS;
+  const duracionEstimadaDias = SPI>0 ? Math.round(duracionPlanDias/SPI) : duracionPlanDias;
+  const fechaEntregaEstimada = new Date(inicioProyecto.getTime() + duracionEstimadaDias*24*60*60*1000);
+  const diasAtraso = Math.round((fechaEntregaEstimada-finPlanificado)/(1000*60*60*24));
+
+  const trabajoRestante = 100 - BCWP;
+  const diasRestantes = Math.max(0,Math.round((finPlanificado-hoy)/(1000*60*60*24)));
+  const TSPI = diasRestantes>0 && (100-BCWS)>0 ? trabajoRestante/(100-BCWS) : null;
+
+  const fmtFecha = d => d.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'});
+  const atrasoColor = diasAtraso<=0 ? '#00c875' : diasAtraso<=15 ? '#ff9f00' : '#e2445c';
+  const atrasoLabel = diasAtraso<=0 ? `✅ ${Math.abs(diasAtraso)} días adelantado` : `🔴 ${diasAtraso} días de atraso`;
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📊 Proyecciones EVM</div>
+      <div style="font-size:11px;color:#676879">Basado en rendimiento actual — SPI: ${SPI.toFixed(2)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;padding:0 16px 16px">
+      <div style="padding:12px;border-right:1px solid #f5f6f8">
+        <div style="font-size:11px;color:#676879;text-transform:uppercase;margin-bottom:4px">Fecha entrega planificada</div>
+        <div style="font-size:16px;font-weight:700;color:#323338">${fmtFecha(finPlanificado)}</div>
+        <div style="font-size:11px;color:#676879;margin-top:2px">Duración: ${duracionPlanDias} días</div>
+      </div>
+      <div style="padding:12px;border-right:1px solid #f5f6f8">
+        <div style="font-size:11px;color:#676879;text-transform:uppercase;margin-bottom:4px">Fecha entrega estimada</div>
+        <div style="font-size:16px;font-weight:700;color:${atrasoColor}">${fmtFecha(fechaEntregaEstimada)}</div>
+        <div style="font-size:11px;color:#676879;margin-top:2px">Duración estimada: ${duracionEstimadaDias} días</div>
+      </div>
+      <div style="padding:12px;border-right:1px solid #f5f6f8">
+        <div style="font-size:11px;color:#676879;text-transform:uppercase;margin-bottom:4px">Estado temporal</div>
+        <div style="font-size:15px;font-weight:700;color:${atrasoColor}">${atrasoLabel}</div>
+        <div style="font-size:11px;color:#676879;margin-top:2px">SV: ${SV>=0?'+':''}${SV.toFixed(1)}% de avance</div>
+      </div>
+      <div style="padding:12px">
+        <div style="font-size:11px;color:#676879;text-transform:uppercase;margin-bottom:4px">Ritmo necesario (TSPI)</div>
+        <div style="font-size:16px;font-weight:700;color:${TSPI===null?'#676879':TSPI<=1.05?'#00c875':TSPI<=1.20?'#ff9f00':'#e2445c'}">${TSPI===null?'—':TSPI.toFixed(2)}</div>
+        <div style="font-size:11px;color:#676879;margin-top:2px">${TSPI===null?'Sin datos':TSPI<=1.05?'✅ Alcanzable':TSPI<=1.20?'⚠️ Exigente':'🔴 Muy difícil'}</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function calcularIndicadores(rubros, proy){
