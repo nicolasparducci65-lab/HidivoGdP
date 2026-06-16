@@ -500,7 +500,6 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- RUBROS -->
       <div class="page" id="page-rubros">
         <div id="rubrosContent"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto en el selector de arriba para ver sus rubros</div></div></div>
-        <div id="archivosPanel-rubros" style="display:none;margin-top:16px"></div>
       </div>
 
       <!-- LIBRO DE OBRA -->
@@ -512,7 +511,6 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- CURVA S -->
       <div class="page" id="page-curvaS">
         <div id="curvaSContent"><div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver la curva S</div></div></div>
-        <div id="archivosPanel-curvaS" style="display:none;margin-top:16px"></div>
       </div>
 
       <!-- FISCALIZACIÓN -->
@@ -2520,7 +2518,6 @@ async function cargarRubros(){
   document.getElementById('rubrosContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando rubros...</div>';
   const { data } = await sb.from('rubros').select('*').eq('proyecto_id',currentProyecto).order('orden');
   renderRubros(data||[]);
-  cargarArchivos('rubros');
 }
 
 function renderRubros(rubros){
@@ -3174,7 +3171,6 @@ async function cargarCurvaS(){
   });
 
   renderCurvaS(proy);
-  cargarArchivos('curvaS');
 }
 
 function renderCurvaS(proy){
