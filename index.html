@@ -3016,15 +3016,15 @@ async function cargarCurvaS(){
 
   cronogramaData = rubs.map(r => {
     const c = cronMap[r.id] || {};
-    const pesoDefault = (r.monto_contrato||0);
     return {
       rubro_id: r.id,
       descripcion: r.descripcion,
       unidad: r.unidad||'',
       monto_contrato: r.monto_contrato||0,
+      total_produccion: r.total_produccion||0,
       peso: c.peso_pct !== undefined ? c.peso_pct : null,
-      fecha_inicio: c.fecha_inicio || null,
-      fecha_fin: c.fecha_fin || null,
+      fecha_inicio: c.fecha_inicio || r.fecha_inicio || null,
+      fecha_fin: c.fecha_fin || r.fecha_fin || null,
       avance_real: r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0
     };
   });
@@ -3164,13 +3164,15 @@ function calcularIndicadores(rubros, proy){
   });
 
   const SPI = BCWS>0 ? BCWP/BCWS : null;
-  const avanceRealTotal = rubros.reduce((s,r)=>s+(r.avance_real/100)*r.pesoEfectivo,0);
   const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
+
+  // Calcular directamente desde BD — igual que en sección Rubros
+  const totalProduccion = cronogramaData.reduce((s,r)=>s+(r.total_produccion||0),0);
+  const montoContrato = cronogramaData.reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const avanceRealTotal = montoContrato>0 ? (totalProduccion/montoContrato)*100 : 0;
 
   const spiColor = SPI===null?'#676879':SPI>=0.95?'#00c875':SPI>=0.80?'#ff9f00':'#e2445c';
   const spiLabel = SPI===null?'—':SPI>=0.95?'✅ En tiempo':SPI>=0.80?'⚠️ Leve atraso':'🔴 Atrasado';
-  const totalProduccion = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
-  const montoContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
 
   document.getElementById('curvaSIndicadores').innerHTML = `
     <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
