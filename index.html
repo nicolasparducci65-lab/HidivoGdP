@@ -3192,7 +3192,9 @@ function calcularIndicadores(rubros, proy){
     <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
       <div><div class="metric-value">${avanceRealTotal.toFixed(1)}%</div><div class="metric-label">Avance real</div></div></div>
     <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
-      <div><div class="metric-value">$${totalProduccion.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Total producción</div></div></div>
+      <div><div class="metric-value">${formatoK(totalProduccion)}</div><div class="metric-label">Total producción</div></div></div>
+    <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="metric-value">${formatoK(montoContrato)}</div><div class="metric-label">Monto contrato</div></div></div>
     <div class="metric-card"><div class="metric-icon ${SPI===null?'purple':SPI>=0.95?'green':SPI>=0.80?'orange':'purple'}">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
       <div><div class="metric-value" style="color:${spiColor}">${SPI!==null?SPI.toFixed(2):'—'}</div><div class="metric-label">SPI ${spiLabel}</div></div></div>
