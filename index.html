@@ -2192,11 +2192,11 @@ async function renderProyectosTabla(containerId, lista){
         const cronMap = {};
         cron.forEach(c=>cronMap[c.rubro_id]=c);
 
-        // Replicar exactamente el cálculo de pesoEfectivo de renderCurvaS
+        // Replicar EXACTAMENTE renderCurvaS: pesoAuto = 100 / total rubros
         const pesosDefinidos = rubros.filter(r=>cronMap[r.id]?.peso_pct!=null);
         const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+(cronMap[r.id]?.peso_pct||0),0);
         const sinPeso = rubros.filter(r=>cronMap[r.id]?.peso_pct==null);
-        const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
+        const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/rubros.length) : 0;
 
         let BCWP=0, BCWS=0, hayFechas=false;
         rubros.forEach(r=>{
