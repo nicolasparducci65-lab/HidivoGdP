@@ -2453,9 +2453,15 @@ function cambiarProyecto(id){
   if(!id) return;
   // Cerrar modales abiertos
   document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
-  // Aplicar módulos del proyecto seleccionado
-  const proy = proyectos.find(p=>p.id===id);
-  aplicarModulosProyecto(proy?.modulos);
+  // Aplicar módulos del proyecto seleccionado — recargar desde BD para tener datos frescos
+  sb.from('proyectos').select('*').eq('id',id).single().then(({data:proy})=>{
+    if(proy){
+      // Actualizar en array local
+      const idx = proyectos.findIndex(p=>p.id===id);
+      if(idx>=0) proyectos[idx]=proy; else proyectos.push(proy);
+      aplicarModulosProyecto(proy.modulos);
+    }
+  });
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
