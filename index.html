@@ -3235,8 +3235,8 @@ function renderCurvaS(proy){
   }).join('');
 
   // Calcular indicadores y gráfico
-  calcularIndicadores(rubrosConPeso, proy||{});
-  calcularProyeccionesEVM(rubrosConPeso, proy||{});
+  const { SPI, BCWP, BCWS } = calcularIndicadores(rubrosConPeso, proy||{}) || {};
+  calcularProyeccionesEVM(rubrosConPeso, proy||{}, SPI, BCWP, BCWS);
   dibujarGraficoCurvaS(rubrosConPeso, proy||{});
 }
 
@@ -3255,7 +3255,7 @@ function calcularAtraso(r){
   return 'atrasado';
 }
 
-function calcularProyeccionesEVM(rubros, proy){
+function calcularProyeccionesEVM(rubros, proy, SPI_externo, BCWP_externo, BCWS_externo){
   const el = document.getElementById('curvaSProyecciones');
   if(!el) return;
 
@@ -3267,28 +3267,15 @@ function calcularProyeccionesEVM(rubros, proy){
   const duracionPlanDias = Math.round((finPlanificado-inicioProyecto)/(1000*60*60*24));
   const diasTranscurridos = Math.max(0,Math.round((hoy-inicioProyecto)/(1000*60*60*24)));
 
-  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin&&r.monto_contrato>0);
-  if(!conFechas.length){ el.innerHTML=''; return; }
+  // Usar SPI calculado por calcularIndicadores (el correcto con pesoEfectivo)
+  const SPI = SPI_externo !== undefined ? SPI_externo : null;
+  const BCWP = BCWP_externo||0;
+  const BCWS = BCWS_externo||0;
 
-  const totalMonto = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
-  let BCWP=0, BCWS=0;
-  conFechas.forEach(r=>{
-    const peso = (r.monto_contrato/totalMonto)*100;
-    const avReal = Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100);
-    const inicio = new Date(r.fecha_inicio+'T00:00:00');
-    const fin = new Date(r.fecha_fin+'T00:00:00');
-    const dur = (fin-inicio)||1;
-    const trans = Math.min(Math.max(hoy-inicio,0),dur);
-    const pctPlan = Math.min((trans/dur)*100,100);
-    BCWP += (avReal/100)*peso;
-    BCWS += (pctPlan/100)*peso;
-  });
+  if(!SPI || SPI<=0){ el.innerHTML=''; return; }
 
-  if(BCWS<=0){ el.innerHTML=''; return; }
-
-  const SPI = BCWP/BCWS;
   const SV = BCWP - BCWS;
-  const duracionEstimadaDias = SPI>0 ? Math.round(duracionPlanDias/SPI) : duracionPlanDias;
+  const duracionEstimadaDias = Math.round(duracionPlanDias/SPI);
   const fechaEntregaEstimada = new Date(inicioProyecto.getTime() + duracionEstimadaDias*24*60*60*1000);
   const diasAtraso = Math.round((fechaEntregaEstimada-finPlanificado)/(1000*60*60*24));
 
@@ -3376,6 +3363,8 @@ function calcularIndicadores(rubros, proy){
     <div class="metric-card"><div class="metric-icon orange">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
       <div><div class="metric-value">${conFechas.length}</div><div class="metric-label">Rubros con cronograma</div></div></div>`;
+
+  return { SPI, BCWP, BCWS };
 }
 
 function dibujarGraficoCurvaS(rubros, proy){
