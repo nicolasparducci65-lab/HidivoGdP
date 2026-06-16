@@ -2172,21 +2172,19 @@ async function renderProyectosTabla(containerId, lista){
       if(cron&&cron.length){
         const cronMap = {};
         cron.forEach(c=>cronMap[c.rubro_id]=c);
-        const totalMonto = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
 
-        // Calcular pesos efectivos igual que Curva S
+        // Replicar exactamente el cálculo de pesoEfectivo de renderCurvaS
         const pesosDefinidos = rubros.filter(r=>cronMap[r.id]?.peso_pct!=null);
         const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+(cronMap[r.id]?.peso_pct||0),0);
-        const rubrosAutoCalculados = rubros.filter(r=>cronMap[r.id]?.peso_pct==null);
-        const pesoAutomatico = rubrosAutoCalculados.length>0 ?
-          Math.max(0,100-sumaPesosDefinidos)/rubrosAutoCalculados.length : 0;
+        const sinPeso = rubros.filter(r=>cronMap[r.id]?.peso_pct==null);
+        const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
 
         let BCWP=0, BCWS=0, hayFechas=false;
         rubros.forEach(r=>{
           const c = cronMap[r.id];
           if(!c||!c.fecha_inicio||!c.fecha_fin||!r.monto_contrato) return;
           hayFechas=true;
-          const pesoEfectivo = c.peso_pct!=null ? c.peso_pct : (r.monto_contrato/totalMonto*100);
+          const pesoEfectivo = c.peso_pct!=null ? c.peso_pct : pesoAuto;
           const avReal = Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100);
           const inicio = new Date(c.fecha_inicio+'T00:00:00');
           const fin = new Date(c.fecha_fin+'T00:00:00');
