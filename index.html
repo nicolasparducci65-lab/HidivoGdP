@@ -2157,7 +2157,7 @@ async function renderProyectosTabla(containerId, lista){
 
   for(const p of lista){
     const { data: rubros } = await sb.from('rubros')
-      .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion,fecha_inicio,fecha_fin')
+      .select('id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
       .eq('proyecto_id',p.id);
 
     if(rubros&&rubros.length){
@@ -2165,24 +2165,32 @@ async function renderProyectosTabla(containerId, lista){
       const total = rubros.reduce((a,r)=>a+(r.monto_contrato||0),0);
       avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
 
-      // Calcular SPI
-      const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin&&r.monto_contrato>0);
-      if(conFechas.length){
+      // Cargar cronograma para SPI
+      const { data: cron } = await sb.from('cronograma_rubros')
+        .select('rubro_id,fecha_inicio,fecha_fin,peso_pct').eq('proyecto_id',p.id);
+
+      if(cron&&cron.length){
+        const cronMap = {};
+        cron.forEach(c=>cronMap[c.rubro_id]=c);
         const totalMonto = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
-        let BCWP=0, BCWS=0;
-        conFechas.forEach(r=>{
+        let BCWP=0, BCWS=0, hayFechas=false;
+
+        rubros.forEach(r=>{
+          const c = cronMap[r.id];
+          if(!c||!c.fecha_inicio||!c.fecha_fin||!r.monto_contrato) return;
+          hayFechas=true;
           const peso = (r.monto_contrato/totalMonto)*100;
-          const avReal = r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0;
-          const inicio = new Date(r.fecha_inicio+'T00:00:00');
-          const fin = new Date(r.fecha_fin+'T00:00:00');
+          const avReal = Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100);
+          const inicio = new Date(c.fecha_inicio+'T00:00:00');
+          const fin = new Date(c.fecha_fin+'T00:00:00');
           const dur = (fin-inicio)||1;
           const trans = Math.min(Math.max(hoy-inicio,0),dur);
           const pctPlan = Math.min((trans/dur)*100,100);
           BCWP += (avReal/100)*peso;
           BCWS += (pctPlan/100)*peso;
         });
-        const SPI = BCWS>0 ? BCWP/BCWS : null;
-        spiEstados[p.id] = SPI;
+
+        spiEstados[p.id] = (hayFechas && BCWS>0) ? BCWP/BCWS : null;
       } else {
         spiEstados[p.id] = null;
       }
