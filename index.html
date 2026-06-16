@@ -385,6 +385,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Archivos
       </div>
+      <div class="nav-item" onclick="navTo('subcontratistas',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Subcontratistas
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Equipo</div>
@@ -521,6 +525,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- ARCHIVOS -->
       <div class="page" id="page-archivos">
         <div id="archivosGlobalContent"><div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">Selecciona un proyecto</div></div></div>
+      </div>
+
+      <!-- SUBCONTRATISTAS -->
+      <div class="page" id="page-subcontratistas">
+        <div id="subcontratistasContent"><div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- MATERIALES -->
@@ -730,6 +739,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modMateriales" checked style="width:15px;height:15px;accent-color:#0073ea"/> 📦 Materiales
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modSubcontratistas" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🏗️ Subcontratistas
           </label>
         </div>
       </div>
@@ -1332,6 +1344,103 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalDescripcionArchivo')">Cancelar</button>
       <button class="btn primary" onclick="guardarDescripcionArchivo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SUBCONTRATISTA -->
+<div class="modal-overlay" id="modalSubcontratista">
+  <div class="modal" style="width:540px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title" id="modalSubcontratistaTitle">🏗️ Nuevo subcontratista</div>
+      <button class="btn" onclick="cerrarModal('modalSubcontratista')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="subcontratistaId"/>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Nombre de la empresa *</label>
+          <input type="text" class="form-control" id="subNombre" placeholder="Ej: Constructora XYZ S.A."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">RUC / Cédula</label>
+          <input type="text" class="form-control" id="subRuc" placeholder="0912345678001"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Especialidad</label>
+          <input type="text" class="form-control" id="subEspecialidad" placeholder="Ej: Hormigón, Eléctricas..."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Representante legal</label>
+          <input type="text" class="form-control" id="subRepresentante" placeholder="Nombre completo"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Teléfono</label>
+          <input type="text" class="form-control" id="subTelefono" placeholder="0991234567"/>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control" id="subEmail" placeholder="empresa@email.com"/>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalSubcontratista')">Cancelar</button>
+      <button class="btn primary" onclick="guardarSubcontratista()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SUBCONTRATO (asignación a proyecto) -->
+<div class="modal-overlay" id="modalSubcontrato">
+  <div class="modal" style="width:600px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title" id="modalSubcontratoTitle">📋 Nuevo subcontrato</div>
+      <button class="btn" onclick="cerrarModal('modalSubcontrato')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <input type="hidden" id="subcontratoId"/>
+      <div class="form-group">
+        <label class="form-label">Subcontratista *</label>
+        <select class="form-control" id="subcontratoSubId">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Fecha inicio</label>
+          <input type="date" class="form-control" id="subcontratoInicio"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha fin</label>
+          <input type="date" class="form-control" id="subcontratoFin"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Monto subcontratado ($)</label>
+          <input type="number" class="form-control" id="subcontratoMonto" placeholder="0.00" step="0.01" min="0"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estado</label>
+          <select class="form-control" id="subcontratoEstado">
+            <option value="activo">✅ Activo</option>
+            <option value="finalizado">🏁 Finalizado</option>
+            <option value="suspendido">⏸️ Suspendido</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rubros a su cargo</label>
+        <div id="subcontratoRubrosList" style="max-height:200px;overflow-y:auto;border:1px solid #e6e9ef;border-radius:8px;padding:8px"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas</label>
+        <textarea class="form-control" id="subcontratoNotas" rows="2" placeholder="Observaciones del subcontrato..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btnEliminarSubcontrato" style="display:none;color:#e2445c" class="btn" onclick="eliminarSubcontrato()">🗑 Eliminar</button>
+      <button class="btn" onclick="cerrarModal('modalSubcontrato')">Cancelar</button>
+      <button class="btn primary" onclick="guardarSubcontrato()">Guardar</button>
     </div>
   </div>
 </div>
@@ -1989,10 +2098,10 @@ function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
-    bodeguero:    ['materiales','archivos','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','chat'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
+    bodeguero:    ['materiales','archivos','subcontratistas','chat'],
+    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
     cliente:      ['dashboard','curvaS']
   };
 
@@ -2070,7 +2179,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', chat:'Chat', usuarios:'Usuarios' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -2080,7 +2189,7 @@ function navTo(page, btn){
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos','subcontratistas'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -2098,6 +2207,7 @@ function navTo(page, btn){
   if(page==='equipos'&&currentProyecto) cargarEquipos();
   if(page==='materiales'&&currentProyecto) cargarMateriales();
   if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
+  if(page==='subcontratistas'&&currentProyecto) cargarSubcontratistas();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -2355,6 +2465,7 @@ function cambiarProyecto(id){
   if(currentPage==='equipos') cargarEquipos();
   if(currentPage==='materiales') cargarMateriales();
   if(currentPage==='archivos') cargarArchivosGlobal();
+  if(currentPage==='subcontratistas') cargarSubcontratistas();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
 }
 
@@ -2362,33 +2473,35 @@ function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','chat'],
-    bodeguero:    ['materiales','archivos','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','chat'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
+    bodeguero:    ['materiales','archivos','subcontratistas','chat'],
+    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
     cliente:      ['dashboard','curvaS']
   };
   const permitidos = accesos[rol]||['dashboard'];
 
   // Módulos que dependen de la configuración del proyecto
   const modulosProyecto = {
-    curvaS:        modulos?.curvaS !== false,
-    libro:         modulos?.libro !== false,
-    fiscalizacion: modulos?.observaciones !== false,
-    solicitudes:   modulos?.solicitudes !== false,
-    planillas:     modulos?.planillas !== false,
-    equipos:       modulos?.equipos !== false,
-    materiales:    modulos?.materiales !== false,
+    curvaS:           modulos?.curvaS !== false,
+    libro:            modulos?.libro !== false,
+    fiscalizacion:    modulos?.observaciones !== false,
+    solicitudes:      modulos?.solicitudes !== false,
+    planillas:        modulos?.planillas !== false,
+    equipos:          modulos?.equipos !== false,
+    materiales:       modulos?.materiales !== false,
+    subcontratistas:  modulos?.subcontratistas !== false,
   };
 
   const navItems = {
-    curvaS:       document.querySelector('.nav-item[onclick*="curvaS"]'),
-    libro:        document.querySelector('.nav-item[onclick*="libro"]'),
-    fiscalizacion:document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
-    solicitudes:  document.querySelector('.nav-item[onclick*="solicitudes"]'),
-    planillas:    document.querySelector('.nav-item[onclick*="planillas"]'),
-    equipos:      document.querySelector('.nav-item[onclick*="equipos"]'),
-    materiales:   document.querySelector('.nav-item[onclick*="materiales"]'),
+    curvaS:          document.querySelector('.nav-item[onclick*="curvaS"]'),
+    libro:           document.querySelector('.nav-item[onclick*="libro"]'),
+    fiscalizacion:   document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    solicitudes:     document.querySelector('.nav-item[onclick*="solicitudes"]'),
+    planillas:       document.querySelector('.nav-item[onclick*="planillas"]'),
+    equipos:         document.querySelector('.nav-item[onclick*="equipos"]'),
+    materiales:      document.querySelector('.nav-item[onclick*="materiales"]'),
+    subcontratistas: document.querySelector('.nav-item[onclick*="subcontratistas"]'),
   };
 
   Object.entries(navItems).forEach(([page, el])=>{
@@ -2438,6 +2551,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modPlanillas').checked = mods.planillas !== false;
   document.getElementById('modEquipos').checked = mods.equipos !== false;
   document.getElementById('modMateriales').checked = mods.materiales !== false;
+  document.getElementById('modSubcontratistas').checked = mods.subcontratistas !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
 
@@ -2473,6 +2587,7 @@ async function guardarProyecto(){
     planillas: document.getElementById('modPlanillas').checked,
     equipos: document.getElementById('modEquipos').checked,
     materiales: document.getElementById('modMateriales').checked,
+    subcontratistas: document.getElementById('modSubcontratistas').checked,
   };
   const data = {
     nombre: document.getElementById('pNombre').value.trim(),
@@ -4304,6 +4419,245 @@ async function eliminarArchivoGlobal(id, url, modulo){
   await sb.from('archivos').delete().eq('id',id);
   toast('Archivo eliminado','success');
   cargarArchivosGlobal();
+}
+
+// ── SUBCONTRATISTAS ──
+async function cargarSubcontratistas(){
+  if(!currentProyecto){
+    document.getElementById('subcontratistasContent').innerHTML='<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  const rol = currentPerfil?.rol;
+  const puedeEditar = ['admin','fiscalizador'].includes(rol);
+
+  // Cargar subcontratos del proyecto con subcontratista y rubros
+  const { data: subcontratos } = await sb.from('subcontratos')
+    .select('*, subcontratistas(nombre,especialidad,representante,telefono,email)')
+    .eq('proyecto_id', currentProyecto).order('created_at');
+
+  // Total monto contrato
+  const { data: rubros } = await sb.from('rubros').select('monto_contrato').eq('proyecto_id', currentProyecto);
+  const montoTotal = (rubros||[]).reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const montoSubcontratado = (subcontratos||[]).reduce((s,c)=>s+(c.monto||0),0);
+  const pctSubcontratado = montoTotal>0 ? (montoSubcontratado/montoTotal*100).toFixed(1) : 0;
+
+  const estadoColor = {activo:'#00c875', finalizado:'#676879', suspendido:'#e2445c'};
+  const estadoLabel = {activo:'✅ Activo', finalizado:'🏁 Finalizado', suspendido:'⏸️ Suspendido'};
+
+  document.getElementById('subcontratistasContent').innerHTML = `
+  <!-- Métricas -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+    <div class="metric-card">
+      <div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <div><div class="metric-value">${subcontratos?.length||0}</div><div class="metric-label">Subcontratos</div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="metric-value">${formatoK(montoSubcontratado)}</div><div class="metric-label">Monto subcontratado</div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div><div class="metric-value">${pctSubcontratado}%</div><div class="metric-label">% del contrato</div></div>
+    </div>
+  </div>
+
+  <!-- Lista de subcontratos -->
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">🏗️ Subcontratos del proyecto</div><div class="card-subtitle">${subcontratos?.length||0} subcontrato(s)</div></div>
+      ${puedeEditar?`<button onclick="abrirModalSubcontrato()" class="btn primary" style="gap:6px">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nuevo subcontrato
+      </button>`:''}
+    </div>
+    ${!subcontratos?.length ? `
+    <div style="padding:32px;text-align:center;color:#676879">
+      <div style="font-size:32px;margin-bottom:8px">🏗️</div>
+      <div>No hay subcontratos en este proyecto</div>
+    </div>` : `
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Subcontratista</th>
+          <th>Especialidad</th>
+          <th style="text-align:right">Monto</th>
+          <th style="text-align:center">Período</th>
+          <th style="text-align:center">Estado</th>
+          ${puedeEditar?'<th></th>':''}
+        </tr></thead>
+        <tbody>
+          ${subcontratos.map(c=>`<tr>
+            <td>
+              <div style="font-weight:600">${c.subcontratistas?.nombre||'—'}</div>
+              ${c.subcontratistas?.representante?`<div style="font-size:11px;color:#676879">${c.subcontratistas.representante}</div>`:''}
+            </td>
+            <td style="font-size:13px">${c.subcontratistas?.especialidad||'—'}</td>
+            <td style="text-align:right;font-weight:700;color:#0073ea">$${Number(c.monto||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+            <td style="text-align:center;font-size:12px;color:#676879">
+              ${c.fecha_inicio?new Date(c.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'short'}):'—'}
+              ${c.fecha_fin?' → '+new Date(c.fecha_fin+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'short'}):''}
+            </td>
+            <td style="text-align:center"><span style="font-size:12px;font-weight:600;color:${estadoColor[c.estado]||'#676879'}">${estadoLabel[c.estado]||c.estado}</span></td>
+            ${puedeEditar?`<td><button onclick="abrirModalSubcontrato('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button></td>`:''}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`}
+  </div>
+
+  <!-- Catálogo de subcontratistas -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div><div class="card-title">📋 Catálogo de subcontratistas</div><div class="card-subtitle">Empresas registradas</div></div>
+      ${puedeEditar?`<button onclick="abrirModalSubcontratista()" class="btn" style="gap:6px">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva empresa
+      </button>`:''}
+    </div>
+    <div id="catalogoSubcontratistas" style="padding:0 16px 12px">Cargando...</div>
+  </div>`;
+
+  // Cargar catálogo
+  const { data: catalogo } = await sb.from('subcontratistas').select('*').order('nombre');
+  const catEl = document.getElementById('catalogoSubcontratistas');
+  if(!catEl) return;
+  if(!catalogo?.length){ catEl.innerHTML='<div style="color:#676879;font-size:13px;padding:8px 0">Sin subcontratistas registrados</div>'; return; }
+  catEl.innerHTML = catalogo.map(s=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f5f6f8">
+      <div style="width:36px;height:36px;background:#f0f7ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🏢</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${s.nombre}</div>
+        <div style="font-size:11px;color:#676879">${[s.especialidad,s.representante,s.telefono].filter(Boolean).join(' · ')}</div>
+      </div>
+      ${puedeEditar?`<button onclick="abrirModalSubcontratista('${s.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+    </div>`).join('');
+}
+
+async function abrirModalSubcontratista(id=null){
+  document.getElementById('subcontratistaId').value=id||'';
+  document.getElementById('modalSubcontratistaTitle').textContent = id?'✏️ Editar subcontratista':'🏗️ Nueva empresa subcontratista';
+  if(id){
+    const { data: s } = await sb.from('subcontratistas').select('*').eq('id',id).single();
+    document.getElementById('subNombre').value=s?.nombre||'';
+    document.getElementById('subRuc').value=s?.ruc||'';
+    document.getElementById('subEspecialidad').value=s?.especialidad||'';
+    document.getElementById('subRepresentante').value=s?.representante||'';
+    document.getElementById('subTelefono').value=s?.telefono||'';
+    document.getElementById('subEmail').value=s?.email||'';
+  } else {
+    ['subNombre','subRuc','subEspecialidad','subRepresentante','subTelefono','subEmail'].forEach(id=>document.getElementById(id).value='');
+  }
+  document.getElementById('modalSubcontratista').classList.add('show');
+}
+
+async function guardarSubcontratista(){
+  const id = document.getElementById('subcontratistaId').value;
+  const nombre = document.getElementById('subNombre').value.trim();
+  if(!nombre){ toast('El nombre es obligatorio','error'); return; }
+  const payload = {
+    nombre,
+    ruc: document.getElementById('subRuc').value.trim()||null,
+    especialidad: document.getElementById('subEspecialidad').value.trim()||null,
+    representante: document.getElementById('subRepresentante').value.trim()||null,
+    telefono: document.getElementById('subTelefono').value.trim()||null,
+    email: document.getElementById('subEmail').value.trim()||null,
+  };
+  const {error} = id ? await sb.from('subcontratistas').update(payload).eq('id',id)
+                      : await sb.from('subcontratistas').insert(payload);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Subcontratista actualizado ✓':'Subcontratista creado ✓','success');
+  cerrarModal('modalSubcontratista');
+  cargarSubcontratistas();
+}
+
+async function abrirModalSubcontrato(id=null){
+  document.getElementById('subcontratoId').value=id||'';
+  document.getElementById('modalSubcontratoTitle').textContent = id?'✏️ Editar subcontrato':'📋 Nuevo subcontrato';
+  document.getElementById('btnEliminarSubcontrato').style.display = id?'inline-flex':'none';
+
+  // Cargar subcontratistas disponibles
+  const { data: subs } = await sb.from('subcontratistas').select('id,nombre,especialidad').order('nombre');
+  const sel = document.getElementById('subcontratoSubId');
+  sel.innerHTML = '<option value="">— Seleccionar —</option>' +
+    (subs||[]).map(s=>`<option value="${s.id}">${s.nombre}${s.especialidad?' ('+s.especialidad+')':''}</option>`).join('');
+
+  // Cargar rubros del proyecto
+  const { data: rubros } = await sb.from('rubros').select('id,descripcion,monto_contrato').eq('proyecto_id',currentProyecto).order('orden');
+  let rubrosAsignados = [];
+
+  if(id){
+    const { data: c } = await sb.from('subcontratos').select('*').eq('id',id).single();
+    sel.value = c?.subcontratista_id||'';
+    document.getElementById('subcontratoInicio').value = c?.fecha_inicio||'';
+    document.getElementById('subcontratoFin').value = c?.fecha_fin||'';
+    document.getElementById('subcontratoMonto').value = c?.monto||'';
+    document.getElementById('subcontratoEstado').value = c?.estado||'activo';
+    document.getElementById('subcontratoNotas').value = c?.notas||'';
+    const { data: sr } = await sb.from('subcontrato_rubros').select('rubro_id').eq('subcontrato_id',id);
+    rubrosAsignados = (sr||[]).map(r=>r.rubro_id);
+  } else {
+    sel.value='';
+    ['subcontratoInicio','subcontratoFin','subcontratoMonto','subcontratoNotas'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('subcontratoEstado').value='activo';
+  }
+
+  document.getElementById('subcontratoRubrosList').innerHTML = (rubros||[]).map(r=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:12px;cursor:pointer;border-bottom:1px solid #f5f6f8">
+      <input type="checkbox" value="${r.id}" ${rubrosAsignados.includes(r.id)?'checked':''} style="accent-color:#0073ea"/>
+      <span style="flex:1">${r.descripcion}</span>
+      <span style="color:#676879;white-space:nowrap">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</span>
+    </label>`).join('') || '<div style="color:#676879;font-size:12px">Sin rubros en este proyecto</div>';
+
+  document.getElementById('modalSubcontrato').classList.add('show');
+}
+
+async function guardarSubcontrato(){
+  const id = document.getElementById('subcontratoId').value;
+  const subId = document.getElementById('subcontratoSubId').value;
+  if(!subId){ toast('Selecciona un subcontratista','error'); return; }
+
+  const payload = {
+    proyecto_id: currentProyecto,
+    subcontratista_id: subId,
+    fecha_inicio: document.getElementById('subcontratoInicio').value||null,
+    fecha_fin: document.getElementById('subcontratoFin').value||null,
+    monto: parseFloat(document.getElementById('subcontratoMonto').value)||0,
+    estado: document.getElementById('subcontratoEstado').value,
+    notas: document.getElementById('subcontratoNotas').value.trim()||null,
+  };
+
+  let subcontratoId = id;
+  if(id){
+    await sb.from('subcontratos').update(payload).eq('id',id);
+  } else {
+    const { data: nuevo } = await sb.from('subcontratos').insert(payload).select().single();
+    subcontratoId = nuevo?.id;
+  }
+
+  // Guardar rubros asignados
+  if(subcontratoId){
+    await sb.from('subcontrato_rubros').delete().eq('subcontrato_id',subcontratoId);
+    const checkboxes = document.querySelectorAll('#subcontratoRubrosList input[type=checkbox]:checked');
+    if(checkboxes.length){
+      await sb.from('subcontrato_rubros').insert(
+        Array.from(checkboxes).map(cb=>({subcontrato_id:subcontratoId, rubro_id:cb.value}))
+      );
+    }
+  }
+
+  toast(id?'Subcontrato actualizado ✓':'Subcontrato creado ✓','success');
+  cerrarModal('modalSubcontrato');
+  cargarSubcontratistas();
+}
+
+async function eliminarSubcontrato(){
+  const id = document.getElementById('subcontratoId').value;
+  if(!id||!confirm('¿Eliminar este subcontrato?')) return;
+  await sb.from('subcontrato_rubros').delete().eq('subcontrato_id',id);
+  await sb.from('subcontratos').delete().eq('id',id);
+  toast('Subcontrato eliminado','success');
+  cerrarModal('modalSubcontrato');
+  cargarSubcontratistas();
 }
 
 // ── CONTROL DE MATERIALES ──
