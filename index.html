@@ -2448,20 +2448,18 @@ async function cargarProyectosSelector(){
     data.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
 }
 
-function cambiarProyecto(id){
+async function cambiarProyecto(id){
   currentProyecto = id;
   if(!id) return;
   // Cerrar modales abiertos
   document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
-  // Aplicar módulos del proyecto seleccionado — recargar desde BD para tener datos frescos
-  sb.from('proyectos').select('*').eq('id',id).single().then(({data:proy})=>{
-    if(proy){
-      // Actualizar en array local
-      const idx = proyectos.findIndex(p=>p.id===id);
-      if(idx>=0) proyectos[idx]=proy; else proyectos.push(proy);
-      aplicarModulosProyecto(proy.modulos);
-    }
-  });
+  // Recargar proyecto desde BD para tener módulos frescos
+  const {data:proy} = await sb.from('proyectos').select('*').eq('id',id).single();
+  if(proy){
+    const idx = proyectos.findIndex(p=>p.id===id);
+    if(idx>=0) proyectos[idx]=proy; else proyectos.push(proy);
+    aplicarModulosProyecto(proy.modulos);
+  }
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
@@ -2525,11 +2523,11 @@ function aplicarModulosProyecto(modulos){
   }
 }
 
-function abrirProyecto(id){
+async function abrirProyecto(id){
+  document.getElementById('selectProyecto').value=id;
+  await cambiarProyecto(id);
   const destino = currentPerfil?.rol==='cliente' ? 'curvaS' : 'rubros';
   navTo(destino, document.querySelector(`.nav-item[onclick*="${destino}"]`));
-  document.getElementById('selectProyecto').value=id;
-  cambiarProyecto(id);
 }
 
 // ── MODAL PROYECTO ──
