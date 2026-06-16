@@ -2097,7 +2097,7 @@ function ocultarBotonesAccion(){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
@@ -2476,7 +2476,7 @@ async function cambiarProyecto(id){
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','chat','usuarios'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
