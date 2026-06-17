@@ -4233,7 +4233,11 @@ async function subirArchivoGlobal(input){
   if(!files.length) return;
   toast(`Subiendo ${files.length} archivo(s)...`,'info');
   for(const file of files){
-    const path = `general/${currentProyecto}/${Date.now()}_${file.name}`;
+    // Sanitizar nombre: quitar tildes/ñ y caracteres especiales para el path de storage
+    const nombreSanitizado = file.name
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path = `general/${currentProyecto}/${Date.now()}_${nombreSanitizado}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
     if(upErr){ toast('Error: '+upErr.message,'error'); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
