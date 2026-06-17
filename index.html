@@ -5899,16 +5899,6 @@ async function cargarDMsChat(){
     items.push({ id: p.id, nombre, dm: dmExistente?.dm||null, enLinea: presencia[p.id]||false });
   });
 
-  (dms||[]).forEach(dm=>{
-    const esUser1 = dm.dm_user1_id === currentUser.id;
-    const otroId = esUser1 ? dm.dm_user2_id : dm.dm_user1_id;
-    const otro = esUser1 ? dm.dm_usuario2 : dm.dm_usuario1;
-    if(!usuariosVistos.has(otroId)){
-      usuariosVistos.add(otroId);
-      items.push({ id: otroId, nombre: otro ? `${otro.nombre} ${otro.apellido}` : 'Usuario', dm, enLinea: presencia[otroId]||false });
-    }
-  });
-
   if(!items.length){ el.innerHTML='<div style="padding:6px 16px;font-size:12px;color:#ffffff40">Sin contactos</div>'; return; }
 
   el.innerHTML = items.map(item=>{
