@@ -3353,15 +3353,15 @@ function renderCurvaS(proy){
       <div class="card-subtitle">Avance planificado vs real</div>
     </div>
     <div style="overflow-x:auto">
-      <table>
+      <table style="table-layout:fixed;width:100%">
         <thead><tr>
-          <th>Descripción</th>
-          <th style="text-align:center">Peso %</th>
-          <th style="text-align:center">Inicio plan.</th>
-          <th style="text-align:center">Fin plan.</th>
-          <th style="text-align:center">Días</th>
-          <th style="text-align:center">Avance real</th>
-          <th style="text-align:center">Estado</th>
+          <th style="width:30%">Descripción</th>
+          <th style="width:10%;text-align:center">Peso %</th>
+          <th style="width:13%;text-align:center">Inicio plan.</th>
+          <th style="width:13%;text-align:center">Fin plan.</th>
+          <th style="width:8%;text-align:center">Días</th>
+          <th style="width:13%;text-align:center">Avance real</th>
+          <th style="width:13%;text-align:center">Estado</th>
         </tr></thead>
         <tbody id="curvaSTabla"></tbody>
       </table>
@@ -3375,16 +3375,16 @@ function renderCurvaS(proy){
     const estadoColor = atraso==='atrasado'?'#e2445c':atraso==='adelantado'?'#00c875':'#676879';
     const estadoLabel = atraso==='atrasado'?'⚠️ Atrasado':atraso==='adelantado'?'✅ Adelantado':'— Sin datos';
     return `<tr>
-      <td style="font-size:12px;max-width:220px">${r.descripcion}</td>
-      <td style="text-align:center;font-weight:600">${r.pesoEfectivo.toFixed(1)}%</td>
-      <td style="text-align:center;font-size:12px">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
-      <td style="text-align:center;font-size:12px">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
-      <td style="text-align:center;font-weight:700;color:#0073ea">${r.fecha_inicio&&r.fecha_fin?Math.round((new Date(r.fecha_fin)-new Date(r.fecha_inicio))/(1000*60*60*24))+'d':'—'}</td>
+      <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${r.descripcion}</td>
+      <td style="text-align:center;font-weight:600;white-space:nowrap">${r.pesoEfectivo.toFixed(1)}%</td>
+      <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
+      <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
+      <td style="text-align:center;font-weight:700;color:#0073ea;white-space:nowrap">${r.fecha_inicio&&r.fecha_fin?Math.round((new Date(r.fecha_fin)-new Date(r.fecha_inicio))/(1000*60*60*24))+'d':'—'}</td>
       <td style="text-align:center">
         <span style="font-weight:600;color:#0073ea">${r.avance_real.toFixed(1)}%</span>
         <div class="progress-bg" style="margin-top:3px"><div class="progress-fill" style="width:${r.avance_real}%;background:#0073ea"></div></div>
       </td>
-      <td style="text-align:center;font-size:12px;font-weight:600;color:${estadoColor}">${estadoLabel}</td>
+      <td style="text-align:center;font-size:12px;font-weight:600;color:${estadoColor};white-space:nowrap">${estadoLabel}</td>
     </tr>`;
   }).join('');
 
