@@ -6970,8 +6970,14 @@ async function cambiarRolUsuario(id, rolActual){
     overlay.querySelector('#_rolCancelar').onclick = ()=>{ document.body.removeChild(overlay); resolve(null); };
   });
   if(!nuevoRol) return;
+
+  // Actualizar rol global en perfiles
   const { error } = await sb.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
   if(error){ toast('Error: '+error.message,'error'); return; }
+
+  // Actualizar rol en todos los proyectos donde es miembro
+  await sb.from('proyecto_miembros').update({ rol: nuevoRol }).eq('usuario_id', id);
+
   toast('Rol actualizado a "'+nuevoRol+'" ✓','success');
   cargarUsuarios();
 }
