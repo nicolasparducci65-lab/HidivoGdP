@@ -788,7 +788,6 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <div class="form-group" style="margin:0">
           <label class="form-label">🌙 Clima nocturno</label>
           <select class="form-control" id="lClimaNocturno">
-            <option>Soleado</option>
             <option>Parcialmente nublado</option>
             <option>Nublado</option>
             <option>Lluvioso</option>
@@ -3100,7 +3099,7 @@ async function abrirModalLibro(){
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
   document.getElementById('lNumRegistro').value = (count||0)+1;
   document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
-  document.getElementById('lClimaDiurno').value = 'Soleado'; document.getElementById('lClimaNocturno').value = 'Soleado';
+  document.getElementById('lClimaDiurno').value = 'Soleado'; document.getElementById('lClimaNocturno').value = 'Parcialmente nublado';
   if(document.getElementById('lTempMin')) document.getElementById('lTempMin').value = '';
   if(document.getElementById('lTempMax')) document.getElementById('lTempMax').value = '';
   document.getElementById('lPersonal').value = '';
