@@ -765,8 +765,8 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <button class="btn" onclick="cerrarModal('modalLibro')" style="padding:6px 10px">✕</button>
     </div>
     <div class="modal-body" style="overflow-y:auto;flex:1">
-      <!-- Fila 1: fecha, número, clima -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+      <!-- Fila 1: fecha, número, clima diurno, clima nocturno -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">
         <div class="form-group" style="margin:0">
           <label class="form-label">Fecha *</label>
           <input type="date" class="form-control" id="lFecha"/>
@@ -776,8 +776,18 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <input type="number" class="form-control" id="lNumRegistro" min="1"/>
         </div>
         <div class="form-group" style="margin:0">
-          <label class="form-label">Clima</label>
-          <select class="form-control" id="lClima">
+          <label class="form-label">☀️ Clima diurno</label>
+          <select class="form-control" id="lClimaDiurno">
+            <option>Soleado</option>
+            <option>Parcialmente nublado</option>
+            <option>Nublado</option>
+            <option>Lluvioso</option>
+            <option>Tormenta</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">🌙 Clima nocturno</label>
+          <select class="form-control" id="lClimaNocturno">
             <option>Soleado</option>
             <option>Parcialmente nublado</option>
             <option>Nublado</option>
@@ -3062,7 +3072,8 @@ async function verDetalleLibro(id){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div class="info-item"><div class="info-label">Fecha</div><div class="info-value">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</div></div>
       <div class="info-item"><div class="info-label">Registro N°</div><div class="info-value">${r.numero_registro||'—'}</div></div>
-      <div class="info-item"><div class="info-label">Clima</div><div class="info-value">${climaIcon(r.clima)} ${r.clima||'—'}</div></div>
+      <div class="info-item"><div class="info-label">☀️ Clima diurno</div><div class="info-value">${climaIcon(r.clima_diurno||r.clima)} ${r.clima_diurno||r.clima||'—'}</div></div>
+      <div class="info-item"><div class="info-label">🌙 Clima nocturno</div><div class="info-value">${climaIcon(r.clima_nocturno)} ${r.clima_nocturno||'—'}</div></div>
       <div class="info-item"><div class="info-label">Temperatura</div><div class="info-value">${r.temperatura_min!=null?r.temperatura_min+'°C':''} — ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</div></div>
       <div class="info-item"><div class="info-label">Personal en obra</div><div class="info-value" style="font-size:20px;font-weight:700;color:#0073ea">${r.personal_total||0} personas</div></div>
     </div>
@@ -3089,7 +3100,7 @@ async function abrirModalLibro(){
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
   document.getElementById('lNumRegistro').value = (count||0)+1;
   document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
-  document.getElementById('lClima').value = 'Soleado';
+  document.getElementById('lClimaDiurno').value = 'Soleado'; document.getElementById('lClimaNocturno').value = 'Soleado';
   if(document.getElementById('lTempMin')) document.getElementById('lTempMin').value = '';
   if(document.getElementById('lTempMax')) document.getElementById('lTempMax').value = '';
   document.getElementById('lPersonal').value = '';
@@ -3189,7 +3200,7 @@ async function guardarRegistroLibro(){
     proyecto_id: currentProyecto,
     fecha,
     numero_registro: parseInt(document.getElementById('lNumRegistro').value)||null,
-    clima: document.getElementById('lClima').value||null,
+    clima_diurno: document.getElementById('lClimaDiurno').value||null, clima_nocturno: document.getElementById('lClimaNocturno').value||null,
     temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
     temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
     personal_total: parseInt(document.getElementById('lPersonal').value)||null,
@@ -7543,7 +7554,7 @@ async function generarReportePDF(){
       <span class="reg-num">Registro N° ${r.numero_registro||'—'} — ${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</span>
     </div>
     <div class="registro-meta">
-      <span>${climaIcon(r.clima)} ${r.clima||'—'}</span>
+      <span>${climaIcon(r.clima_diurno||r.clima)} ${r.clima_diurno||r.clima||'—'} / 🌙 ${climaIcon(r.clima_nocturno)} ${r.clima_nocturno||'—'}</span>
       <span>🌡️ ${r.temperatura_min!=null?r.temperatura_min+'°C':'—'} / ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</span>
       <span>👷 ${r.personal_total||0} personas</span>
     </div>
@@ -7737,7 +7748,8 @@ async function abrirEditarRegistro(id){
 
   document.getElementById('lNumRegistro').value = r.numero_registro||'';
   document.getElementById('lFecha').value = r.fecha||'';
-  document.getElementById('lClima').value = r.clima||'Soleado';
+  document.getElementById('lClimaDiurno').value = r.clima_diurno||r.clima||'Soleado';
+  document.getElementById('lClimaNocturno').value = r.clima_nocturno||'Soleado';
   document.getElementById('lTempMin').value = r.temperatura_min||'';
   document.getElementById('lTempMax').value = r.temperatura_max||'';
   document.getElementById('lPersonal').value = r.personal_total||0;
@@ -7809,7 +7821,7 @@ async function guardarEdicionRegistro(){
 
   const payload = {
     fecha: document.getElementById('lFecha').value,
-    clima: document.getElementById('lClima').value||null,
+    clima_diurno: document.getElementById('lClimaDiurno').value||null, clima_nocturno: document.getElementById('lClimaNocturno').value||null,
     temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
     temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
     personal_total: parseInt(document.getElementById('lPersonal').value)||null,
