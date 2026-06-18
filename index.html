@@ -1935,6 +1935,16 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0" id="rubroMontoPreview">
         Monto contrato: $0.00
       </div>
+      <div class="form-group" style="margin-top:12px;background:#fff8e1;border-radius:8px;padding:12px;border:1px solid #ffe0a3">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600;color:#b8860b">
+          <input type="checkbox" id="rubroEsOC" style="width:16px;height:16px;accent-color:#ff9f00" onchange="toggleCampoOC()"/>
+          🔄 Este rubro pertenece a una Orden de Cambio
+        </label>
+        <div id="campoOCCodigo" style="display:none;margin-top:10px">
+          <label class="form-label">Código de Orden de Cambio</label>
+          <input type="text" class="form-control" id="rubroOCCodigo" placeholder="Ej: OC-001"/>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalNuevoRubro')">Cancelar</button>
@@ -2653,12 +2663,15 @@ function renderRubros(rubros){
   const totalContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
   const totalProd = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
   const avanceGeneral = totalContrato>0 ? (totalProd/totalContrato*100) : 0;
+  const rubrosOC = rubros.filter(r=>r.es_orden_cambio);
+  const totalOC = rubrosOC.reduce((s,r)=>s+(r.monto_contrato||0),0);
   document.getElementById('rubrosContent').innerHTML = `
     <div class="metrics" style="margin-bottom:20px">
       <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div><div class="metric-value">${rubros.length}</div><div class="metric-label">Total rubros</div></div></div>
       <div class="metric-card"><div class="metric-icon green"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div><div class="metric-value">${avanceGeneral.toFixed(2)}%</div><div class="metric-label">Avance general</div></div></div>
       <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="metric-value">$${totalProd.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Producción ejecutada</div></div></div>
       <div class="metric-card"><div class="metric-icon purple"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="metric-value">$${totalContrato.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">Monto contratado</div></div></div>
+      <div class="metric-card"><div class="metric-icon ${rubrosOC.length?'orange':'green'}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div><div><div class="metric-value">$${totalOC.toLocaleString('es-EC',{minimumFractionDigits:2})}</div><div class="metric-label">🔄 Total Órdenes de Cambio (${rubrosOC.length})</div></div></div>
     </div>
     <div class="card">
       <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
@@ -2666,8 +2679,9 @@ function renderRubros(rubros){
         ${rubros.map(r=>{
           const pct = r.cantidad_contrato>0 ? Math.min((r.cantidad_ejecutada||0)/r.cantidad_contrato*100,100) : 0;
           const color = pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
+          const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
           return `<tr>
-            <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${r.descripcion}</td>
+            <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
             <td style="white-space:nowrap">${r.unidad||'—'}</td>
             <td style="text-align:right;white-space:nowrap">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
             <td style="text-align:right;white-space:nowrap">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
@@ -2855,8 +2869,16 @@ function abrirModalNuevoRubro(rubro=null){
   document.getElementById('rubroCantidad').value = rubro?.cantidad_contrato||'';
   document.getElementById('rubroPrecio').value = rubro?.precio_unitario||'';
   document.getElementById('rubroCodigo').value = rubro?.codigo||'';
+  document.getElementById('rubroEsOC').checked = rubro?.es_orden_cambio||false;
+  document.getElementById('rubroOCCodigo').value = rubro?.orden_cambio_codigo||'';
+  toggleCampoOC();
   document.getElementById('modalNuevoRubro').querySelector('.modal-title').textContent = rubro ? '✏️ Editar rubro' : '➕ Nuevo rubro';
   document.getElementById('modalNuevoRubro').classList.add('show');
+}
+
+function toggleCampoOC(){
+  const checked = document.getElementById('rubroEsOC').checked;
+  document.getElementById('campoOCCodigo').style.display = checked ? 'block' : 'none';
 }
 
 async function guardarRubro(){
@@ -2866,7 +2888,10 @@ async function guardarRubro(){
   const cantidad = parseFloat(document.getElementById('rubroCantidad').value)||0;
   const precio = parseFloat(document.getElementById('rubroPrecio').value)||0;
   const codigo = document.getElementById('rubroCodigo').value.trim();
+  const esOC = document.getElementById('rubroEsOC').checked;
+  const ocCodigo = document.getElementById('rubroOCCodigo').value.trim();
   if(!descripcion){ toast('La descripción es obligatoria','error'); return; }
+  if(esOC && !ocCodigo){ toast('Ingresa el código de la Orden de Cambio','error'); return; }
 
   const btn = document.getElementById('btnGuardarRubro');
   btn.disabled=true; btn.textContent='Guardando...';
@@ -2876,7 +2901,9 @@ async function guardarRubro(){
     descripcion, unidad,
     cantidad_contrato: cantidad,
     precio_unitario: precio,
-    codigo: codigo||null
+    codigo: codigo||null,
+    es_orden_cambio: esOC,
+    orden_cambio_codigo: esOC ? ocCodigo : null
   };
 
   let error;
@@ -3296,7 +3323,9 @@ async function cargarCurvaS(){
       peso: c.peso_pct !== undefined ? c.peso_pct : null,
       fecha_inicio: c.fecha_inicio || r.fecha_inicio || null,
       fecha_fin: c.fecha_fin || r.fecha_fin || null,
-      avance_real: r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0
+      avance_real: r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0,
+      es_orden_cambio: r.es_orden_cambio||false,
+      orden_cambio_codigo: r.orden_cambio_codigo||null
     };
   });
 
@@ -3384,8 +3413,9 @@ function renderCurvaS(proy){
     const atraso = calcularAtraso(r);
     const estadoColor = atraso==='atrasado'?'#e2445c':atraso==='adelantado'?'#00c875':'#676879';
     const estadoLabel = atraso==='atrasado'?'⚠️ Atrasado':atraso==='adelantado'?'✅ Adelantado':'— Sin datos';
+    const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
     return `<tr>
-      <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${r.descripcion}</td>
+      <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
       <td style="text-align:center;font-weight:600;white-space:nowrap">${r.pesoEfectivo.toFixed(1)}%</td>
       <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
       <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
@@ -3507,6 +3537,8 @@ function calcularIndicadores(rubros, proy){
   const totalProduccion = cronogramaData.reduce((s,r)=>s+(r.total_produccion||0),0);
   const montoContrato = cronogramaData.reduce((s,r)=>s+(r.monto_contrato||0),0);
   const avanceRealTotal = montoContrato>0 ? (totalProduccion/montoContrato)*100 : 0;
+  const rubrosOC = cronogramaData.filter(r=>r.es_orden_cambio);
+  const totalOC = rubrosOC.reduce((s,r)=>s+(r.monto_contrato||0),0);
 
   const spiColor = SPI===null?'#676879':SPI>=0.95?'#00c875':SPI>=0.80?'#ff9f00':'#e2445c';
   const spiLabel = SPI===null?'—':SPI>=0.95?'✅ En tiempo':SPI>=0.80?'⚠️ Leve atraso':'🔴 Atrasado';
@@ -3526,7 +3558,10 @@ function calcularIndicadores(rubros, proy){
       <div><div class="metric-value" style="color:${atrasados>0?'#e2445c':'#00c875'}">${atrasados}</div><div class="metric-label">Rubros atrasados</div></div></div>
     <div class="metric-card"><div class="metric-icon orange">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
-      <div><div class="metric-value">${conFechas.length}</div><div class="metric-label">Rubros con cronograma</div></div></div>`;
+      <div><div class="metric-value">${conFechas.length}</div><div class="metric-label">Rubros con cronograma</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${rubrosOC.length?'orange':'green'}">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+      <div><div class="metric-value">${formatoK(totalOC)}</div><div class="metric-label">🔄 Total OC (${rubrosOC.length})</div></div></div>`;
 
   return { SPI, BCWP, BCWS };
 }
