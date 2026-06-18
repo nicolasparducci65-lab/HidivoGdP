@@ -2294,25 +2294,23 @@ async function actualizarMetricasDashboard(lista){
       .in('proyecto_id', ids);
     document.getElementById('mRegistros').textContent = totalRegistros||0;
 
-    // Producción total y avance
+    // Producción total, avance y suma de contratos — todo desde rubros (igual que Curva S)
     const { data: rubros } = await sb.from('rubros')
-      .select('cantidad_ejecutada,precio_unitario,monto_contrato')
+      .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
       .in('proyecto_id', ids);
 
     if(rubros&&rubros.length){
-      const produccionTotal = rubros.reduce((acc,r)=>acc+((r.cantidad_ejecutada||0)*(r.precio_unitario||0)),0);
+      const produccionTotal = rubros.reduce((acc,r)=>acc+(r.total_produccion||0),0);
       const montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
       const avance = montoTotal>0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
       document.getElementById('mProduccion').textContent = formatoK(produccionTotal);
       document.getElementById('mAvance').textContent = avance+'%';
+      document.getElementById('mSumaContratos').textContent = formatoK(montoTotal);
     } else {
       document.getElementById('mProduccion').textContent = '$0 K';
       document.getElementById('mAvance').textContent = '0%';
+      document.getElementById('mSumaContratos').textContent = '$0 K';
     }
-
-    // Suma contratos
-    const sumaContratos = lista.reduce((s,p)=>s+(p.monto_contrato||0),0);
-    document.getElementById('mSumaContratos').textContent = formatoK(sumaContratos);
   } else {
     document.getElementById('mProyectos').textContent = '0';
     document.getElementById('mRegistros').textContent = '0';
@@ -2330,6 +2328,7 @@ async function renderProyectosTabla(containerId, lista){
   }
   const avances = {};
   const spiEstados = {};
+  const montosReales = {};
   const hoy = new Date();
 
   for(const p of lista){
@@ -2338,9 +2337,10 @@ async function renderProyectosTabla(containerId, lista){
       .eq('proyecto_id',p.id);
 
     if(rubros&&rubros.length){
-      const prod = rubros.reduce((a,r)=>a+((r.cantidad_ejecutada||0)*(r.precio_unitario||0)),0);
+      const prod = rubros.reduce((a,r)=>a+(r.total_produccion||0),0);
       const total = rubros.reduce((a,r)=>a+(r.monto_contrato||0),0);
       avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
+      montosReales[p.id] = total;
 
       // Cargar cronograma para SPI
       const { data: cron } = await sb.from('cronograma_rubros')
@@ -2380,6 +2380,7 @@ async function renderProyectosTabla(containerId, lista){
     } else {
       avances[p.id] = 0;
       spiEstados[p.id] = null;
+      montosReales[p.id] = 0;
     }
   }
 
@@ -2403,7 +2404,7 @@ async function renderProyectosTabla(containerId, lista){
       <tr>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
-        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.monto_contrato ? '$'+Number(p.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
