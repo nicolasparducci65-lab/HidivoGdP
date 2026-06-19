@@ -5750,7 +5750,7 @@ async function cargarRubrosPlanilla(){
   // Renderizar tabla
   let total = 0;
   const rows = rubros.map(r=>{
-    const cantAnterior = cantAnt[r.rubro_id]||0;
+    const cantAnterior = cantAnt[r.id]||0;
     const cantPeriodo = prodPeriodo[r.rubro_id]||0;
     const cantAcumulada = cantAnterior + cantPeriodo;
     const montoPeriodo = cantPeriodo * (r.precio_unitario||0);
