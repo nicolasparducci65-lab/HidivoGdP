@@ -1177,18 +1177,8 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             </button>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Rol</label>
-          <select class="form-control" id="invRolManual">
-            <option value="fiscalizador">Fiscalizador</option>
-            <option value="residente">Residente</option>
-            <option value="visualizador">Visualizador</option>
-            <option value="bodeguero">Bodeguero</option>
-            <option value="cliente">Cliente</option>
-          </select>
-        </div>
         <div style="background:#fff3cd;border-radius:8px;padding:10px 12px;font-size:12px;color:#856404">
-          ⚠️ Comparte el email y la contraseña con el usuario por WhatsApp u otro medio seguro.
+          ⚠️ Comparte el email y la contraseña con el usuario por WhatsApp u otro medio seguro. El rol se asignará al agregarlo a un proyecto.
         </div>
       </div>
 
@@ -1198,16 +1188,8 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <label class="form-label">Email *</label>
           <input type="email" class="form-control" id="invEmailInvitacion" placeholder="usuario@empresa.com"/>
         </div>
-        <div class="form-group">
-          <label class="form-label">Rol</label>
-          <select class="form-control" id="invRol">
-            <option value="fiscalizador">Fiscalizador — acceso completo menos usuarios</option>
-            <option value="residente">Residente — responder observaciones (por proyecto)</option>
-            <option value="visualizador">Visualizador — solo lectura (por proyecto)</option>
-          </select>
-        </div>
         <div style="background:#f0f7ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#0060c0">
-          📧 El usuario recibirá un email con un link para crear su contraseña. Requiere dominio verificado en Resend.
+          📧 El usuario recibirá un email con un link para crear su contraseña. El rol se asignará al agregarlo a un proyecto. Requiere dominio verificado en Resend.
         </div>
       </div>
     </div>
@@ -2027,9 +2009,10 @@ async function cargarPerfil(){
   const { data } = await sb.from('perfiles').select('*').eq('id', currentUser.id).single();
   currentPerfil = data;
   if(data){
+    currentPerfil.rolGlobal = data.rol; // 'admin' es el único rol verdaderamente global
     document.getElementById('sidebarAvatar').textContent = data.nombre[0].toUpperCase();
     document.getElementById('sidebarNombre').textContent = data.nombre + ' ' + data.apellido;
-    document.getElementById('sidebarRol').textContent = data.cargo || data.rol;
+    document.getElementById('sidebarRol').textContent = data.cargo || (data.rol==='admin' ? 'Admin' : 'Sin proyecto asignado');
   }
 }
 
@@ -2079,9 +2062,8 @@ function mostrarApp(){
   iniciarPresencia();
   cargarDashboard();
   cargarProyectosSelector();
-  setTimeout(()=>{
-    const rol = currentPerfil?.rol;
-    aplicarAccesosPorRol(rol);
+  setTimeout(async ()=>{
+    await actualizarRolEfectivo(currentProyecto);
     // Iniciar badge y suscripción global de chat
     actualizarBadgeChat();
     suscribirseGlobalChat();
@@ -2114,6 +2096,31 @@ function ocultarBotonesAccion(){
   });
 }
 
+// Calcula el rol efectivo del usuario para el proyecto activo y actualiza accesos
+async function actualizarRolEfectivo(proyectoId){
+  // Admin global siempre mantiene admin sin importar el proyecto
+  if(currentPerfil?.rolGlobal === 'admin'){
+    currentPerfil.rol = 'admin';
+    aplicarAccesosPorRol('admin');
+    return 'admin';
+  }
+
+  if(!proyectoId){
+    // Sin proyecto seleccionado: sin rol, sin accesos a módulos de proyecto
+    currentPerfil.rol = null;
+    aplicarAccesosPorRol(null);
+    return null;
+  }
+
+  const { data: membresia } = await sb.from('proyecto_miembros')
+    .select('rol').eq('proyecto_id', proyectoId).eq('usuario_id', currentUser.id).maybeSingle();
+
+  const rolEfectivo = membresia?.rol || null;
+  currentPerfil.rol = rolEfectivo;
+  aplicarAccesosPorRol(rolEfectivo);
+  return rolEfectivo;
+}
+
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
@@ -2125,7 +2132,8 @@ function aplicarAccesosPorRol(rol){
     cliente:      ['dashboard','curvaS']
   };
 
-  const permitidos = accesos[rol] || ['dashboard'];
+  // Sin rol asignado en el proyecto actual: solo Dashboard y Proyectos (para poder ver/seleccionar)
+  const permitidos = rol ? (accesos[rol] || ['dashboard']) : ['dashboard','proyectos'];
 
   // Aplicar modo visualizador
   if(rol === 'visualizador'){
@@ -2174,7 +2182,7 @@ function aplicarAccesosPorRol(rol){
 
   // Redirigir al dashboard si están en una página no permitida
   if(!permitidos.includes(currentPage)){
-    const paginaInicio = rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : 'dashboard';
+    const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : 'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
@@ -2251,8 +2259,12 @@ function formatoK(valor){
 
 async function cargarDashboard(){
   let proyData;
-  if(currentPerfil?.rol === 'cliente' && currentUser?.id){
-    // Cliente solo ve los proyectos a los que está invitado
+  if(currentPerfil?.rolGlobal === 'admin'){
+    // Admin global ve todos los proyectos
+    const { data: p } = await sb.from('proyectos').select('*');
+    proyData = p||[];
+  } else {
+    // Todos los demás usuarios solo ven los proyectos a los que están invitados
     const { data: membs } = await sb.from('proyecto_miembros')
       .select('proyecto_id').eq('usuario_id', currentUser.id);
     const ids = (membs||[]).map(m=>m.proyecto_id);
@@ -2262,9 +2274,6 @@ async function cargarDashboard(){
     } else {
       proyData = [];
     }
-  } else {
-    const { data: p } = await sb.from('proyectos').select('*');
-    proyData = p||[];
   }
   proyectos = proyData;
 
@@ -2429,9 +2438,9 @@ function estadoLabel(e){ return {planificacion:'Planificación',ejecucion:'En ej
 
 // ── PROYECTOS ──
 async function cargarProyectosLista(){
-  const rol = currentPerfil?.rol;
+  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
   let data;
-  if(rol==='residente'||rol==='visualizador'){
+  if(!esAdminGlobal){
     // Solo proyectos donde el usuario es miembro
     const { data: miembros } = await sb.from('proyecto_miembros')
       .select('proyecto_id').eq('usuario_id', currentUser.id);
@@ -2449,9 +2458,9 @@ async function cargarProyectosLista(){
 }
 
 async function cargarProyectosSelector(){
-  const rol = currentPerfil?.rol;
+  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
   let data;
-  if(['residente','visualizador','bodeguero','cliente'].includes(rol)){
+  if(!esAdminGlobal){
     const { data: miembros } = await sb.from('proyecto_miembros')
       .select('proyecto_id').eq('usuario_id', currentUser.id);
     const ids = (miembros||[]).map(m=>m.proyecto_id);
@@ -2474,6 +2483,8 @@ async function cambiarProyecto(id){
   if(!id) return;
   // Cerrar modales abiertos
   document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
+  // Recalcular rol efectivo para este proyecto
+  await actualizarRolEfectivo(id);
   // Recargar proyecto desde BD para tener módulos frescos
   const {data:proy} = await sb.from('proyectos').select('*').eq('id',id).single();
   if(proy){
@@ -6757,7 +6768,7 @@ async function cargarUsuarios(){
   const content = document.getElementById('usuariosContent');
 
   const rolColor = {admin:'#0073ea',fiscalizador:'#00c875',residente:'#ff9f00',visualizador:'#676879'};
-  const rolLabel = {admin:'Admin',fiscalizador:'Fiscalizador',residente:'Residente',visualizador:'Visualizador',bodeguero:'Bodeguero',cliente:'Cliente'};
+  const rolLabel = {admin:'Admin',fiscalizador:'Fiscalizador',residente:'Residente',visualizador:'Visualizador',bodeguero:'Bodeguero',cliente:'Cliente',null:'Sin proyecto'};
 
   content.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -6804,14 +6815,14 @@ async function cargarUsuarios(){
             <td style="text-align:center">
               <span style="background:${(rolColor[p.rol]||'#676879')}20;color:${rolColor[p.rol]||'#676879'};
                 padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">
-                ${rolLabel[p.rol]||p.rol||'—'}
+                ${rolLabel[p.rol]||rolLabel[String(p.rol)]||'Sin proyecto'}
               </span>
             </td>
             <td style="font-size:13px;color:#676879">${p.cargo||'—'}</td>
             <td style="text-align:center">
               ${p.id!==currentUser?.id?`
               <div style="display:flex;gap:6px;justify-content:center">
-                <button onclick="cambiarRolUsuario('${p.id}','${p.rol}')" class="btn" style="padding:4px 10px;font-size:12px">Rol</button>
+                <button onclick="cambiarRolUsuario('${p.id}','${p.rol}')" class="btn" style="padding:4px 10px;font-size:12px" title="Conceder/quitar permisos de Administrador">⚙️ Admin</button>
                 <button onclick="eliminarUsuario('${p.id}','${p.nombre}')" class="btn" style="padding:4px 10px;font-size:12px;color:#e2445c">🗑</button>
               </div>`:'—'}
             </td>
@@ -6920,7 +6931,6 @@ async function crearUsuarioManual(){
   const nombre = document.getElementById('invNombre').value.trim();
   const apellido = document.getElementById('invApellido').value.trim();
   const password = document.getElementById('invPassword').value.trim();
-  const rol = document.getElementById('invRolManual').value;
 
   if(!email||!nombre||!password){ toast('Email, nombre y contraseña son obligatorios','error'); return; }
   if(password.length < 6){ toast('La contraseña debe tener mínimo 6 caracteres','error'); return; }
@@ -6928,29 +6938,29 @@ async function crearUsuarioManual(){
   const btn = document.getElementById('btnEnviarInvitacion');
   btn.disabled=true; btn.textContent='Creando...';
 
-  // Crear usuario en Supabase Auth
+  // Crear usuario en Supabase Auth (sin rol — se asigna por proyecto)
   const { data, error } = await sb.auth.signUp({
     email,
     password,
     options:{
-      data:{ nombre, apellido, rol }
+      data:{ nombre, apellido }
     }
   });
 
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Crear usuario'; return; }
 
-  // Crear perfil en tabla perfiles
+  // Crear perfil en tabla perfiles sin rol asignado
   if(data.user){
     await sb.from('perfiles').upsert({
       id: data.user.id,
       email,
       nombre,
       apellido,
-      rol
+      rol: null
     });
   }
 
-  toast(`✅ Usuario ${nombre} creado. Comparte las credenciales por WhatsApp.`,'success');
+  toast(`✅ Usuario ${nombre} creado. Asígnalo a un proyecto para definir su rol.`,'success');
   btn.disabled=false;
   btn.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> Crear usuario';
   cerrarModal('modalInvitar');
@@ -6962,24 +6972,21 @@ function abrirModalInvitar(){
   document.getElementById('invNombre').value='';
   document.getElementById('invApellido').value='';
   document.getElementById('invPassword').value='';
-  document.getElementById('invRolManual').value='fiscalizador';
   document.getElementById('invEmailInvitacion').value='';
-  document.getElementById('invRol').value='fiscalizador';
   switchInvitarTab('manual');
   document.getElementById('modalInvitar').classList.add('show');
 }
 
 async function enviarInvitacion(){
   const email = document.getElementById('invEmailInvitacion').value.trim();
-  const rol = document.getElementById('invRol').value;
   if(!email){ toast('Ingresa un email','error'); return; }
   const btn = document.getElementById('btnEnviarInvitacion');
   btn.disabled=true; btn.textContent='Enviando...';
 
-  // Guardar invitación en BD
+  // Guardar invitación en BD sin rol — se asigna al agregarlo a un proyecto
   const token = crypto.randomUUID();
   const { error } = await sb.from('invitaciones').insert({
-    email, rol, token,
+    email, rol: null, token,
     invitado_por: currentUser?.id,
     estado: 'pendiente'
   });
@@ -6996,35 +7003,36 @@ async function enviarInvitacion(){
 }
 
 async function cambiarRolUsuario(id, rolActual){
-  const roles = ['admin','fiscalizador','residente','visualizador','bodeguero','cliente'];
-  const nuevoRol = await new Promise(resolve=>{
+  const esAdminActual = rolActual === 'admin';
+  const confirmar = await new Promise(resolve=>{
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
     overlay.innerHTML = `
-      <div style="background:#fff;border-radius:12px;padding:24px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-        <div style="font-weight:700;font-size:16px;margin-bottom:16px">Cambiar rol de usuario</div>
-        <select id="_rolSelect" style="width:100%;padding:8px 12px;border:1px solid #c5c7d4;border-radius:8px;font-size:14px;margin-bottom:16px">
-          ${roles.map(r=>`<option value="${r}" ${r===rolActual?'selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
-        </select>
+      <div style="background:#fff;border-radius:12px;padding:24px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+        <div style="font-weight:700;font-size:16px;margin-bottom:12px">Permisos de Administrador</div>
+        <div style="font-size:13px;color:#676879;margin-bottom:16px">
+          Los roles por proyecto (Fiscalizador, Residente, Visualizador, etc.) se asignan desde "Agregar miembro a proyecto". Aquí solo puedes conceder o quitar acceso total de <b>Administrador</b>.
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:20px">
+          <input type="checkbox" id="_esAdminCheck" ${esAdminActual?'checked':''} style="width:16px;height:16px;accent-color:#0073ea"/>
+          Es Administrador del sistema
+        </label>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button id="_rolCancelar" style="padding:8px 16px;border:1px solid #c5c7d4;border-radius:8px;cursor:pointer;background:#fff">Cancelar</button>
           <button id="_rolGuardar" style="padding:8px 16px;background:#0073ea;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">Guardar</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.querySelector('#_rolGuardar').onclick = ()=>{ const v=overlay.querySelector('#_rolSelect').value; document.body.removeChild(overlay); resolve(v); };
+    overlay.querySelector('#_rolGuardar').onclick = ()=>{ const v=overlay.querySelector('#_esAdminCheck').checked; document.body.removeChild(overlay); resolve(v); };
     overlay.querySelector('#_rolCancelar').onclick = ()=>{ document.body.removeChild(overlay); resolve(null); };
   });
-  if(!nuevoRol) return;
+  if(confirmar===null) return;
 
-  // Actualizar rol global en perfiles
+  const nuevoRol = confirmar ? 'admin' : null;
   const { error } = await sb.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
   if(error){ toast('Error: '+error.message,'error'); return; }
 
-  // Actualizar rol en todos los proyectos donde es miembro
-  await sb.from('proyecto_miembros').update({ rol: nuevoRol }).eq('usuario_id', id);
-
-  toast('Rol actualizado a "'+nuevoRol+'" ✓','success');
+  toast(confirmar ? 'Usuario ahora es Administrador ✓' : 'Permisos de Administrador removidos ✓','success');
   cargarUsuarios();
 }
 
