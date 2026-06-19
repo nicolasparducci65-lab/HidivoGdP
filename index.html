@@ -7182,8 +7182,20 @@ async function enviarInvitacion(){
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar invitación'; return; }
 
   // Enviar email via Supabase Auth (magic link)
-  const { error: authErr } = await sb.auth.admin?.inviteUserByEmail?.(email) ||
-    await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin+window.location.pathname+'?token='+token } });
+  const { error: authErr } = await sb.auth.signInWithOtp({
+    email,
+    options:{
+      shouldCreateUser: true,
+      emailRedirectTo: window.location.origin+window.location.pathname+'?token='+token
+    }
+  });
+
+  if(authErr){
+    toast('Invitación guardada, pero el email no se pudo enviar: '+authErr.message,'error');
+    btn.disabled=false; btn.textContent='Enviar invitación';
+    cargarUsuarios();
+    return;
+  }
 
   toast('Invitación enviada a '+email+' ✓','success');
   btn.disabled=false; btn.textContent='Enviar invitación';
