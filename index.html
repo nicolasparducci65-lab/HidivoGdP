@@ -4047,12 +4047,12 @@ async function cargarPinsPlano(planoId){
   if(!overlay||!obs) return;
   overlay.style.pointerEvents = 'none';
   overlay.innerHTML = obs.map(o=>`
-    <div title="${o.titulo}" onclick="event.stopPropagation();verObservacion('${o.id}')"
+    <div title="N°${o.numero||'—'} — ${o.titulo}" onclick="event.stopPropagation();verObservacion('${o.id}')"
       style="position:absolute;left:${o.pin_x}%;top:${o.pin_y}%;transform:translate(-50%,-100%);
       pointer-events:all;cursor:pointer;z-index:10">
-      <div style="background:${estadoObsColor(o.estado)};color:#fff;border-radius:50%;width:24px;height:24px;
-        display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
-        box-shadow:0 2px 8px rgba(0,0,0,.3)">!</div>
+      <div style="background:${estadoObsColor(o.estado)};color:#fff;border-radius:50%;width:26px;height:26px;
+        display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+        box-shadow:0 2px 8px rgba(0,0,0,.3)">${o.numero||'!'}</div>
       <div style="width:2px;height:10px;background:${estadoObsColor(o.estado)};margin:0 auto"></div>
     </div>`).join('');
 }
@@ -4106,7 +4106,7 @@ async function cargarObservaciones(){
             <span style="font-size:11px;color:#676879">${new Date(o.created_at).toLocaleDateString('es-EC')}</span>
             ${o.pin_x!==null?'<span style="font-size:11px;color:#0073ea">📍 Con pin</span>':''}
           </div>
-          <div style="font-weight:600;color:#323338;margin-bottom:4px">${o.titulo}</div>
+          <div style="font-weight:600;color:#323338;margin-bottom:4px">${o.numero?`<span style="color:#0073ea">N°${o.numero}</span> — `:''}${o.titulo}</div>
           <div style="font-size:13px;color:#676879;line-height:1.5">${o.descripcion||''}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
@@ -4130,7 +4130,7 @@ async function verObservacion(id){
   const { data: fotos } = await sb.from('observacion_fotos').select('*').eq('observacion_id',id);
   const { data: resps } = await sb.from('observacion_respuestas').select('*').eq('observacion_id',id).order('created_at');
   window._obsActiva = o;
-  document.getElementById('obsDetalleId').textContent = o.titulo;
+  document.getElementById('obsDetalleId').textContent = (o.numero?`N°${o.numero} — `:'')+o.titulo;
   document.getElementById('obsDetalleEstado').value = o.estado;
   document.getElementById('obsDetalleDesc').textContent = o.descripcion||'';
   document.getElementById('obsDetalleFotos').innerHTML = (fotos||[]).map(f=>`
@@ -4246,9 +4246,17 @@ async function guardarObservacionNueva(){
   const desc = document.getElementById('obsNuevaDesc').value.trim();
   const btn = document.getElementById('btnGuardarObsNueva');
   btn.disabled=true; btn.textContent='Guardando...';
+
+  // Calcular siguiente número consecutivo para este proyecto
+  const { data: ultima } = await sb.from('observaciones')
+    .select('numero').eq('proyecto_id', currentProyecto)
+    .order('numero', {ascending:false}).limit(1);
+  const siguienteNumero = (ultima?.[0]?.numero||0) + 1;
+
   const { data: obs, error } = await sb.from('observaciones').insert({
     proyecto_id: currentProyecto,
     plano_id: window._obsNuevaPlano||null,
+    numero: siguienteNumero,
     titulo,
     descripcion: desc||null,
     estado: 'abierta',
