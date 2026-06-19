@@ -4851,7 +4851,7 @@ async function cargarReportesGlobales(){
   </div>
 
   <!-- Conteo por proyecto -->
-  <div class="card" style="margin-bottom:16px">
+  <div class="card">
     <div class="card-header"><div><div class="card-title">📊 Resumen por proyecto</div><div class="card-subtitle">Conteo de registros por tipo</div></div></div>
     <table>
       <thead><tr><th>Proyecto</th><th>Contratante</th><th style="text-align:center">Libro de Obra</th><th style="text-align:center">Observaciones</th><th style="text-align:center">Solicitudes</th></tr></thead>
@@ -4866,20 +4866,6 @@ async function cargarReportesGlobales(){
         </tr>`).join('')}
       </tbody>
     </table>
-  </div>
-
-  <!-- Tabs de detalle -->
-  <div class="card">
-    <div class="card-header" style="border-bottom:none">
-      <div style="display:flex;gap:8px">
-        <button onclick="reportesTabActivo='libro';cargarReportesGlobales()" class="btn ${reportesTabActivo==='libro'?'primary':''}" style="font-size:12px">📘 Libro de Obra</button>
-        <button onclick="reportesTabActivo='obs';cargarReportesGlobales()" class="btn ${reportesTabActivo==='obs'?'primary':''}" style="font-size:12px">🔍 Observaciones</button>
-        <button onclick="reportesTabActivo='sol';cargarReportesGlobales()" class="btn ${reportesTabActivo==='sol'?'primary':''}" style="font-size:12px">📋 Solicitudes</button>
-      </div>
-    </div>
-    <div style="padding:0 16px 16px;overflow-x:auto">
-      ${renderTablaDetalleReportes(reportesTabActivo, libroData, obsData, solData, proyectoMap)}
-    </div>
   </div>`;
 }
 
