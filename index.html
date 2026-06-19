@@ -6950,10 +6950,13 @@ async function responderSolicitud(accion){
 // ── USUARIOS ──
 async function cargarUsuarios(){
   const { data: perfiles } = await sb.from('perfiles').select('*').order('created_at');
-  const content = document.getElementById('usuariosContent');
 
-  const rolColor = {admin:'#0073ea',fiscalizador:'#00c875',residente:'#ff9f00',visualizador:'#676879'};
-  const rolLabel = {admin:'Admin',fiscalizador:'Fiscalizador',residente:'Residente',visualizador:'Visualizador',bodeguero:'Bodeguero',cliente:'Cliente',null:'Sin proyecto'};
+  // Contar proyectos por usuario
+  const { data: membresias } = await sb.from('proyecto_miembros').select('usuario_id');
+  const conteoProyectos = {};
+  (membresias||[]).forEach(m=>{ conteoProyectos[m.usuario_id] = (conteoProyectos[m.usuario_id]||0)+1; });
+
+  const content = document.getElementById('usuariosContent');
 
   content.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -6977,8 +6980,8 @@ async function cargarUsuarios(){
         <thead><tr>
           <th>Usuario</th>
           <th>Email</th>
-          <th style="text-align:center">Rol</th>
-          <th>Cargo</th>
+          <th style="text-align:center">Admin global</th>
+          <th style="text-align:center">Proyectos asignados</th>
           <th style="text-align:center">Acciones</th>
         </tr></thead>
         <tbody>
@@ -6998,12 +7001,13 @@ async function cargarUsuarios(){
             </td>
             <td style="font-size:13px;color:#676879">${p.email||'—'}</td>
             <td style="text-align:center">
-              <span style="background:${(rolColor[p.rol]||'#676879')}20;color:${rolColor[p.rol]||'#676879'};
-                padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">
-                ${rolLabel[p.rol]||rolLabel[String(p.rol)]||'Sin proyecto'}
-              </span>
+              ${p.rol==='admin'
+                ? `<span style="background:#0073ea20;color:#0073ea;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">✓ Admin</span>`
+                : `<span style="color:#c5c7d4;font-size:12px">—</span>`}
             </td>
-            <td style="font-size:13px;color:#676879">${p.cargo||'—'}</td>
+            <td style="text-align:center;font-size:13px;color:#676879">
+              ${conteoProyectos[p.id] ? `${conteoProyectos[p.id]} proyecto${conteoProyectos[p.id]>1?'s':''}` : 'Sin proyectos'}
+            </td>
             <td style="text-align:center">
               ${p.id!==currentUser?.id?`
               <div style="display:flex;gap:6px;justify-content:center">
