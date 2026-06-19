@@ -324,6 +324,19 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- PANTALLA DE ESPERA — usuario sin proyecto asignado -->
+<div id="esperaAsignacionScreen" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f5f6f8;padding:24px">
+  <div style="background:#fff;border-radius:16px;padding:40px 32px;max-width:420px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+    <div style="font-size:48px;margin-bottom:16px">⏳</div>
+    <div style="font-size:20px;font-weight:700;color:#323338;margin-bottom:8px">Cuenta creada con éxito</div>
+    <div style="font-size:14px;color:#676879;line-height:1.6;margin-bottom:24px">
+      Tu cuenta en HIDIVO está activa, pero todavía no has sido asignado a ningún proyecto.
+      Contacta al administrador para que te dé acceso.
+    </div>
+    <button onclick="logout()" class="btn" style="margin:0 auto">Cerrar sesión</button>
+  </div>
+</div>
+
 <!-- APP PRINCIPAL -->
 <div id="appScreen" class="app" style="display:none">
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -2097,7 +2110,22 @@ function showLogin(){ document.getElementById('loginForm').style.display='block'
 function showRegister(){ document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; }
 
 // ── APP ──
-function mostrarApp(){
+async function mostrarApp(){
+  // Admin global siempre entra
+  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+
+  if(!esAdminGlobal){
+    const { data: membs } = await sb.from('proyecto_miembros').select('proyecto_id').eq('usuario_id', currentUser.id).limit(1);
+    if(!membs || !membs.length){
+      // Sin proyectos asignados: mostrar pantalla de espera
+      document.getElementById('authScreen').style.display='none';
+      document.getElementById('appScreen').style.display='none';
+      document.getElementById('esperaAsignacionScreen').style.display='flex';
+      return;
+    }
+  }
+
+  document.getElementById('esperaAsignacionScreen').style.display='none';
   document.getElementById('authScreen').style.display='none';
   document.getElementById('appScreen').style.display='flex';
   iniciarPresencia();
