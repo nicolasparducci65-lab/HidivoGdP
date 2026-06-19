@@ -7283,7 +7283,10 @@ async function cancelarInvitacion(id){
 }
 
 async function reenviarInvitacion(id, email){
-  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin+window.location.pathname } });
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options:{ shouldCreateUser: true, emailRedirectTo: window.location.origin+window.location.pathname }
+  });
   if(error) toast('Error reenviando: '+error.message,'error');
   else toast('Invitación reenviada a '+email,'success');
 }
