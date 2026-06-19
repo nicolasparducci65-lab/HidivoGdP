@@ -7042,7 +7042,7 @@ async function cargarInvitacionesPendientes(){
         <tbody>
           ${inv.map(i=>`<tr>
             <td style="font-size:13px">${i.email}</td>
-            <td style="text-align:center"><span style="font-size:11px;font-weight:600;color:#856404">${i.rol}</span></td>
+            <td style="text-align:center"><span style="font-size:11px;font-weight:600;color:#856404">${i.rol||'Por asignar'}</span></td>
             <td style="font-size:12px;color:#676879">${new Date(i.created_at).toLocaleDateString('es-EC')}</td>
             <td style="text-align:center">
               <button onclick="reenviarInvitacion('${i.id}','${i.email}')" class="btn" style="padding:4px 10px;font-size:11px">Reenviar</button>
