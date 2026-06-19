@@ -6600,7 +6600,7 @@ async function cargarSolicitudes(){
               <span style="background:${estado.bg};color:${estado.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estado.label}</span>
               <span style="font-size:11px;color:#676879">${new Date(s.created_at).toLocaleDateString('es-EC')}</span>
             </div>
-            <div style="font-weight:600;color:#323338;font-size:14px;margin-bottom:4px">${s.titulo}</div>
+            <div style="font-weight:600;color:#323338;font-size:14px;margin-bottom:4px">${s.numero?`<span style="color:#0073ea">N°${s.numero}</span> — `:''}${s.titulo}</div>
             ${s.descripcion?`<div style="font-size:12px;color:#676879;line-height:1.5">${s.descripcion.substring(0,100)}${s.descripcion.length>100?'...':''}</div>`:''}
             <div style="font-size:11px;color:#676879;margin-top:6px">Por: ${s.creado_por?.nombre||''} ${s.creado_por?.apellido||''}</div>
           </div>
@@ -6629,8 +6629,15 @@ async function guardarNuevaSolicitud(){
   const btn = document.getElementById('btnGuardarSolicitud');
   btn.disabled=true; btn.textContent='Guardando...';
 
+  // Calcular siguiente número consecutivo para este proyecto
+  const { data: ultima } = await sb.from('solicitudes')
+    .select('numero').eq('proyecto_id', currentProyecto)
+    .order('numero', {ascending:false}).limit(1);
+  const siguienteNumero = (ultima?.[0]?.numero||0) + 1;
+
   const { data: sol, error } = await sb.from('solicitudes').insert({
     proyecto_id: currentProyecto,
+    numero: siguienteNumero,
     tipo, titulo,
     descripcion: desc||null,
     estado: 'pendiente',
@@ -6674,7 +6681,7 @@ async function verSolicitud(id){
   const rol = currentPerfil?.rol;
   const esFiscalizador = rol==='admin'||rol==='fiscalizador';
 
-  document.getElementById('solDetalleTitulo').textContent = sol.titulo;
+  document.getElementById('solDetalleTitulo').textContent = (sol.numero?`N°${sol.numero} — `:'')+sol.titulo;
   document.getElementById('solDetalleTipo').innerHTML = `<span style="background:${tipo.color}15;color:${tipo.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${tipo.emoji} ${tipo.label}</span>`;
   document.getElementById('solDetalleEstado').innerHTML = `<span style="background:${estado.bg};color:${estado.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estado.label}</span>`;
   document.getElementById('solDetalleDesc').textContent = sol.descripcion||'Sin descripción';
