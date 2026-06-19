@@ -2356,7 +2356,7 @@ async function renderProyectosTabla(containerId, lista){
 
   for(const p of lista){
     const { data: rubros } = await sb.from('rubros')
-      .select('id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
+      .select('id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion,estado')
       .eq('proyecto_id',p.id);
 
     if(rubros&&rubros.length){
@@ -2386,7 +2386,7 @@ async function renderProyectosTabla(containerId, lista){
           if(!c||!c.fecha_inicio||!c.fecha_fin) return;
           hayFechas=true;
           const pesoEfectivo = c.peso_pct!=null ? c.peso_pct : pesoAuto;
-          const avReal = r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0;
+          const avReal = r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0);
           const inicio = new Date(c.fecha_inicio+'T00:00:00');
           const fin = new Date(c.fecha_fin+'T00:00:00');
           const dur = (fin-inicio)||1;
@@ -3350,7 +3350,8 @@ async function cargarCurvaS(){
       peso: c.peso_pct !== undefined ? c.peso_pct : null,
       fecha_inicio: c.fecha_inicio || r.fecha_inicio || null,
       fecha_fin: c.fecha_fin || r.fecha_fin || null,
-      avance_real: r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0,
+      avance_real: r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0),
+      estado: r.estado||'planificado',
       es_orden_cambio: r.es_orden_cambio||false,
       orden_cambio_codigo: r.orden_cambio_codigo||null
     };
