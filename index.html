@@ -7034,7 +7034,18 @@ async function eliminarUsuario(id, nombre){
   const btn = event?.target;
   if(btn){ btn.disabled=true; btn.textContent='Eliminando...'; }
 
-  // Eliminar de Auth via Edge Function
+  // 1. Limpiar dependencias en la BD primero
+  await sb.from('proyecto_miembros').delete().eq('usuario_id', id);
+  await sb.from('mensajes_leidos').delete().eq('usuario_id', id);
+  await sb.from('canal_miembros').delete().eq('usuario_id', id);
+  await sb.from('presencia').delete().eq('usuario_id', id);
+  await sb.from('canales_chat').delete().eq('dm_user1_id', id);
+  await sb.from('canales_chat').delete().eq('dm_user2_id', id);
+
+  // 2. Eliminar perfil
+  await sb.from('perfiles').delete().eq('id', id);
+
+  // 3. Eliminar de Auth via Edge Function
   const resp = await fetch('https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/bright-handler', {
     method:'POST',
     headers:{
@@ -7046,15 +7057,11 @@ async function eliminarUsuario(id, nombre){
   const data = await resp.json();
 
   if(data.error){
-    toast('Error eliminando de Auth: '+data.error,'error');
+    toast('Perfil eliminado, pero hubo un error en Auth: '+data.error,'error');
     if(btn){ btn.disabled=false; btn.textContent='🗑'; }
+    cargarUsuarios();
     return;
   }
-
-  // Eliminar perfil de la BD
-  await sb.from('perfiles').delete().eq('id', id);
-  // Eliminar de proyecto_miembros
-  await sb.from('proyecto_miembros').delete().eq('usuario_id', id);
 
   toast('Usuario eliminado correctamente ✓','success');
   cargarUsuarios();
