@@ -1998,10 +1998,42 @@ let proyectos = [];
 
 // ── AUTH ──
 async function checkAuth(){
+  // Si la URL contiene un token de Magic Link/OTP, esperar a que Supabase lo procese
+  const hashTieneToken = window.location.hash.includes('access_token') || window.location.hash.includes('type=magiclink') || window.location.hash.includes('type=signup');
+
+  if(hashTieneToken){
+    // Esperar el evento SIGNED_IN antes de decidir, dando tiempo a que Supabase parsee el hash
+    await new Promise(resolve=>{
+      const { data: sub } = sb.auth.onAuthStateChange((event, session)=>{
+        if(event==='SIGNED_IN' || event==='INITIAL_SESSION'){
+          sub.subscription.unsubscribe();
+          resolve();
+        }
+      });
+      // Timeout de seguridad por si el evento nunca llega
+      setTimeout(resolve, 3000);
+    });
+    // Limpiar el hash de la URL para que no quede visible ni se reprocese
+    history.replaceState(null, '', window.location.pathname);
+  }
+
   const { data: { session } } = await sb.auth.getSession();
   if(session){
     currentUser = session.user;
     await cargarPerfil();
+    // Si el usuario no tiene perfil aún (primer login vía Magic Link), crear uno básico
+    if(!currentPerfil){
+      const meta = session.user.user_metadata || {};
+      const nombre = meta.nombre || session.user.email.split('@')[0];
+      const apellido = meta.apellido || '';
+      await sb.from('perfiles').upsert({
+        id: session.user.id,
+        email: session.user.email,
+        nombre, apellido,
+        rol: null
+      });
+      await cargarPerfil();
+    }
     mostrarApp();
   } else {
     document.getElementById('authScreen').style.display='flex';
