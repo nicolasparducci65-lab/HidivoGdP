@@ -2141,8 +2141,10 @@ function aplicarAccesosPorRol(rol){
     cliente:      ['dashboard','curvaS']
   };
 
-  // Sin rol asignado en el proyecto actual: solo Dashboard y Proyectos (para poder ver/seleccionar)
-  const permitidos = rol ? (accesos[rol] || ['dashboard']) : ['dashboard','proyectos'];
+  // Sin rol asignado en el proyecto actual: solo Dashboard (para seleccionar un proyecto desde ahí).
+  // 'proyectos' solo se agrega si el usuario es admin global (gestiona todos los proyectos).
+  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+  const permitidos = rol ? (accesos[rol] || ['dashboard']) : (esAdminGlobal ? ['dashboard','proyectos'] : ['dashboard']);
 
   // Aplicar modo visualizador
   if(rol === 'visualizador'){
@@ -2170,6 +2172,7 @@ function aplicarAccesosPorRol(rol){
     equipos:        document.querySelector('.nav-item[onclick*="equipos"]'),
     materiales:     document.querySelector('.nav-item[onclick*="materiales"]'),
     archivos:       document.querySelector('.nav-item[onclick*="archivos"]'),
+    subcontratistas:document.querySelector('.nav-item[onclick*="subcontratistas"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios'),
     reportesGlobales: document.getElementById('navReportesGlobales')
@@ -2554,9 +2557,10 @@ function aplicarModulosProyecto(modulos){
   Object.entries(navItems).forEach(([page, el])=>{
     if(!el) return;
     const tieneAcceso = permitidos.includes(page);
-    // Cliente siempre ve lo que tiene acceso, sin restricción de módulos
+    if(!tieneAcceso){ el.style.display = 'none'; return; }
+    // Cliente siempre ve lo que tiene acceso, sin restricción de módulos del proyecto
     const moduloActivo = rol==='cliente' ? true : modulosProyecto[page] !== false;
-    el.style.display = (tieneAcceso && moduloActivo) ? 'flex' : 'none';
+    el.style.display = moduloActivo ? 'flex' : 'none';
   });
 
   // Si está en una página que se desactivó, redirigir
