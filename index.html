@@ -401,6 +401,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Usuarios
       </div>
+      <div class="nav-item" id="navReportesGlobales" style="display:none" onclick="navTo('reportesGlobales',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
+        Reportes Globales
+      </div>
     </div>
     <div class="sidebar-bottom">
       <div class="user-pill" onclick="logout()">
@@ -654,6 +658,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- USUARIOS -->
       <div class="page" id="page-usuarios">
         <div id="usuariosContent"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Gestión de usuarios</div></div></div>
+      </div>
+
+      <!-- REPORTES GLOBALES -->
+      <div class="page" id="page-reportesGlobales">
+        <div id="reportesGlobalesContent"><div class="page-loader"><div class="spinner"></div>Cargando reportes...</div></div>
       </div>
     </div>
   </div>
@@ -2124,7 +2133,7 @@ async function actualizarRolEfectivo(proyectoId){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
@@ -2162,12 +2171,13 @@ function aplicarAccesosPorRol(rol){
     materiales:     document.querySelector('.nav-item[onclick*="materiales"]'),
     archivos:       document.querySelector('.nav-item[onclick*="archivos"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
-    usuarios:       document.getElementById('navUsuarios')
+    usuarios:       document.getElementById('navUsuarios'),
+    reportesGlobales: document.getElementById('navReportesGlobales')
   };
 
   Object.entries(navItems).forEach(([page, el])=>{
     if(!el) return;
-    if(page==='usuarios'){
+    if(page==='usuarios'||page==='reportesGlobales'){
       el.style.display = rol==='admin' ? 'flex' : 'none';
     } else {
       el.style.display = permitidos.includes(page) ? 'flex' : 'none';
@@ -2207,7 +2217,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', chat:'Chat', usuarios:'Usuarios' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -2243,6 +2253,7 @@ function navTo(page, btn){
     document.getElementById('chatBadge').style.display='none';
   }
   if(page==='usuarios') cargarUsuarios();
+  if(page==='reportesGlobales') cargarReportesGlobales();
 }
 
 function accionPrincipal(){
@@ -2508,7 +2519,7 @@ async function cambiarProyecto(id){
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
@@ -4764,7 +4775,175 @@ async function obtenerPresencia(){
   return mapa;
 }
 
-// ── CONTROL DE MATERIALES ──
+// ── REPORTES GLOBALES (solo Admin) ──
+let reportesFiltroContratante = '';
+let reportesFiltroDesde = '';
+let reportesFiltroHasta = '';
+let reportesTabActivo = 'libro';
+
+async function cargarReportesGlobales(){
+  const el = document.getElementById('reportesGlobalesContent');
+  el.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando reportes...</div>';
+
+  // Cargar todos los proyectos para el filtro de contratante
+  const { data: todosProyectos } = await sb.from('proyectos').select('id,nombre,contratante');
+  const contratantes = [...new Set((todosProyectos||[]).map(p=>p.contratante).filter(Boolean))].sort();
+
+  // Filtrar proyectos según contratante seleccionado
+  let proyectosFiltrados = todosProyectos||[];
+  if(reportesFiltroContratante){
+    proyectosFiltrados = proyectosFiltrados.filter(p=>p.contratante===reportesFiltroContratante);
+  }
+  const idsProyectos = proyectosFiltrados.map(p=>p.id);
+  const proyectoMap = {};
+  proyectosFiltrados.forEach(p=>proyectoMap[p.id]=p);
+
+  if(!idsProyectos.length){
+    el.innerHTML = renderFiltrosReportes(contratantes) + '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin proyectos</div><div class="empty-sub">No hay proyectos para este filtro</div></div>';
+    return;
+  }
+
+  // Construir queries con filtro de fecha
+  let qLibro = sb.from('libro_obra').select('id,proyecto_id,fecha,actividades_ejecutadas,clima_diurno,clima_nocturno').in('proyecto_id', idsProyectos);
+  let qObs = sb.from('observaciones').select('id,proyecto_id,numero,titulo,estado,created_at').in('proyecto_id', idsProyectos);
+  let qSol = sb.from('solicitudes').select('id,proyecto_id,numero,titulo,tipo,estado,created_at').in('proyecto_id', idsProyectos);
+
+  if(reportesFiltroDesde){
+    qLibro = qLibro.gte('fecha', reportesFiltroDesde);
+    qObs = qObs.gte('created_at', reportesFiltroDesde+'T00:00:00');
+    qSol = qSol.gte('created_at', reportesFiltroDesde+'T00:00:00');
+  }
+  if(reportesFiltroHasta){
+    qLibro = qLibro.lte('fecha', reportesFiltroHasta);
+    qObs = qObs.lte('created_at', reportesFiltroHasta+'T23:59:59');
+    qSol = qSol.lte('created_at', reportesFiltroHasta+'T23:59:59');
+  }
+
+  const [{data:libro}, {data:obs}, {data:sols}] = await Promise.all([
+    qLibro.order('fecha',{ascending:false}),
+    qObs.order('created_at',{ascending:false}),
+    qSol.order('created_at',{ascending:false})
+  ]);
+
+  const libroData = libro||[];
+  const obsData = obs||[];
+  const solData = sols||[];
+
+  // ── Métricas generales ──
+  const obsAbiertas = obsData.filter(o=>o.estado==='abierta'||o.estado==='pendiente').length;
+  const solPendientes = solData.filter(s=>s.estado==='pendiente').length;
+
+  // ── Conteos por proyecto ──
+  const conteoPorProyecto = {};
+  idsProyectos.forEach(id=>{ conteoPorProyecto[id] = {libro:0, obs:0, sol:0, nombre: proyectoMap[id]?.nombre||'—', contratante: proyectoMap[id]?.contratante||'—'}; });
+  libroData.forEach(r=>{ if(conteoPorProyecto[r.proyecto_id]) conteoPorProyecto[r.proyecto_id].libro++; });
+  obsData.forEach(r=>{ if(conteoPorProyecto[r.proyecto_id]) conteoPorProyecto[r.proyecto_id].obs++; });
+  solData.forEach(r=>{ if(conteoPorProyecto[r.proyecto_id]) conteoPorProyecto[r.proyecto_id].sol++; });
+
+  el.innerHTML = renderFiltrosReportes(contratantes) + `
+
+  <!-- Métricas generales -->
+  <div class="metrics" style="margin-bottom:20px">
+    <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="metric-value">${libroData.length}</div><div class="metric-label">Registros Libro de Obra</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${obsAbiertas>0?'orange':'green'}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div><div><div class="metric-value">${obsData.length}</div><div class="metric-label">Observaciones (${obsAbiertas} abiertas)</div></div></div>
+    <div class="metric-card"><div class="metric-icon ${solPendientes>0?'orange':'green'}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="metric-value">${solData.length}</div><div class="metric-label">Solicitudes (${solPendientes} pendientes)</div></div></div>
+    <div class="metric-card"><div class="metric-icon purple"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div><div class="metric-value">${idsProyectos.length}</div><div class="metric-label">Proyectos incluidos</div></div></div>
+  </div>
+
+  <!-- Conteo por proyecto -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div><div class="card-title">📊 Resumen por proyecto</div><div class="card-subtitle">Conteo de registros por tipo</div></div></div>
+    <table>
+      <thead><tr><th>Proyecto</th><th>Contratante</th><th style="text-align:center">Libro de Obra</th><th style="text-align:center">Observaciones</th><th style="text-align:center">Solicitudes</th></tr></thead>
+      <tbody>
+        ${Object.values(conteoPorProyecto).map(p=>`
+        <tr>
+          <td style="font-weight:600">${p.nombre}</td>
+          <td style="font-size:13px;color:#676879">${p.contratante}</td>
+          <td style="text-align:center;font-weight:600;color:#0073ea">${p.libro}</td>
+          <td style="text-align:center;font-weight:600;color:#ff9f00">${p.obs}</td>
+          <td style="text-align:center;font-weight:600;color:#9b59b6">${p.sol}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Tabs de detalle -->
+  <div class="card">
+    <div class="card-header" style="border-bottom:none">
+      <div style="display:flex;gap:8px">
+        <button onclick="reportesTabActivo='libro';cargarReportesGlobales()" class="btn ${reportesTabActivo==='libro'?'primary':''}" style="font-size:12px">📘 Libro de Obra</button>
+        <button onclick="reportesTabActivo='obs';cargarReportesGlobales()" class="btn ${reportesTabActivo==='obs'?'primary':''}" style="font-size:12px">🔍 Observaciones</button>
+        <button onclick="reportesTabActivo='sol';cargarReportesGlobales()" class="btn ${reportesTabActivo==='sol'?'primary':''}" style="font-size:12px">📋 Solicitudes</button>
+      </div>
+    </div>
+    <div style="padding:0 16px 16px;overflow-x:auto">
+      ${renderTablaDetalleReportes(reportesTabActivo, libroData, obsData, solData, proyectoMap)}
+    </div>
+  </div>`;
+}
+
+function renderFiltrosReportes(contratantes){
+  return `
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
+    <select id="reportesContratanteSel" onchange="reportesFiltroContratante=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+      <option value="">— Todos los contratantes —</option>
+      ${contratantes.map(c=>`<option value="${c}" ${reportesFiltroContratante===c?'selected':''}>${c}</option>`).join('')}
+    </select>
+    <input type="date" id="reportesDesdeInput" value="${reportesFiltroDesde}" onchange="reportesFiltroDesde=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px"/>
+    <span style="font-size:12px;color:#676879">hasta</span>
+    <input type="date" id="reportesHastaInput" value="${reportesFiltroHasta}" onchange="reportesFiltroHasta=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px"/>
+    ${(reportesFiltroContratante||reportesFiltroDesde||reportesFiltroHasta)?`<button onclick="reportesFiltroContratante='';reportesFiltroDesde='';reportesFiltroHasta='';cargarReportesGlobales()" class="btn" style="font-size:12px">✕ Limpiar filtros</button>`:''}
+  </div>`;
+}
+
+function renderTablaDetalleReportes(tab, libroData, obsData, solData, proyectoMap){
+  if(tab==='obs'){
+    if(!obsData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin observaciones en este período</div>';
+    return `<table style="table-layout:fixed;width:100%">
+      <thead><tr><th style="width:12%">N°</th><th style="width:30%">Proyecto</th><th style="width:33%">Título</th><th style="width:13%">Estado</th><th style="width:12%">Fecha</th></tr></thead>
+      <tbody>${obsData.map(o=>`
+        <tr>
+          <td style="font-weight:600;color:#0073ea">N°${o.numero||'—'}</td>
+          <td style="font-size:13px">${proyectoMap[o.proyecto_id]?.nombre||'—'}</td>
+          <td style="word-wrap:break-word">${o.titulo}</td>
+          <td><span style="background:${estadoObsColor(o.estado)}20;color:${estadoObsColor(o.estado)};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${estadoObsLabel(o.estado)}</span></td>
+          <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(o.created_at).toLocaleDateString('es-EC')}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+  }
+  if(tab==='sol'){
+    if(!solData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin solicitudes en este período</div>';
+    return `<table style="table-layout:fixed;width:100%">
+      <thead><tr><th style="width:10%">N°</th><th style="width:25%">Proyecto</th><th style="width:13%">Tipo</th><th style="width:25%">Título</th><th style="width:13%">Estado</th><th style="width:14%">Fecha</th></tr></thead>
+      <tbody>${solData.map(s=>{
+        const tipo = TIPOS_SOLICITUD[s.tipo]||{label:s.tipo,emoji:'📋',color:'#676879'};
+        const estado = ESTADOS_SOLICITUD[s.estado]||{label:s.estado,color:'#676879',bg:'#f5f6f8'};
+        return `
+        <tr>
+          <td style="font-weight:600;color:#0073ea">N°${s.numero||'—'}</td>
+          <td style="font-size:13px">${proyectoMap[s.proyecto_id]?.nombre||'—'}</td>
+          <td style="font-size:12px">${tipo.emoji} ${tipo.label}</td>
+          <td style="word-wrap:break-word">${s.titulo}</td>
+          <td><span style="background:${estado.bg};color:${estado.color};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${estado.label}</span></td>
+          <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(s.created_at).toLocaleDateString('es-EC')}</td>
+        </tr>`;}).join('')}</tbody>
+    </table>`;
+  }
+  // libro
+  if(!libroData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin registros de libro de obra en este período</div>';
+  return `<table style="table-layout:fixed;width:100%">
+    <thead><tr><th style="width:25%">Proyecto</th><th style="width:13%">Fecha</th><th style="width:42%">Actividades</th><th style="width:20%">Clima</th></tr></thead>
+    <tbody>${libroData.map(r=>`
+      <tr>
+        <td style="font-size:13px;font-weight:600">${proyectoMap[r.proyecto_id]?.nombre||'—'}</td>
+        <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC')}</td>
+        <td style="word-wrap:break-word;font-size:13px">${(r.actividades_ejecutadas||'').substring(0,120)}${(r.actividades_ejecutadas||'').length>120?'...':''}</td>
+        <td style="font-size:12px;color:#676879">☀️ ${r.clima_diurno||'—'} / 🌙 ${r.clima_nocturno||'—'}</td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
 let materialesTab = 'stock';
 
 async function cargarMateriales(){
