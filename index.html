@@ -2542,7 +2542,7 @@ async function renderProyectosTabla(containerId, lista){
   const rol = currentPerfil?.rol;
   const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
-    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
       const spi = spiEstados[p.id];
       let tiempoLabel, tiempoColor, tiempoIcon;
@@ -2560,6 +2560,7 @@ async function renderProyectosTabla(containerId, lista){
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
