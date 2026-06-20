@@ -2484,6 +2484,7 @@ async function renderProyectosTabla(containerId, lista){
   const avances = {};
   const spiEstados = {};
   const montosReales = {};
+  const fechasEstimadas = {};
   const hoy = new Date();
 
   for(const p of lista){
@@ -2529,22 +2530,39 @@ async function renderProyectosTabla(containerId, lista){
         });
 
         spiEstados[p.id] = (hayFechas && BCWS>0) ? BCWP/BCWS : null;
+
+        // Fecha entrega estimada — misma fórmula que calcularProyeccionesEVM (Curva S)
+        // Solo cambia respecto a la fecha planificada si hay atraso (SPI < 1)
+        const spiCalc = spiEstados[p.id];
+        if(spiCalc && spiCalc > 0 && spiCalc < 1 && p.fecha_inicio && p.fecha_fin_planificada){
+          const inicioProy = new Date(p.fecha_inicio+'T00:00:00');
+          const finPlan = new Date(p.fecha_fin_planificada+'T00:00:00');
+          const duracionPlanDias = Math.round((finPlan-inicioProy)/(1000*60*60*24));
+          const duracionEstimadaDias = Math.round(duracionPlanDias/spiCalc);
+          fechasEstimadas[p.id] = new Date(inicioProy.getTime() + duracionEstimadaDias*24*60*60*1000);
+        } else {
+          fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
+        }
       } else {
         spiEstados[p.id] = null;
+        fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
       }
     } else {
       avances[p.id] = 0;
       spiEstados[p.id] = null;
       montosReales[p.id] = 0;
+      fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
     }
   }
 
   const rol = currentPerfil?.rol;
   const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
-    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Fecha Entrega Estimada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
       const spi = spiEstados[p.id];
+      const fechaEst = fechasEstimadas[p.id];
+      const hayAtraso = fechaEst && p.fecha_fin_planificada && (fechaEst.getTime() > new Date(p.fecha_fin_planificada+'T00:00:00').getTime());
       let tiempoLabel, tiempoColor, tiempoIcon;
       if(spi===null){
         tiempoLabel='N/A'; tiempoColor='#676879'; tiempoIcon='—';
@@ -2561,6 +2579,7 @@ async function renderProyectosTabla(containerId, lista){
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap;font-weight:600;color:${!fechaEst?'#676879':hayAtraso?'#e2445c':'#00c875'}">${fechaEst ? fechaEst.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
