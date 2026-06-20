@@ -4271,7 +4271,7 @@ async function guardarRespuesta(){
   toast('Respuesta guardada ✓','success');
   // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', `Respuesta en observación: ${window._obsActiva.titulo}`, texto||'');
-  await notificarObservacionPorEmail(window._obsActiva.titulo, texto||'Se registró una respuesta en esta observación.', window._obsActiva.numero);
+  await notificarPorEmail('observacion', window._obsActiva.titulo, texto||'Se registró una respuesta en esta observación.', window._obsActiva.numero);
   verObservacion(window._obsActiva.id);
   cargarObservaciones();
 }
@@ -4287,7 +4287,7 @@ async function cambiarEstadoObs(id, estadoActual){
   if(obsCambiada){
     const detalle = `Estado actualizado a: ${estadoObsLabel(nuevo)}`;
     await notificarResidenteViaDM('observacion', `Cambio de estado: ${obsCambiada.titulo}`, detalle);
-    await notificarObservacionPorEmail(obsCambiada.titulo, detalle, obsCambiada.numero);
+    await notificarPorEmail('observacion', obsCambiada.titulo, detalle, obsCambiada.numero);
   }
   cargarObservaciones();
 }
@@ -4366,7 +4366,7 @@ async function guardarObservacionNueva(){
   if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
   // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', titulo, desc);
-  await notificarObservacionPorEmail(titulo, desc, siguienteNumero);
+  await notificarPorEmail('observacion', titulo, desc, siguienteNumero);
   cargarObservaciones();
 }
 
@@ -6755,9 +6755,10 @@ async function notificarResidenteViaDM(tipo, titulo, detalle){
   }
 }
 
-// Envía un correo a los residentes del proyecto actual avisando de una novedad en una observación.
-// No bloquea el flujo si falla: solo registra el error en consola.
-async function notificarObservacionPorEmail(titulo, mensaje, numero){
+// Envía un correo a los residentes del proyecto actual avisando de una novedad
+// en una observación o solicitud (según 'tipo'). No bloquea el flujo si falla:
+// solo registra el error en consola.
+async function notificarPorEmail(tipo, titulo, mensaje, numero){
   if(!currentProyecto) return;
   try{
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/notificar-observacion`, {
@@ -6768,6 +6769,7 @@ async function notificarObservacionPorEmail(titulo, mensaje, numero){
       },
       body: JSON.stringify({
         proyectoId: currentProyecto,
+        tipo,
         titulo,
         mensaje: mensaje||'',
         numero: numero||null,
@@ -6775,9 +6777,9 @@ async function notificarObservacionPorEmail(titulo, mensaje, numero){
       })
     });
     const data = await resp.json();
-    if(data.error) console.error('Error notificando observación por email:', data.error);
+    if(data.error) console.error('Error notificando por email:', data.error);
   }catch(err){
-    console.error('Error notificando observación por email:', err);
+    console.error('Error notificando por email:', err);
   }
 }
 
@@ -6926,8 +6928,9 @@ async function guardarNuevaSolicitud(){
   toast('Solicitud enviada ✓','success');
   btn.disabled=false; btn.textContent='Enviar solicitud';
   cerrarModal('modalNuevaSolicitud');
-  // Notificar al residente/fiscalizador via DM
+  // Notificar al residente/fiscalizador via DM y por correo
   await notificarResidenteViaDM('solicitud', titulo, desc);
+  await notificarPorEmail('solicitud', titulo, desc, siguienteNumero);
   cargarSolicitudes();
 }
 
@@ -7035,9 +7038,10 @@ async function responderSolicitud(accion){
   await sb.from('solicitudes').update({estado:nuevoEstado, updated_at:new Date().toISOString()}).eq('id',window._solActiva.id);
 
   toast('Respuesta enviada ✓','success');
-  // Notificar via DM
+  // Notificar via DM y por correo
   const accionLabel = {aprobar:'aprobó ✅',rechazar:'rechazó ❌',correccion:'solicitó corrección 🔄',comentario:'comentó 💬'}[accion]||accion;
   await notificarResidenteViaDM('solicitud', `${accionLabel}: ${window._solActiva.titulo}`, texto||'');
+  await notificarPorEmail('solicitud', window._solActiva.titulo, `${accionLabel}${texto?': '+texto:''}`, window._solActiva.numero);
   cerrarModal('modalVerSolicitud');
   cargarSolicitudes();
 }
