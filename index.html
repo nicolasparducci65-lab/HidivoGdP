@@ -337,6 +337,27 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- COMPLETAR PERFIL (primer login vía invitación/magic link) -->
+<div id="completarPerfilScreen" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f5f6f8;padding:24px">
+  <div style="background:#fff;border-radius:16px;padding:40px 32px;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:40px;margin-bottom:12px">👋</div>
+      <div style="font-size:20px;font-weight:700;color:#323338;margin-bottom:8px">¡Bienvenido a HIDIVO!</div>
+      <div style="font-size:14px;color:#676879;line-height:1.6">Antes de continuar, cuéntanos tu nombre.</div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Nombre</label>
+      <input type="text" class="form-control" id="completarPerfilNombre" placeholder="Tu nombre"/>
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label class="form-label">Apellido</label>
+      <input type="text" class="form-control" id="completarPerfilApellido" placeholder="Tu apellido"/>
+    </div>
+    <div id="completarPerfilError" style="display:none;color:#e2445c;font-size:13px;margin-bottom:14px;text-align:center"></div>
+    <button id="btnCompletarPerfil" onclick="guardarCompletarPerfil()" class="btn primary" style="width:100%">Continuar</button>
+  </div>
+</div>
+
 <!-- APP PRINCIPAL -->
 <div id="appScreen" class="app" style="display:none">
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -2011,6 +2032,10 @@ let proyectos = [];
 
 // ── AUTH ──
 async function checkAuth(){
+  // Capturar token de invitación de la URL (si vino de un magic link de invitación)
+  const params = new URLSearchParams(window.location.search);
+  const tokenInvitacion = params.get('token');
+
   // Si la URL contiene un token de Magic Link/OTP, esperar a que Supabase lo procese
   const hashTieneToken = window.location.hash.includes('access_token') || window.location.hash.includes('type=magiclink') || window.location.hash.includes('type=signup');
 
@@ -2034,18 +2059,11 @@ async function checkAuth(){
   if(session){
     currentUser = session.user;
     await cargarPerfil();
-    // Si el usuario no tiene perfil aún (primer login vía Magic Link), crear uno básico
+    // Si el usuario no tiene perfil aún (primer login vía Magic Link), pedirle nombre/apellido
     if(!currentPerfil){
-      const meta = session.user.user_metadata || {};
-      const nombre = meta.nombre || session.user.email.split('@')[0];
-      const apellido = meta.apellido || '';
-      await sb.from('perfiles').upsert({
-        id: session.user.id,
-        email: session.user.email,
-        nombre, apellido,
-        rol: null
-      });
-      await cargarPerfil();
+      window._tokenInvitacionPendiente = tokenInvitacion;
+      mostrarCompletarPerfil();
+      return;
     }
     mostrarApp();
   } else {
@@ -2101,7 +2119,61 @@ async function logout(){
   await sb.auth.signOut();
   currentUser = null; currentPerfil = null;
   document.getElementById('appScreen').style.display='none';
+  document.getElementById('completarPerfilScreen').style.display='none';
   document.getElementById('authScreen').style.display='flex';
+}
+
+function mostrarCompletarPerfil(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('esperaAsignacionScreen').style.display='none';
+  document.getElementById('appScreen').style.display='none';
+  document.getElementById('completarPerfilNombre').value='';
+  document.getElementById('completarPerfilApellido').value='';
+  document.getElementById('completarPerfilError').style.display='none';
+  document.getElementById('completarPerfilScreen').style.display='flex';
+}
+
+async function guardarCompletarPerfil(){
+  const nombre = document.getElementById('completarPerfilNombre').value.trim();
+  const apellido = document.getElementById('completarPerfilApellido').value.trim();
+  const errEl = document.getElementById('completarPerfilError');
+  errEl.style.display='none';
+
+  if(!nombre || !apellido){
+    errEl.textContent = 'Por favor ingresa tu nombre y apellido';
+    errEl.style.display='block';
+    return;
+  }
+
+  const btn = document.getElementById('btnCompletarPerfil');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const { error } = await sb.from('perfiles').upsert({
+    id: currentUser.id,
+    email: currentUser.email,
+    nombre, apellido,
+    rol: null
+  });
+
+  if(error){
+    errEl.textContent = 'Error: '+error.message;
+    errEl.style.display='block';
+    btn.disabled=false; btn.textContent='Continuar';
+    return;
+  }
+
+  // Si vino de una invitación, marcarla como aceptada para que desaparezca de pendientes
+  const token = window._tokenInvitacionPendiente;
+  if(token){
+    await sb.from('invitaciones').update({ estado:'aceptada' }).eq('token', token);
+  } else {
+    // Si no hay token (caso raro), igual limpiar cualquier invitación pendiente para este email
+    await sb.from('invitaciones').update({ estado:'aceptada' }).eq('email', currentUser.email).eq('estado','pendiente');
+  }
+
+  await cargarPerfil();
+  document.getElementById('completarPerfilScreen').style.display='none';
+  mostrarApp();
 }
 
 function showAuthError(msg){ const el=document.getElementById('authError'); el.textContent=msg; el.style.display='block'; document.getElementById('authSuccess').style.display='none'; }
