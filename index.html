@@ -4269,8 +4269,9 @@ async function guardarRespuesta(){
   if(archivoInput) archivoInput.value='';
   document.getElementById('obsRespuestaArchivoPreview').innerHTML='';
   toast('Respuesta guardada ✓','success');
-  // Notificar al residente via DM
+  // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', `Respuesta en observación: ${window._obsActiva.titulo}`, texto||'');
+  await notificarObservacionPorEmail(window._obsActiva.titulo, texto||'Se registró una respuesta en esta observación.', window._obsActiva.numero);
   verObservacion(window._obsActiva.id);
   cargarObservaciones();
 }
@@ -4281,6 +4282,13 @@ async function cambiarEstadoObs(id, estadoActual){
   const nuevo = estados[(idx+1)%3];
   await sb.from('observaciones').update({estado:nuevo}).eq('id',id);
   toast(`Estado → ${estadoObsLabel(nuevo)}`,'success');
+  // Notificar al residente via DM y por correo
+  const { data: obsCambiada } = await sb.from('observaciones').select('titulo,numero').eq('id',id).single();
+  if(obsCambiada){
+    const detalle = `Estado actualizado a: ${estadoObsLabel(nuevo)}`;
+    await notificarResidenteViaDM('observacion', `Cambio de estado: ${obsCambiada.titulo}`, detalle);
+    await notificarObservacionPorEmail(obsCambiada.titulo, detalle, obsCambiada.numero);
+  }
   cargarObservaciones();
 }
 
@@ -4356,8 +4364,9 @@ async function guardarObservacionNueva(){
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalObsNueva');
   if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
-  // Notificar al residente via DM
+  // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', titulo, desc);
+  await notificarObservacionPorEmail(titulo, desc, siguienteNumero);
   cargarObservaciones();
 }
 
@@ -6743,6 +6752,32 @@ async function notificarResidenteViaDM(tipo, titulo, detalle){
       autor_id: currentUser?.id,
       contenido: mensaje
     });
+  }
+}
+
+// Envía un correo a los residentes del proyecto actual avisando de una novedad en una observación.
+// No bloquea el flujo si falla: solo registra el error en consola.
+async function notificarObservacionPorEmail(titulo, mensaje, numero){
+  if(!currentProyecto) return;
+  try{
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/notificar-observacion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({
+        proyectoId: currentProyecto,
+        titulo,
+        mensaje: mensaje||'',
+        numero: numero||null,
+        autorId: currentUser?.id||null
+      })
+    });
+    const data = await resp.json();
+    if(data.error) console.error('Error notificando observación por email:', data.error);
+  }catch(err){
+    console.error('Error notificando observación por email:', err);
   }
 }
 
