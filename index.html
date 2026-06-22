@@ -1510,6 +1510,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <button class="btn" id="btnGuardarBorradorLlenado" onclick="guardarLlenadoFormato('borrador')">💾 Guardar borrador</button>
       <button class="btn primary" id="btnEnviarLlenado" onclick="guardarLlenadoFormato('enviado')">📤 Enviar</button>
       <button class="btn primary" id="btnGuardarCorreccionLlenado" onclick="guardarLlenadoFormato('corregido')" style="display:none">✅ Guardar corrección</button>
+      <button class="btn" id="btnEliminarRegistroLlenado" onclick="eliminarRespuestaDesdeModal()" style="display:none;color:#e2445c">🗑 Eliminar registro</button>
     </div>
   </div>
 </div>
@@ -5430,6 +5431,7 @@ async function verRespuestasFormato(plantillaId){
 
   const estadoLabel = {borrador:'📝 Borrador', enviado:'📤 Enviado', corregido:'✅ Corregido'};
   const estadoColor = {borrador:'#ff9f00', enviado:'#0073ea', corregido:'#00c875'};
+  const esAdmin = currentPerfil?.rol==='admin';
 
   document.getElementById('respuestasFormatoTitulo').textContent = plantilla?.nombre||'Respuestas';
 
@@ -5444,7 +5446,10 @@ async function verRespuestasFormato(plantillaId){
           <td>${r.perfiles?.nombre||''} ${r.perfiles?.apellido||''}</td>
           <td style="text-align:center"><span style="font-size:12px;font-weight:600;color:${estadoColor[r.estado]}">${estadoLabel[r.estado]||r.estado}</span></td>
           <td style="text-align:center;font-size:12px;color:#676879">${new Date(r.created_at).toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'})}</td>
-          <td style="text-align:right"><button onclick="abrirModalCorregirFormato('${plantillaId}','${r.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️ Revisar / Corregir</button></td>
+          <td style="text-align:right;white-space:nowrap">
+            <button onclick="abrirModalCorregirFormato('${plantillaId}','${r.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️ Revisar / Corregir</button>
+            ${esAdmin?`<button onclick="eliminarRespuestaFormato('${r.id}','${plantillaId}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c;margin-left:4px">🗑</button>`:''}
+          </td>
         </tr>`).join('')}
       </tbody>
     </table></div>`;
@@ -5455,6 +5460,37 @@ async function verRespuestasFormato(plantillaId){
 function abrirModalCorregirFormato(plantillaId, respuestaId){
   cerrarModal('modalRespuestasFormato');
   abrirModalLlenarFormato(plantillaId, respuestaId, true);
+}
+
+async function eliminarRespuestaFormato(respuestaId, plantillaId){
+  if(!confirm('¿Eliminar este registro? Esta acción no se puede deshacer.')) return false;
+
+  // Borrar fotos asociadas (storage + tabla)
+  const { data: fotos } = await sb.from('formatos_calidad_fotos').select('url').eq('respuesta_id', respuestaId);
+  if(fotos&&fotos.length){
+    const paths = fotos.map(f=>{
+      const idx = f.url.indexOf('/hidivo-fotos/');
+      return idx>-1 ? f.url.slice(idx+'/hidivo-fotos/'.length) : null;
+    }).filter(Boolean);
+    if(paths.length) await sb.storage.from('hidivo-fotos').remove(paths);
+  }
+  await sb.from('formatos_calidad_fotos').delete().eq('respuesta_id', respuestaId);
+
+  const { error } = await sb.from('formatos_calidad_respuestas').delete().eq('id', respuestaId);
+  if(error){ toast('Error: '+error.message,'error'); return false; }
+
+  toast('Registro eliminado','success');
+  if(plantillaId) verRespuestasFormato(plantillaId);
+  cargarFormatosCalidad();
+  return true;
+}
+
+function eliminarRespuestaDesdeModal(){
+  const respuestaId = document.getElementById('llenarFormatoId').value;
+  if(!respuestaId) return;
+  eliminarRespuestaFormato(respuestaId, null).then(exito=>{
+    if(exito) cerrarModal('modalLlenarFormato');
+  });
 }
 
 // ── Llenado de Formatos de Calidad (residente) ──
@@ -5508,6 +5544,7 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
   document.getElementById('btnGuardarBorradorLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
   document.getElementById('btnEnviarLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
   document.getElementById('btnGuardarCorreccionLlenado').style.display = modoCorreccion?'inline-flex':'none';
+  document.getElementById('btnEliminarRegistroLlenado').style.display = (currentPerfil?.rol==='admin' && respuestaId)?'inline-flex':'none';
   document.getElementById('btnExportarPdfLlenado').style.display = ['admin','fiscalizador'].includes(currentPerfil?.rol)?'inline-flex':'none';
   document.getElementById('llenarFormatoSoloLectura').style.display = (_soloLecturaLlenado && !modoCorreccion)?'block':'none';
 
