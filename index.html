@@ -429,6 +429,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Subcontratistas
       </div>
+      <div class="nav-item" onclick="navTo('formatosCalidad',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Formatos de Calidad
+      </div>
       <div class="nav-item" onclick="navTo('archivos',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Archivos
@@ -578,6 +582,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- SUBCONTRATISTAS -->
       <div class="page" id="page-subcontratistas">
         <div id="subcontratistasContent"><div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Selecciona un proyecto</div></div></div>
+      </div>
+
+      <!-- FORMATOS DE CALIDAD -->
+      <div class="page" id="page-formatosCalidad">
+        <div id="formatosCalidadContent"><div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- MATERIALES -->
@@ -795,6 +804,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modSubcontratistas" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🏗️ Subcontratistas
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modFormatosCalidad" checked style="width:15px;height:15px;accent-color:#0073ea"/> ✅ Formatos de Calidad
           </label>
         </div>
       </div>
@@ -1393,6 +1405,81 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL SUBCONTRATISTA -->
+<!-- MODAL: Constructor de Plantilla de Calidad -->
+<div class="modal-overlay" id="modalPlantillaCalidad">
+  <div class="modal" style="width:600px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">✅ Plantilla de Formato de Calidad</div>
+      <button class="btn" onclick="cerrarModal('modalPlantillaCalidad')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="plantillaCalidadId"/>
+      <div class="form-group">
+        <label class="form-label">Nombre de la plantilla *</label>
+        <input type="text" class="form-control" id="pcNombre" placeholder="Ej: Inspección de hormigón"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <input type="text" class="form-control" id="pcDescripcion" placeholder="Breve descripción del formato"/>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Campos del formulario</label>
+        <div id="listaCamposPlantilla" style="margin-bottom:12px"></div>
+
+        <div style="background:#f5f6f8;border-radius:8px;padding:12px">
+          <div style="font-size:12px;font-weight:600;color:#676879;margin-bottom:8px">Agregar campo</div>
+          <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:8px">
+            <input type="text" class="form-control" id="ncEtiqueta" placeholder="Etiqueta del campo (ej: Resistencia f'c)"/>
+            <select class="form-control" id="ncTipo" onchange="toggleOpcionesCampoNuevo()">
+              <option value="texto">📝 Texto</option>
+              <option value="numero">🔢 Número</option>
+              <option value="fecha">📅 Fecha</option>
+              <option value="si_no">✅ Sí / No</option>
+              <option value="seleccion">📋 Selección</option>
+              <option value="foto">📷 Foto</option>
+            </select>
+          </div>
+          <div id="ncOpcionesWrap" style="display:none;margin-bottom:8px">
+            <input type="text" class="form-control" id="ncOpciones" placeholder="Opciones separadas por coma: Cumple, No cumple, N/A"/>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="ncRequerido" style="width:14px;height:14px;accent-color:#0073ea"/> Campo requerido
+            </label>
+            <button onclick="agregarCampoPlantilla()" class="btn" style="font-size:12px;padding:6px 12px">+ Agregar campo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn" id="btnEliminarPlantillaCalidad" onclick="eliminarPlantillaCalidad()" style="display:none;color:#e2445c">🗑 Eliminar plantilla</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="cerrarModal('modalPlantillaCalidad')">Cancelar</button>
+        <button class="btn primary" id="btnGuardarPlantillaCalidad" onclick="guardarPlantillaCalidad()">Guardar plantilla</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Asignar Formatos al Proyecto -->
+<div class="modal-overlay" id="modalAsignarFormatos">
+  <div class="modal" style="width:480px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📋 Asignar Formatos de Calidad</div>
+      <button class="btn" onclick="cerrarModal('modalAsignarFormatos')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:#676879;margin-bottom:12px">Selecciona los formatos que estarán disponibles en este proyecto:</div>
+      <div id="listaAsignarFormatos">Cargando...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalAsignarFormatos')">Cancelar</button>
+      <button class="btn primary" id="btnGuardarAsignarFormatos" onclick="guardarAsignacionFormatos()">Guardar asignación</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalSubcontratista">
   <div class="modal" style="width:540px;max-width:98vw">
     <div class="modal-header">
@@ -2284,8 +2371,8 @@ async function actualizarRolEfectivo(proyectoId){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
@@ -2324,6 +2411,7 @@ function aplicarAccesosPorRol(rol){
     materiales:     document.querySelector('.nav-item[onclick*="materiales"]'),
     archivos:       document.querySelector('.nav-item[onclick*="archivos"]'),
     subcontratistas:document.querySelector('.nav-item[onclick*="subcontratistas"]'),
+    formatosCalidad:document.querySelector('.nav-item[onclick*="formatosCalidad"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios'),
     reportesGlobales: document.getElementById('navReportesGlobales')
@@ -2371,7 +2459,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -2381,7 +2469,7 @@ function navTo(page, btn){
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos','subcontratistas'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -2400,6 +2488,7 @@ function navTo(page, btn){
   if(page==='materiales'&&currentProyecto) cargarMateriales();
   if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
   if(page==='subcontratistas'&&currentProyecto) cargarSubcontratistas();
+  if(page==='formatosCalidad'&&currentProyecto) cargarFormatosCalidad();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -2674,8 +2763,8 @@ async function cambiarProyecto(id){
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
@@ -2693,6 +2782,7 @@ function aplicarModulosProyecto(modulos){
     equipos:          modulos?.equipos !== false,
     materiales:       modulos?.materiales !== false,
     subcontratistas:  modulos?.subcontratistas !== false,
+    formatosCalidad:  modulos?.formatosCalidad !== false,
   };
 
   const navItems = {
@@ -2704,6 +2794,7 @@ function aplicarModulosProyecto(modulos){
     equipos:         document.querySelector('.nav-item[onclick*="equipos"]'),
     materiales:      document.querySelector('.nav-item[onclick*="materiales"]'),
     subcontratistas: document.querySelector('.nav-item[onclick*="subcontratistas"]'),
+    formatosCalidad: document.querySelector('.nav-item[onclick*="formatosCalidad"]'),
   };
 
   Object.entries(navItems).forEach(([page, el])=>{
@@ -2755,6 +2846,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modEquipos').checked = mods.equipos !== false;
   document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modSubcontratistas').checked = mods.subcontratistas !== false;
+  document.getElementById('modFormatosCalidad').checked = mods.formatosCalidad !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
 
@@ -2791,6 +2883,7 @@ async function guardarProyecto(){
     equipos: document.getElementById('modEquipos').checked,
     materiales: document.getElementById('modMateriales').checked,
     subcontratistas: document.getElementById('modSubcontratistas').checked,
+    formatosCalidad: document.getElementById('modFormatosCalidad').checked,
   };
   const data = {
     nombre: document.getElementById('pNombre').value.trim(),
@@ -4909,6 +5002,248 @@ async function eliminarSubcontrato(){
   toast('Subcontrato eliminado','success');
   cerrarModal('modalSubcontrato');
   cargarSubcontratistas();
+}
+
+// ── FORMATOS DE CALIDAD ──
+const TIPOS_CAMPO_FORMATO = {
+  texto:     { label:'Texto', icon:'📝' },
+  numero:    { label:'Número', icon:'🔢' },
+  fecha:     { label:'Fecha', icon:'📅' },
+  si_no:     { label:'Sí / No', icon:'✅' },
+  seleccion: { label:'Selección', opciones:true, icon:'📋' },
+  foto:      { label:'Foto', icon:'📷' }
+};
+
+async function cargarFormatosCalidad(){
+  if(!currentProyecto){
+    document.getElementById('formatosCalidadContent').innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
+  const rol = currentPerfil?.rol;
+  const puedeEditar = ['admin','fiscalizador'].includes(rol);
+
+  // Plantillas asignadas a este proyecto
+  const { data: asignaciones } = await sb.from('formatos_calidad_asignaciones')
+    .select('id, plantilla_id, formatos_calidad_plantillas(id,nombre,descripcion,campos,activo)')
+    .eq('proyecto_id', currentProyecto);
+
+  const plantillasAsignadas = (asignaciones||[]).map(a=>a.formatos_calidad_plantillas).filter(Boolean);
+
+  // Conteo de respuestas por plantilla en este proyecto
+  const { data: respuestas } = await sb.from('formatos_calidad_respuestas')
+    .select('id, plantilla_id, estado').eq('proyecto_id', currentProyecto);
+  const conteoPorPlantilla = {};
+  (respuestas||[]).forEach(r=>{ conteoPorPlantilla[r.plantilla_id] = (conteoPorPlantilla[r.plantilla_id]||0)+1; });
+
+  document.getElementById('formatosCalidadContent').innerHTML = `
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">✅ Formatos de Calidad del proyecto</div><div class="card-subtitle">${plantillasAsignadas.length} formato(s) asignado(s)</div></div>
+      ${puedeEditar?`<div style="display:flex;gap:8px">
+        <button onclick="abrirModalAsignarFormatos()" class="btn" style="gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M9 11l3 3L22 4"/></svg>
+          Asignar formatos
+        </button>
+        <button onclick="abrirModalPlantillaCalidad()" class="btn primary" style="gap:6px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nueva plantilla
+        </button>
+      </div>`:''}
+    </div>
+    ${!plantillasAsignadas.length ? `
+    <div style="padding:32px;text-align:center;color:#676879">
+      <div style="font-size:32px;margin-bottom:8px">✅</div>
+      <div>No hay formatos de calidad asignados a este proyecto</div>
+      ${puedeEditar?'<div style="font-size:12px;margin-top:6px">Usa "Asignar formatos" para habilitar plantillas existentes</div>':''}
+    </div>` : `
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Formato</th><th>Descripción</th><th style="text-align:center">Campos</th><th style="text-align:center">Respuestas</th><th></th></tr></thead>
+        <tbody>
+          ${plantillasAsignadas.map(p=>`<tr>
+            <td style="font-weight:600">${p.nombre}</td>
+            <td style="font-size:13px;color:#676879">${p.descripcion||'—'}</td>
+            <td style="text-align:center">${(p.campos||[]).length}</td>
+            <td style="text-align:center">${conteoPorPlantilla[p.id]||0}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <button onclick="event.stopPropagation();verRespuestasFormato('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px">📄 Ver respuestas</button>
+              ${puedeEditar?`<button onclick="event.stopPropagation();abrirModalPlantillaCalidad('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;margin-left:4px">✏️</button>`:''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`}
+  </div>`;
+}
+
+// ── Constructor de plantillas ──
+let _camposPlantillaActual = [];
+
+async function abrirModalPlantillaCalidad(id=null){
+  document.getElementById('plantillaCalidadId').value = id||'';
+  document.getElementById('pcNombre').value = '';
+  document.getElementById('pcDescripcion').value = '';
+  _camposPlantillaActual = [];
+
+  if(id){
+    const { data: p } = await sb.from('formatos_calidad_plantillas').select('*').eq('id',id).single();
+    if(p){
+      document.getElementById('pcNombre').value = p.nombre||'';
+      document.getElementById('pcDescripcion').value = p.descripcion||'';
+      _camposPlantillaActual = JSON.parse(JSON.stringify(p.campos||[]));
+    }
+  }
+  document.getElementById('btnEliminarPlantillaCalidad').style.display = id ? 'inline-flex' : 'none';
+  renderCamposPlantilla();
+  document.getElementById('modalPlantillaCalidad').classList.add('show');
+}
+
+function renderCamposPlantilla(){
+  const cont = document.getElementById('listaCamposPlantilla');
+  if(!_camposPlantillaActual.length){
+    cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:16px">Sin campos. Agrega el primero abajo.</div>';
+    return;
+  }
+  cont.innerHTML = _camposPlantillaActual.map((c,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:8px;background:#fff">
+      <span style="font-size:16px">${TIPOS_CAMPO_FORMATO[c.tipo]?.icon||'❓'}</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
+        <div style="font-size:11px;color:#676879">${TIPOS_CAMPO_FORMATO[c.tipo]?.label||c.tipo}${c.tipo==='seleccion'&&c.opciones?.length?': '+c.opciones.join(', '):''}</div>
+      </div>
+      <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
+    </div>`).join('');
+}
+
+function quitarCampoPlantilla(i){
+  _camposPlantillaActual.splice(i,1);
+  renderCamposPlantilla();
+}
+
+function toggleOpcionesCampoNuevo(){
+  const tipo = document.getElementById('ncTipo').value;
+  document.getElementById('ncOpcionesWrap').style.display = tipo==='seleccion' ? 'block' : 'none';
+}
+
+function agregarCampoPlantilla(){
+  const etiqueta = document.getElementById('ncEtiqueta').value.trim();
+  const tipo = document.getElementById('ncTipo').value;
+  const requerido = document.getElementById('ncRequerido').checked;
+  if(!etiqueta){ toast('Ingresa una etiqueta para el campo','error'); return; }
+
+  let opciones = null;
+  if(tipo==='seleccion'){
+    const raw = document.getElementById('ncOpciones').value.trim();
+    opciones = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    if(opciones.length<2){ toast('Ingresa al menos 2 opciones separadas por coma','error'); return; }
+  }
+
+  _camposPlantillaActual.push({
+    id: 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    etiqueta, tipo, requerido, opciones
+  });
+
+  document.getElementById('ncEtiqueta').value='';
+  document.getElementById('ncOpciones').value='';
+  document.getElementById('ncRequerido').checked=false;
+  renderCamposPlantilla();
+}
+
+async function guardarPlantillaCalidad(){
+  const id = document.getElementById('plantillaCalidadId').value;
+  const nombre = document.getElementById('pcNombre').value.trim();
+  const descripcion = document.getElementById('pcDescripcion').value.trim();
+
+  if(!nombre){ toast('Ingresa un nombre para la plantilla','error'); return; }
+  if(!_camposPlantillaActual.length){ toast('Agrega al menos un campo','error'); return; }
+
+  const btn = document.getElementById('btnGuardarPlantillaCalidad');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const data = {
+    nombre, descripcion: descripcion||null,
+    campos: _camposPlantillaActual,
+    empresa_id: currentPerfil?.empresa_id||null,
+    creado_por: currentUser?.id||null
+  };
+
+  let error;
+  if(id){
+    ({ error } = await sb.from('formatos_calidad_plantillas').update(data).eq('id',id));
+  } else {
+    ({ error } = await sb.from('formatos_calidad_plantillas').insert(data));
+  }
+
+  btn.disabled=false; btn.textContent='Guardar plantilla';
+  if(error){ toast('Error: '+error.message,'error'); return; }
+
+  toast(id?'Plantilla actualizada ✓':'Plantilla creada ✓','success');
+  cerrarModal('modalPlantillaCalidad');
+  cargarFormatosCalidad();
+}
+
+async function eliminarPlantillaCalidad(){
+  const id = document.getElementById('plantillaCalidadId').value;
+  if(!id) return;
+  if(!confirm('¿Eliminar esta plantilla? Se eliminarán también sus asignaciones y respuestas registradas.')) return;
+  const { error } = await sb.from('formatos_calidad_plantillas').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Plantilla eliminada','success');
+  cerrarModal('modalPlantillaCalidad');
+  cargarFormatosCalidad();
+}
+
+// ── Asignación de plantillas a proyectos ──
+async function abrirModalAsignarFormatos(){
+  if(!currentProyecto) return;
+
+  // Todas las plantillas visibles: base del sistema (empresa_id null) + de la empresa del usuario
+  const empresaId = currentPerfil?.empresa_id||null;
+  let query = sb.from('formatos_calidad_plantillas').select('id,nombre,descripcion').eq('activo',true);
+  const { data: todas } = empresaId
+    ? await query.or(`empresa_id.is.null,empresa_id.eq.${empresaId}`)
+    : await query.is('empresa_id', null);
+
+  const { data: asignadasActuales } = await sb.from('formatos_calidad_asignaciones')
+    .select('plantilla_id').eq('proyecto_id', currentProyecto);
+  const idsAsignados = new Set((asignadasActuales||[]).map(a=>a.plantilla_id));
+
+  const cont = document.getElementById('listaAsignarFormatos');
+  if(!todas||!todas.length){
+    cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:16px">No hay plantillas disponibles. Crea una primero.</div>';
+  } else {
+    cont.innerHTML = todas.map(p=>`
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:6px">
+        <input type="checkbox" class="chkAsignarFormato" value="${p.id}" ${idsAsignados.has(p.id)?'checked':''} style="width:15px;height:15px;accent-color:#0073ea"/>
+        <div><div style="font-weight:600">${p.nombre}</div>${p.descripcion?`<div style="font-size:11px;color:#676879">${p.descripcion}</div>`:''}</div>
+      </label>`).join('');
+  }
+  document.getElementById('modalAsignarFormatos').classList.add('show');
+}
+
+async function guardarAsignacionFormatos(){
+  if(!currentProyecto) return;
+  const seleccionados = Array.from(document.querySelectorAll('.chkAsignarFormato:checked')).map(c=>c.value);
+
+  const btn = document.getElementById('btnGuardarAsignarFormatos');
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  // Reemplazar asignaciones: borrar todas las actuales y volver a insertar las seleccionadas
+  await sb.from('formatos_calidad_asignaciones').delete().eq('proyecto_id', currentProyecto);
+  if(seleccionados.length){
+    await sb.from('formatos_calidad_asignaciones').insert(
+      seleccionados.map(plantilla_id=>({ proyecto_id: currentProyecto, plantilla_id }))
+    );
+  }
+
+  btn.disabled=false; btn.textContent='Guardar asignación';
+  toast('Formatos asignados ✓','success');
+  cerrarModal('modalAsignarFormatos');
+  cargarFormatosCalidad();
+}
+
+function verRespuestasFormato(plantillaId){
+  toast('Vista de respuestas — próximamente','success');
 }
 
 // ── PRESENCIA EN LÍNEA ──
