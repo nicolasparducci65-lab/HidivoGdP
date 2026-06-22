@@ -1432,19 +1432,24 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:8px">
             <input type="text" class="form-control" id="ncEtiqueta" placeholder="Etiqueta del campo (ej: Resistencia f'c)"/>
             <select class="form-control" id="ncTipo" onchange="toggleOpcionesCampoNuevo()">
+              <option value="seccion">📌 Sección (título)</option>
               <option value="texto">📝 Texto</option>
               <option value="numero">🔢 Número</option>
               <option value="fecha">📅 Fecha</option>
               <option value="si_no">✅ Sí / No</option>
               <option value="seleccion">📋 Selección</option>
               <option value="foto">📷 Foto</option>
+              <option value="tabla_repetible">📑 Tabla repetible</option>
             </select>
           </div>
           <div id="ncOpcionesWrap" style="display:none;margin-bottom:8px">
             <input type="text" class="form-control" id="ncOpciones" placeholder="Opciones separadas por coma: Cumple, No cumple, N/A"/>
           </div>
+          <div id="ncColumnasWrap" style="display:none;margin-bottom:8px">
+            <input type="text" class="form-control" id="ncColumnas" placeholder="Columnas separadas por coma: Longitud (m), Descripción"/>
+          </div>
           <div style="display:flex;align-items:center;justify-content:space-between">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <label id="ncRequeridoWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
               <input type="checkbox" id="ncRequerido" style="width:14px;height:14px;accent-color:#0073ea"/> Campo requerido
             </label>
             <button onclick="agregarCampoPlantilla()" class="btn" style="font-size:12px;padding:6px 12px">+ Agregar campo</button>
@@ -5006,12 +5011,14 @@ async function eliminarSubcontrato(){
 
 // ── FORMATOS DE CALIDAD ──
 const TIPOS_CAMPO_FORMATO = {
-  texto:     { label:'Texto', icon:'📝' },
-  numero:    { label:'Número', icon:'🔢' },
-  fecha:     { label:'Fecha', icon:'📅' },
-  si_no:     { label:'Sí / No', icon:'✅' },
-  seleccion: { label:'Selección', opciones:true, icon:'📋' },
-  foto:      { label:'Foto', icon:'📷' }
+  seccion:        { label:'Sección (título)', icon:'📌' },
+  texto:          { label:'Texto', icon:'📝' },
+  numero:         { label:'Número', icon:'🔢' },
+  fecha:          { label:'Fecha', icon:'📅' },
+  si_no:          { label:'Sí / No', icon:'✅' },
+  seleccion:      { label:'Selección', opciones:true, icon:'📋' },
+  foto:           { label:'Foto', icon:'📷' },
+  tabla_repetible:{ label:'Tabla repetible', icon:'📑', columnas:true }
 };
 
 async function cargarFormatosCalidad(){
@@ -5104,7 +5111,24 @@ function renderCamposPlantilla(){
     cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:16px">Sin campos. Agrega el primero abajo.</div>';
     return;
   }
-  cont.innerHTML = _camposPlantillaActual.map((c,i)=>`
+  cont.innerHTML = _camposPlantillaActual.map((c,i)=>{
+    if(c.tipo==='seccion'){
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;margin-top:${i>0?'12px':'0'};border-bottom:2px solid #0073ea">
+        <span style="font-size:13px;font-weight:700;color:#0073ea;text-transform:uppercase;flex:1">📌 ${c.etiqueta}</span>
+        <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:2px 6px;font-size:10px;color:#e2445c">🗑</button>
+      </div>`;
+    }
+    if(c.tipo==='tabla_repetible'){
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:8px;background:#fff">
+        <span style="font-size:16px">📑</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
+          <div style="font-size:11px;color:#676879">Tabla repetible — columnas: ${(c.columnas||[]).join(', ')}</div>
+        </div>
+        <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
+      </div>`;
+    }
+    return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:8px;background:#fff">
       <span style="font-size:16px">${TIPOS_CAMPO_FORMATO[c.tipo]?.icon||'❓'}</span>
       <div style="flex:1">
@@ -5112,7 +5136,8 @@ function renderCamposPlantilla(){
         <div style="font-size:11px;color:#676879">${TIPOS_CAMPO_FORMATO[c.tipo]?.label||c.tipo}${c.tipo==='seleccion'&&c.opciones?.length?': '+c.opciones.join(', '):''}</div>
       </div>
       <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function quitarCampoPlantilla(i){
@@ -5123,6 +5148,8 @@ function quitarCampoPlantilla(i){
 function toggleOpcionesCampoNuevo(){
   const tipo = document.getElementById('ncTipo').value;
   document.getElementById('ncOpcionesWrap').style.display = tipo==='seleccion' ? 'block' : 'none';
+  document.getElementById('ncColumnasWrap').style.display = tipo==='tabla_repetible' ? 'block' : 'none';
+  document.getElementById('ncRequeridoWrap').style.display = (tipo==='seccion') ? 'none' : 'flex';
 }
 
 function agregarCampoPlantilla(){
@@ -5132,19 +5159,28 @@ function agregarCampoPlantilla(){
   if(!etiqueta){ toast('Ingresa una etiqueta para el campo','error'); return; }
 
   let opciones = null;
+  let columnas = null;
+
   if(tipo==='seleccion'){
     const raw = document.getElementById('ncOpciones').value.trim();
     opciones = raw.split(',').map(s=>s.trim()).filter(Boolean);
     if(opciones.length<2){ toast('Ingresa al menos 2 opciones separadas por coma','error'); return; }
   }
 
+  if(tipo==='tabla_repetible'){
+    const raw = document.getElementById('ncColumnas').value.trim();
+    columnas = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    if(columnas.length<1){ toast('Ingresa al menos 1 columna separadas por coma','error'); return; }
+  }
+
   _camposPlantillaActual.push({
     id: 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-    etiqueta, tipo, requerido, opciones
+    etiqueta, tipo, requerido: tipo==='seccion'?false:requerido, opciones, columnas
   });
 
   document.getElementById('ncEtiqueta').value='';
   document.getElementById('ncOpciones').value='';
+  document.getElementById('ncColumnas').value='';
   document.getElementById('ncRequerido').checked=false;
   renderCamposPlantilla();
 }
