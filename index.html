@@ -1428,7 +1428,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <div id="listaCamposPlantilla" style="margin-bottom:12px"></div>
 
         <div style="background:#f5f6f8;border-radius:8px;padding:12px">
-          <div style="font-size:12px;font-weight:600;color:#676879;margin-bottom:8px">Agregar campo</div>
+          <div id="tituloFormCampo" style="font-size:12px;font-weight:600;color:#676879;margin-bottom:8px">Agregar campo</div>
           <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:8px">
             <input type="text" class="form-control" id="ncEtiqueta" placeholder="Etiqueta del campo (ej: Resistencia f'c)"/>
             <select class="form-control" id="ncTipo" onchange="toggleOpcionesCampoNuevo()">
@@ -1452,7 +1452,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <label id="ncRequeridoWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
               <input type="checkbox" id="ncRequerido" style="width:14px;height:14px;accent-color:#0073ea"/> Campo requerido
             </label>
-            <button onclick="agregarCampoPlantilla()" class="btn" style="font-size:12px;padding:6px 12px">+ Agregar campo</button>
+            <div style="display:flex;gap:6px">
+              <button id="btnCancelarEdicionCampo" onclick="cancelarEdicionCampoPlantilla()" class="btn" style="font-size:12px;padding:6px 12px;display:none">Cancelar</button>
+              <button id="btnAgregarCampoPlantilla" onclick="agregarCampoPlantilla()" class="btn" style="font-size:12px;padding:6px 12px">+ Agregar campo</button>
+            </div>
           </div>
         </div>
       </div>
@@ -5091,6 +5094,7 @@ async function abrirModalPlantillaCalidad(id=null){
   document.getElementById('pcNombre').value = '';
   document.getElementById('pcDescripcion').value = '';
   _camposPlantillaActual = [];
+  cancelarEdicionCampoPlantilla();
 
   if(id){
     const { data: p } = await sb.from('formatos_calidad_plantillas').select('*').eq('id',id).single();
@@ -5115,6 +5119,7 @@ function renderCamposPlantilla(){
     if(c.tipo==='seccion'){
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;margin-top:${i>0?'12px':'0'};border-bottom:2px solid #0073ea">
         <span style="font-size:13px;font-weight:700;color:#0073ea;text-transform:uppercase;flex:1">📌 ${c.etiqueta}</span>
+        <button onclick="editarCampoPlantilla(${i})" class="btn" style="padding:2px 6px;font-size:10px">✏️</button>
         <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:2px 6px;font-size:10px;color:#e2445c">🗑</button>
       </div>`;
     }
@@ -5125,6 +5130,7 @@ function renderCamposPlantilla(){
           <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
           <div style="font-size:11px;color:#676879">Tabla repetible — columnas: ${(c.columnas||[]).join(', ')}</div>
         </div>
+        <button onclick="editarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
         <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
       </div>`;
     }
@@ -5135,14 +5141,48 @@ function renderCamposPlantilla(){
         <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
         <div style="font-size:11px;color:#676879">${TIPOS_CAMPO_FORMATO[c.tipo]?.label||c.tipo}${c.tipo==='seleccion'&&c.opciones?.length?': '+c.opciones.join(', '):''}</div>
       </div>
+      <button onclick="editarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
       <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
     </div>`;
   }).join('');
 }
 
+let _editandoCampoIndex = null;
+
 function quitarCampoPlantilla(i){
   _camposPlantillaActual.splice(i,1);
+  if(_editandoCampoIndex===i) cancelarEdicionCampoPlantilla();
   renderCamposPlantilla();
+}
+
+function editarCampoPlantilla(i){
+  const c = _camposPlantillaActual[i];
+  _editandoCampoIndex = i;
+
+  document.getElementById('ncEtiqueta').value = c.etiqueta||'';
+  document.getElementById('ncTipo').value = c.tipo;
+  document.getElementById('ncOpciones').value = (c.opciones||[]).join(', ');
+  document.getElementById('ncColumnas').value = (c.columnas||[]).join(', ');
+  document.getElementById('ncRequerido').checked = !!c.requerido;
+  toggleOpcionesCampoNuevo();
+
+  document.getElementById('tituloFormCampo').textContent = 'Editar campo';
+  document.getElementById('btnAgregarCampoPlantilla').textContent = '💾 Guardar cambios';
+  document.getElementById('btnCancelarEdicionCampo').style.display = 'inline-block';
+  document.getElementById('ncEtiqueta').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelarEdicionCampoPlantilla(){
+  _editandoCampoIndex = null;
+  document.getElementById('ncEtiqueta').value='';
+  document.getElementById('ncOpciones').value='';
+  document.getElementById('ncColumnas').value='';
+  document.getElementById('ncRequerido').checked=false;
+  document.getElementById('ncTipo').value='seccion';
+  toggleOpcionesCampoNuevo();
+  document.getElementById('tituloFormCampo').textContent = 'Agregar campo';
+  document.getElementById('btnAgregarCampoPlantilla').textContent = '+ Agregar campo';
+  document.getElementById('btnCancelarEdicionCampo').style.display = 'none';
 }
 
 function toggleOpcionesCampoNuevo(){
@@ -5173,15 +5213,18 @@ function agregarCampoPlantilla(){
     if(columnas.length<1){ toast('Ingresa al menos 1 columna separadas por coma','error'); return; }
   }
 
-  _camposPlantillaActual.push({
-    id: 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+  const campo = {
+    id: _editandoCampoIndex!==null ? _camposPlantillaActual[_editandoCampoIndex].id : 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     etiqueta, tipo, requerido: tipo==='seccion'?false:requerido, opciones, columnas
-  });
+  };
 
-  document.getElementById('ncEtiqueta').value='';
-  document.getElementById('ncOpciones').value='';
-  document.getElementById('ncColumnas').value='';
-  document.getElementById('ncRequerido').checked=false;
+  if(_editandoCampoIndex!==null){
+    _camposPlantillaActual[_editandoCampoIndex] = campo;
+  } else {
+    _camposPlantillaActual.push(campo);
+  }
+
+  cancelarEdicionCampoPlantilla();
   renderCamposPlantilla();
 }
 
