@@ -5732,14 +5732,21 @@ function exportarPdfFormato(){
     <html><head><title>${plantilla.nombre}</title>
     <style>
       body{font-family:Arial,sans-serif;color:#323338;padding:24px}
-      h1{font-size:18px;color:#0073ea;margin-bottom:4px}
-      .sub{font-size:12px;color:#676879;margin-bottom:16px}
+      .encabezado{display:flex;align-items:center;gap:16px;border-bottom:3px solid #0073ea;padding-bottom:12px;margin-bottom:16px}
+      .encabezado img{height:60px;object-fit:contain}
+      h1{font-size:18px;color:#0073ea;margin:0 0 4px 0}
+      .sub{font-size:12px;color:#676879;margin:0}
       table{width:100%;border-collapse:collapse}
       @media print{ body{padding:0} }
     </style></head>
     <body>
-      <h1>${plantilla.nombre}</h1>
-      <div class="sub">Proyecto: ${proyectoNombre} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>
+      <div class="encabezado">
+        <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HiDiVo"/>
+        <div>
+          <h1>${plantilla.nombre}</h1>
+          <div class="sub">Proyecto: ${proyectoNombre} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>
+        </div>
+      </div>
       <table>${filasHtml}</table>
     </body></html>
   `);
