@@ -1453,6 +1453,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <input type="text" class="form-control" id="colNombre" placeholder="Nombre de columna" style="font-size:12px;padding:6px"/>
               <select class="form-control" id="colTipo" onchange="toggleOpcionesColumnaNueva()" style="font-size:12px;padding:6px">
                 <option value="texto">📝 Texto</option>
+                <option value="numero">🔢 Número</option>
                 <option value="seleccion">📋 Desplegable</option>
               </select>
             </div>
@@ -5337,11 +5338,14 @@ function renderColumnasTabla(){
     cont.innerHTML = '<div style="font-size:11px;color:#676879;padding:4px 0">Sin columnas todavía</div>';
     return;
   }
-  cont.innerHTML = _columnasTablaActual.map((col,ci)=>`
+  cont.innerHTML = _columnasTablaActual.map((col,ci)=>{
+    const desc = col.tipo==='seleccion' ? `📋 ${(col.opciones||[]).join(', ')}` : col.tipo==='numero' ? '🔢 número' : '📝 texto';
+    return `
     <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#fff;border:1px solid #e6e9ef;border-radius:6px;margin-bottom:4px">
-      <span style="font-size:11px;flex:1"><b>${col.nombre}</b> ${col.tipo==='seleccion'?`— 📋 ${(col.opciones||[]).join(', ')}`:'— 📝 texto'}</span>
+      <span style="font-size:11px;flex:1"><b>${col.nombre}</b> — ${desc}</span>
       <button type="button" onclick="quitarColumnaTabla(${ci})" class="btn" style="padding:1px 6px;font-size:10px;color:#e2445c">🗑</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function agregarColumnaTabla(){
@@ -5711,7 +5715,7 @@ function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
         </td>`;
       }
       return `<td>
-        <input type="text" class="form-control" style="font-size:12px;padding:6px" value="${valorActual}" ${ro?'disabled':''}
+        <input type="${col.tipo==='numero'?'number':'text'}" class="form-control" style="font-size:12px;padding:6px" value="${valorActual}" ${ro?'disabled':''}
           oninput="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
       </td>`;
     }).join('')}
