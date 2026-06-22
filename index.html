@@ -288,7 +288,12 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </div>
       <div class="form-group">
         <label class="form-label">Contraseña</label>
-        <input type="password" class="form-control" id="loginPassword" placeholder="••••••••" autocomplete="new-password"/>
+        <div style="position:relative">
+          <input type="password" class="form-control" id="loginPassword" placeholder="••••••••" autocomplete="new-password" style="padding-right:40px"/>
+          <span onclick="togglePasswordVisibility('loginPassword', this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:#676879;display:flex;align-items:center" title="Mostrar/ocultar contraseña">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </div>
       </div>
       <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="login()">Ingresar</button>
       <div class="auth-divider">o</div>
@@ -310,7 +315,12 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </div>
       <div class="form-group">
         <label class="form-label">Contraseña</label>
-        <input type="password" class="form-control" id="regPassword" placeholder="Mínimo 6 caracteres"/>
+        <div style="position:relative">
+          <input type="password" class="form-control" id="regPassword" placeholder="Mínimo 6 caracteres" style="padding-right:40px"/>
+          <span onclick="togglePasswordVisibility('regPassword', this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:#676879;display:flex;align-items:center" title="Mostrar/ocultar contraseña">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Empresa</label>
@@ -2181,6 +2191,15 @@ function showAuthSuccess(msg){ const el=document.getElementById('authSuccess'); 
 function showLogin(){ document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; }
 function showRegister(){ document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; }
 
+function togglePasswordVisibility(inputId, iconEl){
+  const input = document.getElementById(inputId);
+  const mostrando = input.type === 'text';
+  input.type = mostrando ? 'password' : 'text';
+  iconEl.innerHTML = mostrando
+    ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
+    : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+}
+
 // ── APP ──
 async function mostrarApp(){
   // Admin global siempre entra
@@ -2484,7 +2503,6 @@ async function renderProyectosTabla(containerId, lista){
   const avances = {};
   const spiEstados = {};
   const montosReales = {};
-  const fechasEstimadas = {};
   const hoy = new Date();
 
   for(const p of lista){
@@ -2530,39 +2548,22 @@ async function renderProyectosTabla(containerId, lista){
         });
 
         spiEstados[p.id] = (hayFechas && BCWS>0) ? BCWP/BCWS : null;
-
-        // Fecha entrega estimada — misma fórmula que calcularProyeccionesEVM (Curva S)
-        // Solo cambia respecto a la fecha planificada si hay atraso (SPI < 1)
-        const spiCalc = spiEstados[p.id];
-        if(spiCalc && spiCalc > 0 && spiCalc < 1 && p.fecha_inicio && p.fecha_fin_planificada){
-          const inicioProy = new Date(p.fecha_inicio+'T00:00:00');
-          const finPlan = new Date(p.fecha_fin_planificada+'T00:00:00');
-          const duracionPlanDias = Math.round((finPlan-inicioProy)/(1000*60*60*24));
-          const duracionEstimadaDias = Math.round(duracionPlanDias/spiCalc);
-          fechasEstimadas[p.id] = new Date(inicioProy.getTime() + duracionEstimadaDias*24*60*60*1000);
-        } else {
-          fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
-        }
       } else {
         spiEstados[p.id] = null;
-        fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
       }
     } else {
       avances[p.id] = 0;
       spiEstados[p.id] = null;
       montosReales[p.id] = 0;
-      fechasEstimadas[p.id] = p.fecha_fin_planificada ? new Date(p.fecha_fin_planificada+'T00:00:00') : null;
     }
   }
 
   const rol = currentPerfil?.rol;
   const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
-    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Fecha Entrega Estimada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
+    <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
       const spi = spiEstados[p.id];
-      const fechaEst = fechasEstimadas[p.id];
-      const hayAtraso = fechaEst && p.fecha_fin_planificada && (fechaEst.getTime() > new Date(p.fecha_fin_planificada+'T00:00:00').getTime());
       let tiempoLabel, tiempoColor, tiempoIcon;
       if(spi===null){
         tiempoLabel='N/A'; tiempoColor='#676879'; tiempoIcon='—';
@@ -2579,7 +2580,6 @@ async function renderProyectosTabla(containerId, lista){
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
-        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap;font-weight:600;color:${!fechaEst?'#676879':hayAtraso?'#e2445c':'#00c875'}">${fechaEst ? fechaEst.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'}) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
