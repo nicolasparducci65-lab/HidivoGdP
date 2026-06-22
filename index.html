@@ -1488,6 +1488,29 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL: Llenar Formato de Calidad -->
+<div class="modal-overlay" id="modalLlenarFormato">
+  <div class="modal" style="width:640px;max-width:98vw;max-height:90vh">
+    <div class="modal-header">
+      <div class="modal-title" id="llenarFormatoTitulo">Formato de Calidad</div>
+      <button class="btn" onclick="cerrarModal('modalLlenarFormato')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="max-height:65vh;overflow-y:auto">
+      <input type="hidden" id="llenarFormatoId"/>
+      <input type="hidden" id="llenarFormatoPlantillaId"/>
+      <div id="llenarFormatoSoloLectura" style="display:none;background:#fff4e5;color:#946200;font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:12px">
+        Este registro ya fue enviado y no puede editarse. Solo el fiscalizador puede corregirlo.
+      </div>
+      <div id="formularioLlenadoContent"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalLlenarFormato')">Cerrar</button>
+      <button class="btn" id="btnGuardarBorradorLlenado" onclick="guardarLlenadoFormato('borrador')">💾 Guardar borrador</button>
+      <button class="btn primary" id="btnEnviarLlenado" onclick="guardarLlenadoFormato('enviado')">📤 Enviar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalSubcontratista">
   <div class="modal" style="width:540px;max-width:98vw">
     <div class="modal-header">
@@ -2381,7 +2404,7 @@ function aplicarAccesosPorRol(rol){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
     cliente:      ['dashboard','curvaS']
@@ -2773,7 +2796,7 @@ function aplicarModulosProyecto(modulos){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
     cliente:      ['dashboard','curvaS']
@@ -5031,6 +5054,7 @@ async function cargarFormatosCalidad(){
   }
   const rol = currentPerfil?.rol;
   const puedeEditar = ['admin','fiscalizador'].includes(rol);
+  const esResidente = rol==='residente';
 
   // Plantillas asignadas a este proyecto
   const { data: asignaciones } = await sb.from('formatos_calidad_asignaciones')
@@ -5041,9 +5065,14 @@ async function cargarFormatosCalidad(){
 
   // Conteo de respuestas por plantilla en este proyecto
   const { data: respuestas } = await sb.from('formatos_calidad_respuestas')
-    .select('id, plantilla_id, estado').eq('proyecto_id', currentProyecto);
+    .select('id, plantilla_id, estado, residente_id, created_at').eq('proyecto_id', currentProyecto);
   const conteoPorPlantilla = {};
   (respuestas||[]).forEach(r=>{ conteoPorPlantilla[r.plantilla_id] = (conteoPorPlantilla[r.plantilla_id]||0)+1; });
+
+  if(esResidente){
+    renderFormatosCalidadResidente(plantillasAsignadas, respuestas||[]);
+    return;
+  }
 
   document.getElementById('formatosCalidadContent').innerHTML = `
   <div class="card">
@@ -5080,6 +5109,58 @@ async function cargarFormatosCalidad(){
               ${puedeEditar?`<button onclick="event.stopPropagation();abrirModalPlantillaCalidad('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;margin-left:4px">✏️</button>`:''}
             </td>
           </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`}
+  </div>`;
+}
+
+function renderFormatosCalidadResidente(plantillas, respuestas){
+  const misRespuestas = respuestas.filter(r=>r.residente_id===currentUser?.id);
+  const estadoLabel = {borrador:'📝 Borrador', enviado:'📤 Enviado', corregido:'✅ Corregido'};
+  const estadoColor = {borrador:'#ff9f00', enviado:'#0073ea', corregido:'#00c875'};
+
+  document.getElementById('formatosCalidadContent').innerHTML = `
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">✅ Formatos de Calidad disponibles</div><div class="card-subtitle">Selecciona un formato para crear un nuevo registro</div></div>
+    </div>
+    ${!plantillas.length ? `
+    <div style="padding:32px;text-align:center;color:#676879">
+      <div style="font-size:32px;margin-bottom:8px">✅</div>
+      <div>No hay formatos de calidad asignados a este proyecto</div>
+    </div>` : `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;padding:16px">
+      ${plantillas.map(p=>`
+        <div style="border:1px solid #e6e9ef;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-weight:700;font-size:14px">${p.nombre}</div>
+          ${p.descripcion?`<div style="font-size:12px;color:#676879;flex:1">${p.descripcion}</div>`:'<div style="flex:1"></div>'}
+          <button onclick="abrirModalLlenarFormato('${p.id}')" class="btn primary" style="justify-content:center">+ Nuevo registro</button>
+        </div>`).join('')}
+    </div>`}
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div><div class="card-title">📋 Mis registros</div><div class="card-subtitle">${misRespuestas.length} registro(s)</div></div>
+    </div>
+    ${!misRespuestas.length ? `
+    <div style="padding:24px;text-align:center;color:#676879;font-size:13px">Todavía no has llenado ningún formato</div>` : `
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Formato</th><th style="text-align:center">Estado</th><th style="text-align:center">Fecha</th><th></th></tr></thead>
+        <tbody>
+          ${misRespuestas.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(r=>{
+            const plantilla = plantillas.find(p=>p.id===r.plantilla_id);
+            return `<tr>
+              <td style="font-weight:600">${plantilla?.nombre||'—'}</td>
+              <td style="text-align:center"><span style="font-size:12px;font-weight:600;color:${estadoColor[r.estado]}">${estadoLabel[r.estado]||r.estado}</span></td>
+              <td style="text-align:center;font-size:12px;color:#676879">${new Date(r.created_at).toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'})}</td>
+              <td style="text-align:right">
+                <button onclick="abrirModalLlenarFormato('${r.plantilla_id}','${r.id}')" class="btn" style="padding:4px 8px;font-size:11px">${r.estado==='borrador'?'✏️ Continuar':'👁 Ver'}</button>
+              </td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>`}
@@ -5323,6 +5404,231 @@ async function guardarAsignacionFormatos(){
 
 function verRespuestasFormato(plantillaId){
   toast('Vista de respuestas — próximamente','success');
+}
+
+// ── Llenado de Formatos de Calidad (residente) ──
+let _plantillaLlenadoActual = null;
+let _respuestaLlenadoId = null;
+let _valoresLlenado = {};
+let _fotosLlenadoNuevas = {}; // { campoId: File }
+let _soloLecturaLlenado = false;
+
+async function abrirModalLlenarFormato(plantillaId, respuestaId=null){
+  const { data: plantilla } = await sb.from('formatos_calidad_plantillas').select('*').eq('id',plantillaId).single();
+  if(!plantilla){ toast('No se encontró la plantilla','error'); return; }
+
+  _plantillaLlenadoActual = plantilla;
+  _respuestaLlenadoId = respuestaId;
+  _valoresLlenado = {};
+  _fotosLlenadoNuevas = {};
+  _soloLecturaLlenado = false;
+
+  let estadoActual = 'borrador';
+  if(respuestaId){
+    const { data: resp } = await sb.from('formatos_calidad_respuestas').select('*').eq('id',respuestaId).single();
+    if(resp){
+      _valoresLlenado = resp.respuestas||{};
+      estadoActual = resp.estado;
+      _soloLecturaLlenado = resp.estado!=='borrador';
+    }
+  }
+
+  document.getElementById('llenarFormatoTitulo').textContent = plantilla.nombre;
+  document.getElementById('llenarFormatoId').value = respuestaId||'';
+  document.getElementById('llenarFormatoPlantillaId').value = plantillaId;
+
+  // Cargar fotos existentes si hay respuesta
+  let fotosExistentes = [];
+  if(respuestaId){
+    const { data: fotos } = await sb.from('formatos_calidad_fotos').select('*').eq('respuesta_id',respuestaId);
+    fotosExistentes = fotos||[];
+  }
+  window._fotosLlenadoExistentes = fotosExistentes;
+
+  renderFormularioLlenado(plantilla.campos||[]);
+
+  document.getElementById('btnGuardarBorradorLlenado').style.display = _soloLecturaLlenado?'none':'inline-flex';
+  document.getElementById('btnEnviarLlenado').style.display = _soloLecturaLlenado?'none':'inline-flex';
+  document.getElementById('llenarFormatoSoloLectura').style.display = _soloLecturaLlenado?'block':'none';
+
+  document.getElementById('modalLlenarFormato').classList.add('show');
+}
+
+function renderFormularioLlenado(campos){
+  const cont = document.getElementById('formularioLlenadoContent');
+  const ro = _soloLecturaLlenado;
+
+  cont.innerHTML = campos.map(c=>{
+    if(c.tipo==='seccion'){
+      return `<div style="font-size:13px;font-weight:700;color:#0073ea;text-transform:uppercase;border-bottom:2px solid #0073ea;padding:8px 0;margin-top:16px">📌 ${c.etiqueta}</div>`;
+    }
+
+    const val = _valoresLlenado[c.id];
+
+    if(c.tipo==='tabla_repetible'){
+      const filas = Array.isArray(val) ? val : [];
+      return `
+      <div class="form-group" style="margin-top:10px">
+        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+        <div style="overflow-x:auto">
+          <table style="width:100%">
+            <thead><tr>${c.columnas.map(col=>`<th style="font-size:11px">${col}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
+            <tbody id="tablaRep_${c.id}">
+              ${filas.map((fila,fi)=>renderFilaTablaRepetible(c.id, c.columnas, fila, fi, ro)).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${ro?'':`<button type="button" onclick="agregarFilaTablaRepetible('${c.id}')" class="btn" style="font-size:11px;padding:5px 10px;margin-top:6px">+ Agregar fila</button>`}
+      </div>`;
+    }
+
+    if(c.tipo==='foto'){
+      const fotosCampo = (window._fotosLlenadoExistentes||[]).filter(f=>f.campo_id===c.id);
+      return `
+      <div class="form-group" style="margin-top:10px">
+        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px" id="previewFoto_${c.id}">
+          ${fotosCampo.map(f=>`<img src="${f.url}" style="width:70px;height:55px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`).join('')}
+        </div>
+        ${ro?'':`<input type="file" accept="image/*" class="form-control" onchange="seleccionarFotoLlenado('${c.id}', this)"/>`}
+      </div>`;
+    }
+
+    if(c.tipo==='si_no'){
+      return `
+      <div class="form-group" style="margin-top:10px">
+        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+        <select class="form-control" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
+          <option value="">— Selecciona —</option>
+          <option value="si" ${val==='si'?'selected':''}>Sí</option>
+          <option value="no" ${val==='no'?'selected':''}>No</option>
+        </select>
+      </div>`;
+    }
+
+    if(c.tipo==='seleccion'){
+      return `
+      <div class="form-group" style="margin-top:10px">
+        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+        <select class="form-control" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
+          <option value="">— Selecciona —</option>
+          ${(c.opciones||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+
+    const inputType = c.tipo==='numero'?'number':c.tipo==='fecha'?'date':'text';
+    return `
+    <div class="form-group" style="margin-top:10px">
+      <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+      <input type="${inputType}" class="form-control" value="${val!=null?val:''}" ${ro?'disabled':''} oninput="_valoresLlenado['${c.id}']=this.value"/>
+    </div>`;
+  }).join('');
+}
+
+function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
+  return `<tr data-fi="${fi}">
+    ${columnas.map((col,ci)=>`<td>
+      <input type="text" class="form-control" style="font-size:12px;padding:6px" value="${fila?.[ci]!=null?fila[ci]:''}" ${ro?'disabled':''}
+        oninput="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
+    </td>`).join('')}
+    ${ro?'':`<td><button type="button" onclick="quitarFilaTablaRepetible('${campoId}',${fi})" class="btn" style="padding:2px 6px;font-size:10px;color:#e2445c">🗑</button></td>`}
+  </tr>`;
+}
+
+function agregarFilaTablaRepetible(campoId){
+  if(!Array.isArray(_valoresLlenado[campoId])) _valoresLlenado[campoId] = [];
+  _valoresLlenado[campoId].push([]);
+  rerenderTablaRepetible(campoId);
+}
+
+function quitarFilaTablaRepetible(campoId, fi){
+  _valoresLlenado[campoId].splice(fi,1);
+  rerenderTablaRepetible(campoId);
+}
+
+function actualizarCeldaTablaRepetible(campoId, fi, ci, valor){
+  if(!_valoresLlenado[campoId]) _valoresLlenado[campoId]=[];
+  if(!_valoresLlenado[campoId][fi]) _valoresLlenado[campoId][fi]=[];
+  _valoresLlenado[campoId][fi][ci] = valor;
+}
+
+function rerenderTablaRepetible(campoId){
+  const campo = (_plantillaLlenadoActual.campos||[]).find(c=>c.id===campoId);
+  const tbody = document.getElementById('tablaRep_'+campoId);
+  const filas = _valoresLlenado[campoId]||[];
+  tbody.innerHTML = filas.map((fila,fi)=>renderFilaTablaRepetible(campoId, campo.columnas, fila, fi, _soloLecturaLlenado)).join('');
+}
+
+function seleccionarFotoLlenado(campoId, input){
+  if(input.files && input.files[0]){
+    _fotosLlenadoNuevas[campoId] = input.files[0];
+    const url = URL.createObjectURL(input.files[0]);
+    document.getElementById('previewFoto_'+campoId).innerHTML += `<img src="${url}" style="width:70px;height:55px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
+  }
+}
+
+function validarCamposRequeridosLlenado(){
+  const campos = (_plantillaLlenadoActual.campos||[]).filter(c=>c.requerido && c.tipo!=='seccion');
+  for(const c of campos){
+    const val = _valoresLlenado[c.id];
+    if(c.tipo==='tabla_repetible'){
+      if(!Array.isArray(val) || !val.length){ return `Agrega al menos una fila en "${c.etiqueta}"`; }
+    } else if(c.tipo==='foto'){
+      const tieneExistente = (window._fotosLlenadoExistentes||[]).some(f=>f.campo_id===c.id);
+      if(!_fotosLlenadoNuevas[c.id] && !tieneExistente){ return `El campo "${c.etiqueta}" es requerido`; }
+    } else if(val==null || val===''){
+      return `El campo "${c.etiqueta}" es requerido`;
+    }
+  }
+  return null;
+}
+
+async function guardarLlenadoFormato(estadoFinal){
+  if(estadoFinal==='enviado'){
+    const errorValidacion = validarCamposRequeridosLlenado();
+    if(errorValidacion){ toast(errorValidacion,'error'); return; }
+  }
+
+  const btn = estadoFinal==='enviado' ? document.getElementById('btnEnviarLlenado') : document.getElementById('btnGuardarBorradorLlenado');
+  const textoOriginal = btn.textContent;
+  btn.disabled=true; btn.textContent='Guardando...';
+
+  const data = {
+    plantilla_id: _plantillaLlenadoActual.id,
+    proyecto_id: currentProyecto,
+    residente_id: currentUser?.id,
+    respuestas: _valoresLlenado,
+    estado: estadoFinal
+  };
+
+  let respuestaId = _respuestaLlenadoId;
+  let error;
+  if(respuestaId){
+    ({ error } = await sb.from('formatos_calidad_respuestas').update({respuestas:_valoresLlenado, estado:estadoFinal, updated_at:new Date().toISOString()}).eq('id',respuestaId));
+  } else {
+    const { data: nueva, error: errIns } = await sb.from('formatos_calidad_respuestas').insert(data).select('id').single();
+    error = errIns;
+    if(nueva) respuestaId = nueva.id;
+  }
+
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent=textoOriginal; return; }
+
+  // Subir fotos nuevas, si hay
+  for(const campoId of Object.keys(_fotosLlenadoNuevas)){
+    const file = _fotosLlenadoNuevas[campoId];
+    const path = `formatos-calidad/${respuestaId}/${campoId}_${Date.now()}.${file.name.split('.').pop()}`;
+    const { error: errUp } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType: file.type});
+    if(!errUp){
+      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+      await sb.from('formatos_calidad_fotos').insert({ respuesta_id: respuestaId, campo_id: campoId, url: urlData.publicUrl });
+    }
+  }
+
+  btn.disabled=false; btn.textContent=textoOriginal;
+  toast(estadoFinal==='enviado'?'Formato enviado ✓':'Borrador guardado ✓','success');
+  cerrarModal('modalLlenarFormato');
+  cargarFormatosCalidad();
 }
 
 // ── PRESENCIA EN LÍNEA ──
