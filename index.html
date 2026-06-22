@@ -1505,8 +1505,26 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalLlenarFormato')">Cerrar</button>
+      <button class="btn" onclick="exportarPdfFormato()">🖨️ Exportar PDF</button>
       <button class="btn" id="btnGuardarBorradorLlenado" onclick="guardarLlenadoFormato('borrador')">💾 Guardar borrador</button>
       <button class="btn primary" id="btnEnviarLlenado" onclick="guardarLlenadoFormato('enviado')">📤 Enviar</button>
+      <button class="btn primary" id="btnGuardarCorreccionLlenado" onclick="guardarLlenadoFormato('corregido')" style="display:none">✅ Guardar corrección</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Lista de Respuestas de un Formato -->
+<div class="modal-overlay" id="modalRespuestasFormato">
+  <div class="modal" style="width:600px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title" id="respuestasFormatoTitulo">Respuestas</div>
+      <button class="btn" onclick="cerrarModal('modalRespuestasFormato')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="listaRespuestasFormato">Cargando...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalRespuestasFormato')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -5402,8 +5420,40 @@ async function guardarAsignacionFormatos(){
   cargarFormatosCalidad();
 }
 
-function verRespuestasFormato(plantillaId){
-  toast('Vista de respuestas — próximamente','success');
+async function verRespuestasFormato(plantillaId){
+  const { data: plantilla } = await sb.from('formatos_calidad_plantillas').select('id,nombre').eq('id',plantillaId).single();
+  const { data: respuestas } = await sb.from('formatos_calidad_respuestas')
+    .select('*, perfiles:residente_id(nombre,apellido)')
+    .eq('plantilla_id', plantillaId).eq('proyecto_id', currentProyecto)
+    .order('created_at',{ascending:false});
+
+  const estadoLabel = {borrador:'📝 Borrador', enviado:'📤 Enviado', corregido:'✅ Corregido'};
+  const estadoColor = {borrador:'#ff9f00', enviado:'#0073ea', corregido:'#00c875'};
+
+  document.getElementById('respuestasFormatoTitulo').textContent = plantilla?.nombre||'Respuestas';
+
+  const cont = document.getElementById('listaRespuestasFormato');
+  if(!respuestas||!respuestas.length){
+    cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:24px">Sin registros todavía</div>';
+  } else {
+    cont.innerHTML = `<div style="overflow-x:auto"><table>
+      <thead><tr><th>Residente</th><th style="text-align:center">Estado</th><th style="text-align:center">Fecha</th><th></th></tr></thead>
+      <tbody>
+        ${respuestas.filter(r=>r.estado!=='borrador').map(r=>`<tr>
+          <td>${r.perfiles?.nombre||''} ${r.perfiles?.apellido||''}</td>
+          <td style="text-align:center"><span style="font-size:12px;font-weight:600;color:${estadoColor[r.estado]}">${estadoLabel[r.estado]||r.estado}</span></td>
+          <td style="text-align:center;font-size:12px;color:#676879">${new Date(r.created_at).toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'})}</td>
+          <td style="text-align:right"><button onclick="abrirModalCorregirFormato('${plantillaId}','${r.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️ Revisar / Corregir</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  }
+  document.getElementById('modalRespuestasFormato').classList.add('show');
+}
+
+function abrirModalCorregirFormato(plantillaId, respuestaId){
+  cerrarModal('modalRespuestasFormato');
+  abrirModalLlenarFormato(plantillaId, respuestaId, true);
 }
 
 // ── Llenado de Formatos de Calidad (residente) ──
@@ -5412,8 +5462,9 @@ let _respuestaLlenadoId = null;
 let _valoresLlenado = {};
 let _fotosLlenadoNuevas = {}; // { campoId: File }
 let _soloLecturaLlenado = false;
+let _modoCorreccionLlenado = false;
 
-async function abrirModalLlenarFormato(plantillaId, respuestaId=null){
+async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorreccion=false){
   const { data: plantilla } = await sb.from('formatos_calidad_plantillas').select('*').eq('id',plantillaId).single();
   if(!plantilla){ toast('No se encontró la plantilla','error'); return; }
 
@@ -5422,6 +5473,7 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null){
   _valoresLlenado = {};
   _fotosLlenadoNuevas = {};
   _soloLecturaLlenado = false;
+  _modoCorreccionLlenado = modoCorreccion;
 
   let estadoActual = 'borrador';
   if(respuestaId){
@@ -5429,11 +5481,11 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null){
     if(resp){
       _valoresLlenado = resp.respuestas||{};
       estadoActual = resp.estado;
-      _soloLecturaLlenado = resp.estado!=='borrador';
+      _soloLecturaLlenado = modoCorreccion ? false : (resp.estado!=='borrador');
     }
   }
 
-  document.getElementById('llenarFormatoTitulo').textContent = plantilla.nombre;
+  document.getElementById('llenarFormatoTitulo').textContent = (modoCorreccion?'Corregir: ':'') + plantilla.nombre;
   document.getElementById('llenarFormatoId').value = respuestaId||'';
   document.getElementById('llenarFormatoPlantillaId').value = plantillaId;
 
@@ -5447,9 +5499,10 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null){
 
   renderFormularioLlenado(plantilla.campos||[]);
 
-  document.getElementById('btnGuardarBorradorLlenado').style.display = _soloLecturaLlenado?'none':'inline-flex';
-  document.getElementById('btnEnviarLlenado').style.display = _soloLecturaLlenado?'none':'inline-flex';
-  document.getElementById('llenarFormatoSoloLectura').style.display = _soloLecturaLlenado?'block':'none';
+  document.getElementById('btnGuardarBorradorLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
+  document.getElementById('btnEnviarLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
+  document.getElementById('btnGuardarCorreccionLlenado').style.display = modoCorreccion?'inline-flex':'none';
+  document.getElementById('llenarFormatoSoloLectura').style.display = (_soloLecturaLlenado && !modoCorreccion)?'block':'none';
 
   document.getElementById('modalLlenarFormato').classList.add('show');
 }
@@ -5590,7 +5643,9 @@ async function guardarLlenadoFormato(estadoFinal){
     if(errorValidacion){ toast(errorValidacion,'error'); return; }
   }
 
-  const btn = estadoFinal==='enviado' ? document.getElementById('btnEnviarLlenado') : document.getElementById('btnGuardarBorradorLlenado');
+  const btn = estadoFinal==='enviado' ? document.getElementById('btnEnviarLlenado')
+    : estadoFinal==='corregido' ? document.getElementById('btnGuardarCorreccionLlenado')
+    : document.getElementById('btnGuardarBorradorLlenado');
   const textoOriginal = btn.textContent;
   btn.disabled=true; btn.textContent='Guardando...';
 
@@ -5605,7 +5660,9 @@ async function guardarLlenadoFormato(estadoFinal){
   let respuestaId = _respuestaLlenadoId;
   let error;
   if(respuestaId){
-    ({ error } = await sb.from('formatos_calidad_respuestas').update({respuestas:_valoresLlenado, estado:estadoFinal, updated_at:new Date().toISOString()}).eq('id',respuestaId));
+    const updateData = {respuestas:_valoresLlenado, estado:estadoFinal, updated_at:new Date().toISOString()};
+    if(estadoFinal==='corregido') updateData.corregido_por = currentUser?.id;
+    ({ error } = await sb.from('formatos_calidad_respuestas').update(updateData).eq('id',respuestaId));
   } else {
     const { data: nueva, error: errIns } = await sb.from('formatos_calidad_respuestas').insert(data).select('id').single();
     error = errIns;
@@ -5626,9 +5683,66 @@ async function guardarLlenadoFormato(estadoFinal){
   }
 
   btn.disabled=false; btn.textContent=textoOriginal;
-  toast(estadoFinal==='enviado'?'Formato enviado ✓':'Borrador guardado ✓','success');
+  const mensajes = {enviado:'Formato enviado ✓', corregido:'Corrección guardada ✓', borrador:'Borrador guardado ✓'};
+  toast(mensajes[estadoFinal]||'Guardado ✓','success');
   cerrarModal('modalLlenarFormato');
   cargarFormatosCalidad();
+}
+
+function exportarPdfFormato(){
+  const plantilla = _plantillaLlenadoActual;
+  if(!plantilla){ toast('No hay formato cargado','error'); return; }
+
+  const proyectoNombre = proyectos.find(p=>p.id===currentProyecto)?.nombre || '';
+  const campos = plantilla.campos||[];
+  const fotos = window._fotosLlenadoExistentes||[];
+
+  const filasHtml = campos.map(c=>{
+    if(c.tipo==='seccion'){
+      return `<tr><td colspan="2" style="background:#0073ea;color:#fff;font-weight:700;padding:8px;font-size:13px">${c.etiqueta}</td></tr>`;
+    }
+    const val = _valoresLlenado[c.id];
+
+    if(c.tipo==='tabla_repetible'){
+      const filas = Array.isArray(val) ? val : [];
+      const tablaInterna = `<table style="width:100%;border-collapse:collapse;margin-top:4px">
+        <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8">${col}</th>`).join('')}</tr>
+        ${filas.map(fila=>`<tr>${c.columnas.map((_,ci)=>`<td style="border:1px solid #ccc;padding:4px;font-size:11px">${fila?.[ci]||''}</td>`).join('')}</tr>`).join('')}
+      </table>`;
+      return `<tr><td colspan="2" style="padding:8px;border-bottom:1px solid #e6e9ef"><div style="font-weight:600;font-size:12px;margin-bottom:4px">${c.etiqueta}</div>${tablaInterna}</td></tr>`;
+    }
+
+    if(c.tipo==='foto'){
+      const fotosCampo = fotos.filter(f=>f.campo_id===c.id);
+      return `<tr><td style="padding:8px;border-bottom:1px solid #e6e9ef;font-weight:600;font-size:12px;width:35%">${c.etiqueta}</td>
+        <td style="padding:8px;border-bottom:1px solid #e6e9ef">${fotosCampo.map(f=>`<img src="${f.url}" style="width:100px;height:auto;margin-right:6px;border:1px solid #ccc"/>`).join('')||'—'}</td></tr>`;
+    }
+
+    let valorMostrar = val!=null && val!=='' ? val : '—';
+    if(c.tipo==='si_no') valorMostrar = val==='si'?'Sí':val==='no'?'No':'—';
+
+    return `<tr><td style="padding:8px;border-bottom:1px solid #e6e9ef;font-weight:600;font-size:12px;width:35%">${c.etiqueta}</td>
+      <td style="padding:8px;border-bottom:1px solid #e6e9ef;font-size:12px">${valorMostrar}</td></tr>`;
+  }).join('');
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`
+    <html><head><title>${plantilla.nombre}</title>
+    <style>
+      body{font-family:Arial,sans-serif;color:#323338;padding:24px}
+      h1{font-size:18px;color:#0073ea;margin-bottom:4px}
+      .sub{font-size:12px;color:#676879;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}
+      @media print{ body{padding:0} }
+    </style></head>
+    <body>
+      <h1>${plantilla.nombre}</h1>
+      <div class="sub">Proyecto: ${proyectoNombre} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>
+      <table>${filasHtml}</table>
+    </body></html>
+  `);
+  ventana.document.close();
+  setTimeout(()=>{ ventana.print(); }, 300);
 }
 
 // ── PRESENCIA EN LÍNEA ──
