@@ -1447,7 +1447,19 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <input type="text" class="form-control" id="ncOpciones" placeholder="Opciones separadas por coma: Cumple, No cumple, N/A"/>
           </div>
           <div id="ncColumnasWrap" style="display:none;margin-bottom:8px">
-            <input type="text" class="form-control" id="ncColumnas" placeholder="Columnas separadas por coma: Longitud (m), Descripción"/>
+            <label style="font-size:11px;color:#676879;display:block;margin-bottom:4px">Columnas de la tabla</label>
+            <div id="listaColumnasTabla" style="margin-bottom:6px"></div>
+            <div style="display:grid;grid-template-columns:1fr 110px;gap:6px">
+              <input type="text" class="form-control" id="colNombre" placeholder="Nombre de columna" style="font-size:12px;padding:6px"/>
+              <select class="form-control" id="colTipo" onchange="toggleOpcionesColumnaNueva()" style="font-size:12px;padding:6px">
+                <option value="texto">📝 Texto</option>
+                <option value="seleccion">📋 Desplegable</option>
+              </select>
+            </div>
+            <div id="colOpcionesWrap" style="display:none;margin-top:6px">
+              <input type="text" class="form-control" id="colOpciones" placeholder="Opciones separadas por coma: Cumple, No cumple, N/A" style="font-size:12px;padding:6px"/>
+            </div>
+            <button type="button" onclick="agregarColumnaTabla()" class="btn" style="font-size:11px;padding:5px 10px;margin-top:6px">+ Agregar columna</button>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between">
             <label id="ncRequeridoWrap" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
@@ -5217,8 +5229,14 @@ function renderCamposPlantilla(){
     return;
   }
   cont.innerHTML = _camposPlantillaActual.map((c,i)=>{
+    const botonesOrden = `<div style="display:flex;flex-direction:column;gap:2px">
+      <button onclick="moverCampoPlantilla(${i},-1)" class="btn" style="padding:1px 5px;font-size:9px;line-height:1" ${i===0?'disabled':''}>▲</button>
+      <button onclick="moverCampoPlantilla(${i},1)" class="btn" style="padding:1px 5px;font-size:9px;line-height:1" ${i===_camposPlantillaActual.length-1?'disabled':''}>▼</button>
+    </div>`;
+
     if(c.tipo==='seccion'){
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;margin-top:${i>0?'12px':'0'};border-bottom:2px solid #0073ea">
+        ${botonesOrden}
         <span style="font-size:13px;font-weight:700;color:#0073ea;text-transform:uppercase;flex:1">📌 ${c.etiqueta}</span>
         <button onclick="editarCampoPlantilla(${i})" class="btn" style="padding:2px 6px;font-size:10px">✏️</button>
         <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:2px 6px;font-size:10px;color:#e2445c">🗑</button>
@@ -5226,10 +5244,11 @@ function renderCamposPlantilla(){
     }
     if(c.tipo==='tabla_repetible'){
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:8px;background:#fff">
+        ${botonesOrden}
         <span style="font-size:16px">📑</span>
         <div style="flex:1">
           <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
-          <div style="font-size:11px;color:#676879">Tabla repetible — columnas: ${(c.columnas||[]).join(', ')}</div>
+          <div style="font-size:11px;color:#676879">Tabla repetible — columnas: ${(c.columnas||[]).map(col=>typeof col==='string'?col:col.nombre).join(', ')}</div>
         </div>
         <button onclick="editarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
         <button onclick="quitarCampoPlantilla(${i})" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
@@ -5237,6 +5256,7 @@ function renderCamposPlantilla(){
     }
     return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:8px;background:#fff">
+      ${botonesOrden}
       <span style="font-size:16px">${TIPOS_CAMPO_FORMATO[c.tipo]?.icon||'❓'}</span>
       <div style="flex:1">
         <div style="font-weight:600;font-size:13px">${c.etiqueta}${c.requerido?' <span style="color:#e2445c">*</span>':''}</div>
@@ -5249,10 +5269,20 @@ function renderCamposPlantilla(){
 }
 
 let _editandoCampoIndex = null;
+let _columnasTablaActual = [];
 
 function quitarCampoPlantilla(i){
   _camposPlantillaActual.splice(i,1);
   if(_editandoCampoIndex===i) cancelarEdicionCampoPlantilla();
+  renderCamposPlantilla();
+}
+
+function moverCampoPlantilla(i, direccion){
+  const j = i + direccion;
+  if(j<0 || j>=_camposPlantillaActual.length) return;
+  [_camposPlantillaActual[i], _camposPlantillaActual[j]] = [_camposPlantillaActual[j], _camposPlantillaActual[i]];
+  if(_editandoCampoIndex===i) _editandoCampoIndex=j;
+  else if(_editandoCampoIndex===j) _editandoCampoIndex=i;
   renderCamposPlantilla();
 }
 
@@ -5263,7 +5293,9 @@ function editarCampoPlantilla(i){
   document.getElementById('ncEtiqueta').value = c.etiqueta||'';
   document.getElementById('ncTipo').value = c.tipo;
   document.getElementById('ncOpciones').value = (c.opciones||[]).join(', ');
-  document.getElementById('ncColumnas').value = (c.columnas||[]).join(', ');
+  // Compatibilidad: columnas viejas eran array de strings; normalizar a objetos
+  _columnasTablaActual = (c.columnas||[]).map(col => typeof col==='string' ? {nombre:col, tipo:'texto', opciones:null} : col);
+  renderColumnasTabla();
   document.getElementById('ncRequerido').checked = !!c.requerido;
   toggleOpcionesCampoNuevo();
 
@@ -5275,11 +5307,12 @@ function editarCampoPlantilla(i){
 
 function cancelarEdicionCampoPlantilla(){
   _editandoCampoIndex = null;
+  _columnasTablaActual = [];
   document.getElementById('ncEtiqueta').value='';
   document.getElementById('ncOpciones').value='';
-  document.getElementById('ncColumnas').value='';
   document.getElementById('ncRequerido').checked=false;
   document.getElementById('ncTipo').value='seccion';
+  renderColumnasTabla();
   toggleOpcionesCampoNuevo();
   document.getElementById('tituloFormCampo').textContent = 'Agregar campo';
   document.getElementById('btnAgregarCampoPlantilla').textContent = '+ Agregar campo';
@@ -5291,6 +5324,47 @@ function toggleOpcionesCampoNuevo(){
   document.getElementById('ncOpcionesWrap').style.display = tipo==='seleccion' ? 'block' : 'none';
   document.getElementById('ncColumnasWrap').style.display = tipo==='tabla_repetible' ? 'block' : 'none';
   document.getElementById('ncRequeridoWrap').style.display = (tipo==='seccion') ? 'none' : 'flex';
+}
+
+function toggleOpcionesColumnaNueva(){
+  const tipo = document.getElementById('colTipo').value;
+  document.getElementById('colOpcionesWrap').style.display = tipo==='seleccion' ? 'block' : 'none';
+}
+
+function renderColumnasTabla(){
+  const cont = document.getElementById('listaColumnasTabla');
+  if(!_columnasTablaActual.length){
+    cont.innerHTML = '<div style="font-size:11px;color:#676879;padding:4px 0">Sin columnas todavía</div>';
+    return;
+  }
+  cont.innerHTML = _columnasTablaActual.map((col,ci)=>`
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#fff;border:1px solid #e6e9ef;border-radius:6px;margin-bottom:4px">
+      <span style="font-size:11px;flex:1"><b>${col.nombre}</b> ${col.tipo==='seleccion'?`— 📋 ${(col.opciones||[]).join(', ')}`:'— 📝 texto'}</span>
+      <button type="button" onclick="quitarColumnaTabla(${ci})" class="btn" style="padding:1px 6px;font-size:10px;color:#e2445c">🗑</button>
+    </div>`).join('');
+}
+
+function agregarColumnaTabla(){
+  const nombre = document.getElementById('colNombre').value.trim();
+  const tipo = document.getElementById('colTipo').value;
+  if(!nombre){ toast('Ingresa un nombre para la columna','error'); return; }
+
+  let opciones = null;
+  if(tipo==='seleccion'){
+    const raw = document.getElementById('colOpciones').value.trim();
+    opciones = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    if(opciones.length<2){ toast('Ingresa al menos 2 opciones separadas por coma','error'); return; }
+  }
+
+  _columnasTablaActual.push({nombre, tipo, opciones});
+  document.getElementById('colNombre').value='';
+  document.getElementById('colOpciones').value='';
+  renderColumnasTabla();
+}
+
+function quitarColumnaTabla(ci){
+  _columnasTablaActual.splice(ci,1);
+  renderColumnasTabla();
 }
 
 function agregarCampoPlantilla(){
@@ -5309,9 +5383,8 @@ function agregarCampoPlantilla(){
   }
 
   if(tipo==='tabla_repetible'){
-    const raw = document.getElementById('ncColumnas').value.trim();
-    columnas = raw.split(',').map(s=>s.trim()).filter(Boolean);
-    if(columnas.length<1){ toast('Ingresa al menos 1 columna separadas por coma','error'); return; }
+    if(_columnasTablaActual.length<1){ toast('Agrega al menos 1 columna a la tabla','error'); return; }
+    columnas = _columnasTablaActual;
   }
 
   const campo = {
@@ -5569,7 +5642,7 @@ function renderFormularioLlenado(campos){
         <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
         <div style="overflow-x:auto">
           <table style="width:100%">
-            <thead><tr>${c.columnas.map(col=>`<th style="font-size:11px">${col}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
+            <thead><tr>${c.columnas.map(col=>`<th style="font-size:11px">${typeof col==='string'?col:col.nombre}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
             <tbody id="tablaRep_${c.id}">
               ${filas.map((fila,fi)=>renderFilaTablaRepetible(c.id, c.columnas, fila, fi, ro)).join('')}
             </tbody>
@@ -5625,10 +5698,23 @@ function renderFormularioLlenado(campos){
 
 function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
   return `<tr data-fi="${fi}">
-    ${columnas.map((col,ci)=>`<td>
-      <input type="text" class="form-control" style="font-size:12px;padding:6px" value="${fila?.[ci]!=null?fila[ci]:''}" ${ro?'disabled':''}
-        oninput="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
-    </td>`).join('')}
+    ${columnas.map((colRaw,ci)=>{
+      const col = typeof colRaw==='string' ? {nombre:colRaw, tipo:'texto', opciones:null} : colRaw;
+      const valorActual = fila?.[ci]!=null?fila[ci]:'';
+      if(col.tipo==='seleccion'){
+        return `<td>
+          <select class="form-control" style="font-size:12px;padding:6px" ${ro?'disabled':''}
+            onchange="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)">
+            <option value="">—</option>
+            ${(col.opciones||[]).map(o=>`<option value="${o}" ${valorActual===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </td>`;
+      }
+      return `<td>
+        <input type="text" class="form-control" style="font-size:12px;padding:6px" value="${valorActual}" ${ro?'disabled':''}
+          oninput="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
+      </td>`;
+    }).join('')}
     ${ro?'':`<td><button type="button" onclick="quitarFilaTablaRepetible('${campoId}',${fi})" class="btn" style="padding:2px 6px;font-size:10px;color:#e2445c">🗑</button></td>`}
   </tr>`;
 }
@@ -5750,7 +5836,7 @@ function exportarPdfFormato(){
     if(c.tipo==='tabla_repetible'){
       const filas = Array.isArray(val) ? val : [];
       const tablaInterna = `<table style="width:100%;border-collapse:collapse;margin-top:4px">
-        <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8">${col}</th>`).join('')}</tr>
+        <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8">${typeof col==='string'?col:col.nombre}</th>`).join('')}</tr>
         ${filas.map(fila=>`<tr>${c.columnas.map((_,ci)=>`<td style="border:1px solid #ccc;padding:4px;font-size:11px">${fila?.[ci]||''}</td>`).join('')}</tr>`).join('')}
       </table>`;
       return `<tr><td colspan="2" style="padding:8px;border-bottom:1px solid #e6e9ef"><div style="font-weight:600;font-size:12px;margin-bottom:4px">${c.etiqueta}</div>${tablaInterna}</td></tr>`;
