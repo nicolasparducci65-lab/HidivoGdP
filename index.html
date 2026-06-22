@@ -5477,14 +5477,19 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
   _modoCorreccionLlenado = modoCorreccion;
 
   let estadoActual = 'borrador';
+  let _residenteLlenadoNombre = '';
   if(respuestaId){
-    const { data: resp } = await sb.from('formatos_calidad_respuestas').select('*').eq('id',respuestaId).single();
+    const { data: resp } = await sb.from('formatos_calidad_respuestas').select('*, perfiles:residente_id(nombre,apellido)').eq('id',respuestaId).single();
     if(resp){
       _valoresLlenado = resp.respuestas||{};
       estadoActual = resp.estado;
       _soloLecturaLlenado = modoCorreccion ? false : (resp.estado!=='borrador');
+      _residenteLlenadoNombre = resp.perfiles ? `${resp.perfiles.nombre||''} ${resp.perfiles.apellido||''}`.trim() : '';
     }
+  } else {
+    _residenteLlenadoNombre = `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim();
   }
+  window._residenteLlenadoNombre = _residenteLlenadoNombre;
 
   document.getElementById('llenarFormatoTitulo').textContent = (modoCorreccion?'Corregir: ':'') + plantilla.nombre;
   document.getElementById('llenarFormatoId').value = respuestaId||'';
@@ -5737,6 +5742,12 @@ function exportarPdfFormato(){
       h1{font-size:18px;color:#0073ea;margin:0 0 4px 0}
       .sub{font-size:12px;color:#676879;margin:0}
       table{width:100%;border-collapse:collapse}
+      .firmas{display:flex;justify-content:space-between;gap:16px;margin-top:48px;page-break-inside:avoid}
+      .firma-box{flex:1;text-align:center}
+      .firma-box img{height:40px;object-fit:contain;margin-bottom:24px;opacity:.85}
+      .linea-firma{border-top:1px solid #323338;margin-bottom:6px}
+      .firma-rol{font-size:12px;font-weight:700;color:#323338}
+      .firma-nombre{font-size:11px;color:#676879}
       @media print{ body{padding:0} }
     </style></head>
     <body>
@@ -5748,6 +5759,25 @@ function exportarPdfFormato(){
         </div>
       </div>
       <table>${filasHtml}</table>
+
+      <div class="firmas">
+        <div class="firma-box">
+          <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HiDiVo"/>
+          <div class="linea-firma"></div>
+          <div class="firma-rol">Residente</div>
+          <div class="firma-nombre">${window._residenteLlenadoNombre||''}</div>
+        </div>
+        <div class="firma-box">
+          <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HiDiVo"/>
+          <div class="linea-firma"></div>
+          <div class="firma-rol">Fiscalizador</div>
+        </div>
+        <div class="firma-box">
+          <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HiDiVo"/>
+          <div class="linea-firma"></div>
+          <div class="firma-rol">Contratista</div>
+        </div>
+      </div>
     </body></html>
   `);
   ventana.document.close();
