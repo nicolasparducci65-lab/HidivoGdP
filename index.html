@@ -170,7 +170,7 @@ select.form-control{appearance:none}
 .success-msg{background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
 
 /* Toast */
-.toast{position:fixed;bottom:24px;right:24px;background:#323338;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
+.toast{position:fixed;bottom:24px;right:24px;background:#323338;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
 /* Modo residente - en libro de obra solo puede crear, no editar ni eliminar */
 body.modo-residente #btnEliminarDetalle,
 body.modo-residente button[onclick*="abrirEditarRegistro"],
@@ -1505,7 +1505,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalLlenarFormato')">Cerrar</button>
-      <button class="btn" onclick="exportarPdfFormato()">🖨️ Exportar PDF</button>
+      <button class="btn" id="btnExportarPdfLlenado" onclick="exportarPdfFormato()">🖨️ Exportar PDF</button>
       <button class="btn" id="btnGuardarBorradorLlenado" onclick="guardarLlenadoFormato('borrador')">💾 Guardar borrador</button>
       <button class="btn primary" id="btnEnviarLlenado" onclick="guardarLlenadoFormato('enviado')">📤 Enviar</button>
       <button class="btn primary" id="btnGuardarCorreccionLlenado" onclick="guardarLlenadoFormato('corregido')" style="display:none">✅ Guardar corrección</button>
@@ -5502,6 +5502,7 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
   document.getElementById('btnGuardarBorradorLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
   document.getElementById('btnEnviarLlenado').style.display = (!modoCorreccion && !_soloLecturaLlenado)?'inline-flex':'none';
   document.getElementById('btnGuardarCorreccionLlenado').style.display = modoCorreccion?'inline-flex':'none';
+  document.getElementById('btnExportarPdfLlenado').style.display = ['admin','fiscalizador'].includes(currentPerfil?.rol)?'inline-flex':'none';
   document.getElementById('llenarFormatoSoloLectura').style.display = (_soloLecturaLlenado && !modoCorreccion)?'block':'none';
 
   document.getElementById('modalLlenarFormato').classList.add('show');
