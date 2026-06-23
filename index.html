@@ -58,6 +58,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   /* Chat layout en móvil */
   #chatContainer{grid-template-columns:1fr!important}
   #chatContainer > div:first-child{display:none}
+  /* Indicadores Curva S en móvil: 2 columnas */
+  #curvaSIndicadores{grid-template-columns:1fr 1fr!important}
   /* Curva S en móvil */
   #curvaSContent .card{overflow-x:auto}
   /* Fiscalización en móvil */
@@ -3715,7 +3717,7 @@ function renderCurvaS(proy){
   </div>
 
   <!-- INDICADORES -->
-  <div id="curvaSIndicadores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
+  <div id="curvaSIndicadores" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px"></div>
 
   <!-- PROYECCIONES EVM -->
   <div id="curvaSProyecciones" style="margin-bottom:16px"></div>
