@@ -5903,6 +5903,82 @@ async function guardarLlenadoFormato(estadoFinal){
   cargarFormatosCalidad();
 }
 
+const COLORES_TIPO_SUELO = {
+  'relleno':            '#bdb76b',
+  'turba':              '#4b3621',
+  'arcilla':            '#8b5a2b',
+  'limo':               '#c2b280',
+  'limo arcilloso':     '#a9854a',
+  'arena':              '#f4d35e',
+  'arena arcillosa':    '#dcb35c',
+  'arena limosa':       '#e3c878',
+  'arena con grava':    '#d9a85c',
+  'grava':              '#9e9e9e',
+  'grava arenosa':      '#b5a888',
+  'grava limosa':       '#a8a08a',
+  'grava arcillosa':    '#9c8568',
+  'roca meteorizada':   '#7d7d7d',
+  'roca':                '#4d4d4d'
+};
+
+function colorPorTipoSuelo(tipo){
+  if(!tipo) return '#e6e9ef';
+  return COLORES_TIPO_SUELO[tipo.trim().toLowerCase()] || '#cccccc';
+}
+
+// Genera el dibujo de columna estratigráfica para un campo de tabla repetible
+// que represente el Perfil de Excavación (columnas: Inicio Estrato, Fin Estrato, Tipo de Suelo)
+function generarDibujoPerfilSuelo(campo, filas){
+  const nombresCol = (campo.columnas||[]).map(c=>(typeof c==='string'?c:c.nombre).trim().toLowerCase());
+  const idxInicio = nombresCol.findIndex(n=>n.includes('inicio'));
+  const idxFin = nombresCol.findIndex(n=>n.includes('fin'));
+  const idxTipo = nombresCol.findIndex(n=>n.includes('tipo de suelo')||n.includes('tipo suelo'));
+
+  if(idxInicio===-1 || idxFin===-1 || idxTipo===-1 || !filas.length) return '';
+
+  const estratos = filas
+    .map(f=>({ inicio: parseFloat(f?.[idxInicio]), fin: parseFloat(f?.[idxFin]), tipo: f?.[idxTipo]||'' }))
+    .filter(e=>!isNaN(e.inicio) && !isNaN(e.fin) && e.fin>e.inicio)
+    .sort((a,b)=>a.inicio-b.inicio);
+
+  if(!estratos.length) return '';
+
+  const profundidadTotal = Math.max(...estratos.map(e=>e.fin));
+  const ALTO_PX = 420; // alto total del dibujo en px
+  const ANCHO_COL = 90;
+
+  const segmentos = estratos.map(e=>{
+    const alturaPct = ((e.fin-e.inicio)/profundidadTotal)*100;
+    return `<div style="height:${alturaPct}%;background:${colorPorTipoSuelo(e.tipo)};border-bottom:1px solid rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;position:relative">
+      <span style="font-size:9px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;max-height:100%;overflow:hidden">${e.tipo} (${e.fin-e.inicio}m)</span>
+    </div>`;
+  }).join('');
+
+  // Marcas de profundidad cada metro entero
+  const marcas = [];
+  for(let m=0; m<=profundidadTotal; m++){
+    const topPct = (m/profundidadTotal)*100;
+    marcas.push(`<div style="position:absolute;top:${topPct}%;left:-26px;font-size:9px;color:#676879;transform:translateY(-50%)">${m}m</div>`);
+  }
+
+  const leyenda = [...new Set(estratos.map(e=>e.tipo))].map(t=>`
+    <div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-bottom:3px">
+      <span style="width:12px;height:12px;background:${colorPorTipoSuelo(t)};border-radius:2px;display:inline-block"></span> ${t}
+    </div>`).join('');
+
+  return `
+  <div style="display:flex;gap:28px;align-items:flex-start;margin-top:10px;page-break-inside:avoid">
+    <div style="position:relative;width:${ANCHO_COL}px;height:${ALTO_PX}px;margin-left:26px;border:1px solid #999;border-radius:3px;overflow:hidden;display:flex;flex-direction:column">
+      ${segmentos}
+      ${marcas.join('')}
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px">Leyenda — Tipos de suelo</div>
+      ${leyenda}
+    </div>
+  </div>`;
+}
+
 function exportarPdfFormato(){
   const plantilla = _plantillaLlenadoActual;
   if(!plantilla){ toast('No hay formato cargado','error'); return; }
@@ -5930,7 +6006,14 @@ function exportarPdfFormato(){
           return `<td style="border:1px solid #ccc;padding:4px;font-size:11px">${contenido}</td>`;
         }).join('')}</tr>`).join('')}
       </table>`;
-      return `<tr><td colspan="2" style="padding:8px;border-bottom:1px solid #e6e9ef"><div style="font-weight:600;font-size:12px;margin-bottom:4px">${c.etiqueta}</div>${tablaInterna}</td></tr>`;
+      const dibujoPerfil = generarDibujoPerfilSuelo(c, filas);
+      return `<tr><td colspan="2" style="padding:8px;border-bottom:1px solid #e6e9ef">
+        <div style="font-weight:600;font-size:12px;margin-bottom:4px">${c.etiqueta}</div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:1;min-width:200px">${tablaInterna}</div>
+          ${dibujoPerfil?`<div>${dibujoPerfil}</div>`:''}
+        </div>
+      </td></tr>`;
     }
 
     if(c.tipo==='foto'){
