@@ -1507,16 +1507,16 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 
 <!-- MODAL: Llenar Formato de Calidad -->
 <div class="modal-overlay" id="modalLlenarFormato">
-  <div class="modal" style="width:640px;max-width:98vw;max-height:90vh">
+  <div class="modal" style="width:800px;max-width:98vw;max-height:92vh">
     <div class="modal-header">
-      <div class="modal-title" id="llenarFormatoTitulo">Formato de Calidad</div>
+      <div class="modal-title" id="llenarFormatoTitulo" style="font-size:18px">Formato de Calidad</div>
       <button class="btn" onclick="cerrarModal('modalLlenarFormato')" style="padding:6px 10px">✕</button>
     </div>
-    <div class="modal-body" style="max-height:65vh;overflow-y:auto">
+    <div class="modal-body" style="max-height:72vh;overflow-y:auto;padding:20px 24px">
       <input type="hidden" id="llenarFormatoId"/>
       <input type="hidden" id="llenarFormatoPlantillaId"/>
-      <div id="llenarFormatoSoloLectura" style="display:none;background:#fff4e5;color:#946200;font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:12px">
-        Este registro ya fue enviado y no puede editarse. Solo el fiscalizador puede corregirlo.
+      <div id="llenarFormatoSoloLectura" style="display:none;background:#fff4e5;color:#946200;font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">🔒</span> Este registro ya fue enviado y no puede editarse. Solo el fiscalizador puede corregirlo.
       </div>
       <div id="formularioLlenadoContent"></div>
     </div>
@@ -5670,72 +5670,74 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
 function renderFormularioLlenado(campos){
   const cont = document.getElementById('formularioLlenadoContent');
   const ro = _soloLecturaLlenado;
+  const ICONO = {texto:'📝', numero:'🔢', fecha:'📅', si_no:'✅', seleccion:'📋', foto:'📷', tabla_repetible:'📑'};
+
+  const campoWrap = (c, innerHtml) => `
+    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:10px;padding:16px 18px;margin-top:14px;${c.requerido?'border-left:3px solid #0073ea':''}">
+      <label style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:#323338;margin-bottom:10px">
+        <span style="font-size:17px">${ICONO[c.tipo]||'📝'}</span>
+        ${c.etiqueta}${c.requerido?' <span style="color:#e2445c;font-size:16px">*</span>':''}
+      </label>
+      ${innerHtml}
+    </div>`;
 
   cont.innerHTML = campos.map(c=>{
     if(c.tipo==='seccion'){
-      return `<div style="font-size:13px;font-weight:700;color:#0073ea;text-transform:uppercase;border-bottom:2px solid #0073ea;padding:8px 0;margin-top:16px">📌 ${c.etiqueta}</div>`;
+      return `<div style="background:linear-gradient(135deg,#0073ea,#0060c2);color:#fff;font-size:16px;font-weight:700;letter-spacing:.3px;border-radius:10px;padding:12px 18px;margin-top:24px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,115,234,.25)">
+        <span style="font-size:18px">📌</span> ${c.etiqueta}
+      </div>`;
     }
 
     const val = _valoresLlenado[c.id];
 
     if(c.tipo==='tabla_repetible'){
       const filas = Array.isArray(val) ? val : [];
-      return `
-      <div class="form-group" style="margin-top:10px">
-        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
+      return campoWrap(c, `
         <div style="overflow-x:auto">
-          <table style="width:100%">
-            <thead><tr>${c.columnas.map(col=>`<th style="font-size:11px">${typeof col==='string'?col:col.nombre}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
+          <table style="width:100%;font-size:14px">
+            <thead><tr>${c.columnas.map(col=>`<th style="font-size:13px;padding:8px 6px">${typeof col==='string'?col:col.nombre}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
             <tbody id="tablaRep_${c.id}">
               ${filas.map((fila,fi)=>renderFilaTablaRepetible(c.id, c.columnas, fila, fi, ro)).join('')}
             </tbody>
           </table>
         </div>
-        ${ro?'':`<button type="button" onclick="agregarFilaTablaRepetible('${c.id}')" class="btn" style="font-size:11px;padding:5px 10px;margin-top:6px">+ Agregar fila</button>`}
-      </div>`;
+        ${ro?'':`<button type="button" onclick="agregarFilaTablaRepetible('${c.id}')" class="btn" style="font-size:13px;padding:7px 14px;margin-top:10px">+ Agregar fila</button>`}
+      `);
     }
 
     if(c.tipo==='foto'){
       const fotosCampo = (window._fotosLlenadoExistentes||[]).filter(f=>f.campo_id===c.id);
-      return `
-      <div class="form-group" style="margin-top:10px">
-        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px" id="previewFoto_${c.id}">
-          ${fotosCampo.map(f=>`<img src="${f.url}" style="width:70px;height:55px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`).join('')}
+      return campoWrap(c, `
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px" id="previewFoto_${c.id}">
+          ${fotosCampo.map(f=>`<img src="${f.url}" style="width:90px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #e6e9ef"/>`).join('')}
         </div>
-        ${ro?'':`<input type="file" accept="image/*" class="form-control" onchange="seleccionarFotoLlenado('${c.id}', this)"/>`}
-      </div>`;
+        ${ro?'':`<input type="file" accept="image/*" class="form-control" style="font-size:14px;padding:10px" onchange="seleccionarFotoLlenado('${c.id}', this)"/>`}
+      `);
     }
 
     if(c.tipo==='si_no'){
-      return `
-      <div class="form-group" style="margin-top:10px">
-        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
-        <select class="form-control" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
+      return campoWrap(c, `
+        <select class="form-control" style="font-size:15px;padding:10px 12px" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
           <option value="">— Selecciona —</option>
-          <option value="si" ${val==='si'?'selected':''}>Sí</option>
-          <option value="no" ${val==='no'?'selected':''}>No</option>
+          <option value="si" ${val==='si'?'selected':''}>✅ Sí</option>
+          <option value="no" ${val==='no'?'selected':''}>❌ No</option>
         </select>
-      </div>`;
+      `);
     }
 
     if(c.tipo==='seleccion'){
-      return `
-      <div class="form-group" style="margin-top:10px">
-        <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
-        <select class="form-control" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
+      return campoWrap(c, `
+        <select class="form-control" style="font-size:15px;padding:10px 12px" ${ro?'disabled':''} onchange="_valoresLlenado['${c.id}']=this.value">
           <option value="">— Selecciona —</option>
           ${(c.opciones||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}
         </select>
-      </div>`;
+      `);
     }
 
     const inputType = c.tipo==='numero'?'number':c.tipo==='fecha'?'date':'text';
-    return `
-    <div class="form-group" style="margin-top:10px">
-      <label class="form-label">${c.etiqueta}${c.requerido?' *':''}</label>
-      <input type="${inputType}" class="form-control" value="${val!=null?val:''}" ${ro?'disabled':''} oninput="_valoresLlenado['${c.id}']=this.value"/>
-    </div>`;
+    return campoWrap(c, `
+      <input type="${inputType}" class="form-control" style="font-size:15px;padding:10px 12px" value="${val!=null?val:''}" ${ro?'disabled':''} oninput="_valoresLlenado['${c.id}']=this.value"/>
+    `);
   }).join('');
 }
 
