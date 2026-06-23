@@ -5089,12 +5089,12 @@ async function cargarFormatosCalidad(){
   const puedeEditar = ['admin','fiscalizador'].includes(rol);
   const esResidente = rol==='residente';
 
-  // Plantillas asignadas a este proyecto
+  // Plantillas asignadas a este proyecto (incluye el rol que debe llenarlas)
   const { data: asignaciones } = await sb.from('formatos_calidad_asignaciones')
-    .select('id, plantilla_id, formatos_calidad_plantillas(id,nombre,descripcion,campos,activo)')
+    .select('id, plantilla_id, rol_llenado, formatos_calidad_plantillas(id,nombre,descripcion,campos,activo)')
     .eq('proyecto_id', currentProyecto);
 
-  const plantillasAsignadas = (asignaciones||[]).map(a=>a.formatos_calidad_plantillas).filter(Boolean);
+  const plantillasAsignadas = (asignaciones||[]).map(a=>({...a.formatos_calidad_plantillas, rol_llenado:a.rol_llenado})).filter(p=>p && p.id);
 
   // Conteo de respuestas por plantilla en este proyecto
   const { data: respuestas } = await sb.from('formatos_calidad_respuestas')
@@ -5103,12 +5103,21 @@ async function cargarFormatosCalidad(){
   (respuestas||[]).forEach(r=>{ conteoPorPlantilla[r.plantilla_id] = (conteoPorPlantilla[r.plantilla_id]||0)+1; });
 
   if(esResidente){
-    renderFormatosCalidadResidente(plantillasAsignadas, respuestas||[]);
+    const plantillasResidente = plantillasAsignadas.filter(p=>p.rol_llenado==='residente');
+    renderFormatosCalidadResidente(plantillasResidente, respuestas||[]);
     return;
   }
 
+  // admin/fiscalizador: si hay formatos asignados a 'fiscalizador', mostrarles también la vista de llenado
+  const plantillasParaLlenar = plantillasAsignadas.filter(p=>p.rol_llenado==='fiscalizador');
+  let htmlLlenado = '';
+  if(plantillasParaLlenar.length){
+    htmlLlenado = renderFormatosCalidadResidente(plantillasParaLlenar, respuestas||[], true);
+  }
+
   document.getElementById('formatosCalidadContent').innerHTML = `
-  <div class="card">
+  ${htmlLlenado}
+  <div class="card" style="margin-top:${htmlLlenado?'16px':'0'}">
     <div class="card-header">
       <div><div class="card-title">✅ Formatos de Calidad del proyecto</div><div class="card-subtitle">${plantillasAsignadas.length} formato(s) asignado(s)</div></div>
       ${puedeEditar?`<div style="display:flex;gap:8px">
@@ -5130,11 +5139,12 @@ async function cargarFormatosCalidad(){
     </div>` : `
     <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>Formato</th><th>Descripción</th><th style="text-align:center">Campos</th><th style="text-align:center">Respuestas</th><th></th></tr></thead>
+        <thead><tr><th>Formato</th><th>Descripción</th><th style="text-align:center">Lo llena</th><th style="text-align:center">Campos</th><th style="text-align:center">Respuestas</th><th></th></tr></thead>
         <tbody>
           ${plantillasAsignadas.map(p=>`<tr>
             <td style="font-weight:600">${p.nombre}</td>
             <td style="font-size:13px;color:#676879">${p.descripcion||'—'}</td>
+            <td style="text-align:center;font-size:12px">${p.rol_llenado==='fiscalizador'?'🔍 Fiscalizador':'👷 Residente'}</td>
             <td style="text-align:center">${(p.campos||[]).length}</td>
             <td style="text-align:center">${conteoPorPlantilla[p.id]||0}</td>
             <td style="text-align:right;white-space:nowrap">
@@ -5148,15 +5158,16 @@ async function cargarFormatosCalidad(){
   </div>`;
 }
 
-function renderFormatosCalidadResidente(plantillas, respuestas){
-  const misRespuestas = respuestas.filter(r=>r.residente_id===currentUser?.id);
+function renderFormatosCalidadResidente(plantillas, respuestas, devolverHtml=false){
+  const misRespuestas = respuestas.filter(r=>r.residente_id===currentUser?.id && plantillas.some(p=>p.id===r.plantilla_id));
   const estadoLabel = {borrador:'📝 Borrador', enviado:'📤 Enviado', corregido:'✅ Corregido'};
   const estadoColor = {borrador:'#ff9f00', enviado:'#0073ea', corregido:'#00c875'};
+  const tituloSeccion = devolverHtml ? '✅ Formatos para Fiscalización' : '✅ Formatos de Calidad disponibles';
 
-  document.getElementById('formatosCalidadContent').innerHTML = `
+  const html = `
   <div class="card">
     <div class="card-header">
-      <div><div class="card-title">✅ Formatos de Calidad disponibles</div><div class="card-subtitle">Selecciona un formato para crear un nuevo registro</div></div>
+      <div><div class="card-title">${tituloSeccion}</div><div class="card-subtitle">Selecciona un formato para crear un nuevo registro</div></div>
     </div>
     ${!plantillas.length ? `
     <div style="padding:32px;text-align:center;color:#676879">
@@ -5198,6 +5209,9 @@ function renderFormatosCalidadResidente(plantillas, respuestas){
       </table>
     </div>`}
   </div>`;
+
+  if(devolverHtml) return html;
+  document.getElementById('formatosCalidadContent').innerHTML = html;
 }
 
 // ── Constructor de plantillas ──
@@ -5462,18 +5476,30 @@ async function abrirModalAsignarFormatos(){
     : await query.is('empresa_id', null);
 
   const { data: asignadasActuales } = await sb.from('formatos_calidad_asignaciones')
-    .select('plantilla_id').eq('proyecto_id', currentProyecto);
-  const idsAsignados = new Set((asignadasActuales||[]).map(a=>a.plantilla_id));
+    .select('plantilla_id, rol_llenado').eq('proyecto_id', currentProyecto);
+  const rolPorPlantilla = {};
+  (asignadasActuales||[]).forEach(a=>{ rolPorPlantilla[a.plantilla_id] = a.rol_llenado; });
 
   const cont = document.getElementById('listaAsignarFormatos');
   if(!todas||!todas.length){
     cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:16px">No hay plantillas disponibles. Crea una primero.</div>';
   } else {
-    cont.innerHTML = todas.map(p=>`
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:6px">
-        <input type="checkbox" class="chkAsignarFormato" value="${p.id}" ${idsAsignados.has(p.id)?'checked':''} style="width:15px;height:15px;accent-color:#0073ea"/>
-        <div><div style="font-weight:600">${p.nombre}</div>${p.descripcion?`<div style="font-size:11px;color:#676879">${p.descripcion}</div>`:''}</div>
-      </label>`).join('');
+    cont.innerHTML = todas.map(p=>{
+      const asignado = rolPorPlantilla.hasOwnProperty(p.id);
+      const rolActual = rolPorPlantilla[p.id]||'residente';
+      return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:6px">
+        <input type="checkbox" class="chkAsignarFormato" value="${p.id}" ${asignado?'checked':''} style="width:15px;height:15px;accent-color:#0073ea"/>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${p.nombre}</div>
+          ${p.descripcion?`<div style="font-size:11px;color:#676879">${p.descripcion}</div>`:''}
+        </div>
+        <select class="selRolAsignarFormato" data-plantilla="${p.id}" style="font-size:12px;padding:4px 6px;border:1px solid #e6e9ef;border-radius:6px">
+          <option value="residente" ${rolActual==='residente'?'selected':''}>👷 Residente</option>
+          <option value="fiscalizador" ${rolActual==='fiscalizador'?'selected':''}>🔍 Fiscalizador</option>
+        </select>
+      </div>`;
+    }).join('');
   }
   document.getElementById('modalAsignarFormatos').classList.add('show');
 }
@@ -5481,6 +5507,8 @@ async function abrirModalAsignarFormatos(){
 async function guardarAsignacionFormatos(){
   if(!currentProyecto) return;
   const seleccionados = Array.from(document.querySelectorAll('.chkAsignarFormato:checked')).map(c=>c.value);
+  const roles = {};
+  document.querySelectorAll('.selRolAsignarFormato').forEach(s=>{ roles[s.dataset.plantilla] = s.value; });
 
   const btn = document.getElementById('btnGuardarAsignarFormatos');
   btn.disabled=true; btn.textContent='Guardando...';
@@ -5489,7 +5517,7 @@ async function guardarAsignacionFormatos(){
   await sb.from('formatos_calidad_asignaciones').delete().eq('proyecto_id', currentProyecto);
   if(seleccionados.length){
     await sb.from('formatos_calidad_asignaciones').insert(
-      seleccionados.map(plantilla_id=>({ proyecto_id: currentProyecto, plantilla_id }))
+      seleccionados.map(plantilla_id=>({ proyecto_id: currentProyecto, plantilla_id, rol_llenado: roles[plantilla_id]||'residente' }))
     );
   }
 
