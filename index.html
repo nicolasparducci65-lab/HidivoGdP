@@ -1454,7 +1454,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <select class="form-control" id="colTipo" onchange="toggleOpcionesColumnaNueva()" style="font-size:12px;padding:6px">
                 <option value="texto">📝 Texto</option>
                 <option value="numero">🔢 Número</option>
+                <option value="fecha">📅 Fecha</option>
+                <option value="si_no">✅ Sí / No</option>
                 <option value="seleccion">📋 Desplegable</option>
+                <option value="foto">📷 Foto</option>
               </select>
             </div>
             <div id="colOpcionesWrap" style="display:none;margin-top:6px">
@@ -5353,7 +5356,15 @@ function renderColumnasTabla(){
     return;
   }
   cont.innerHTML = _columnasTablaActual.map((col,ci)=>{
-    const desc = col.tipo==='seleccion' ? `📋 ${(col.opciones||[]).join(', ')}` : col.tipo==='numero' ? '🔢 número' : '📝 texto';
+    const DESC_TIPO = {
+      seleccion: `📋 ${(col.opciones||[]).join(', ')}`,
+      numero: '🔢 número',
+      fecha: '📅 fecha',
+      si_no: '✅ sí/no',
+      foto: '📷 foto',
+      texto: '📝 texto'
+    };
+    const desc = DESC_TIPO[col.tipo] || DESC_TIPO.texto;
     return `
     <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#fff;border:1px solid #e6e9ef;border-radius:6px;margin-bottom:4px">
       <span style="font-size:11px;flex:1"><b>${col.nombre}</b> — ${desc}</span>
@@ -5733,6 +5744,7 @@ function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
     ${columnas.map((colRaw,ci)=>{
       const col = typeof colRaw==='string' ? {nombre:colRaw, tipo:'texto', opciones:null} : colRaw;
       const valorActual = fila?.[ci]!=null?fila[ci]:'';
+
       if(col.tipo==='seleccion'){
         return `<td>
           <select class="form-control" style="font-size:12px;padding:6px" ${ro?'disabled':''}
@@ -5742,6 +5754,33 @@ function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
           </select>
         </td>`;
       }
+
+      if(col.tipo==='si_no'){
+        return `<td>
+          <select class="form-control" style="font-size:12px;padding:6px" ${ro?'disabled':''}
+            onchange="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)">
+            <option value="">—</option>
+            <option value="si" ${valorActual==='si'?'selected':''}>Sí</option>
+            <option value="no" ${valorActual==='no'?'selected':''}>No</option>
+          </select>
+        </td>`;
+      }
+
+      if(col.tipo==='foto'){
+        const tieneFoto = valorActual && valorActual.startsWith('data:image');
+        return `<td style="text-align:center">
+          ${tieneFoto?`<img src="${valorActual}" style="width:44px;height:34px;object-fit:cover;border-radius:4px;border:1px solid #e6e9ef;display:block;margin:0 auto 4px"/>`:''}
+          ${ro?'':`<input type="file" accept="image/*" style="font-size:10px;width:100px" onchange="seleccionarFotoCeldaTabla('${campoId}',${fi},${ci},this)"/>`}
+        </td>`;
+      }
+
+      if(col.tipo==='fecha'){
+        return `<td>
+          <input type="date" class="form-control" style="font-size:12px;padding:6px" value="${valorActual}" ${ro?'disabled':''}
+            onchange="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
+        </td>`;
+      }
+
       return `<td>
         <input type="${col.tipo==='numero'?'number':'text'}" class="form-control" style="font-size:12px;padding:6px" value="${valorActual}" ${ro?'disabled':''}
           oninput="actualizarCeldaTablaRepetible('${campoId}',${fi},${ci},this.value)"/>
@@ -5766,6 +5805,17 @@ function actualizarCeldaTablaRepetible(campoId, fi, ci, valor){
   if(!_valoresLlenado[campoId]) _valoresLlenado[campoId]=[];
   if(!_valoresLlenado[campoId][fi]) _valoresLlenado[campoId][fi]=[];
   _valoresLlenado[campoId][fi][ci] = valor;
+}
+
+function seleccionarFotoCeldaTabla(campoId, fi, ci, input){
+  if(!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = function(e){
+    actualizarCeldaTablaRepetible(campoId, fi, ci, e.target.result);
+    rerenderTablaRepetible(campoId);
+  };
+  reader.readAsDataURL(file);
 }
 
 function rerenderTablaRepetible(campoId){
@@ -5869,7 +5919,14 @@ function exportarPdfFormato(){
       const filas = Array.isArray(val) ? val : [];
       const tablaInterna = `<table style="width:100%;border-collapse:collapse;margin-top:4px">
         <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8">${typeof col==='string'?col:col.nombre}</th>`).join('')}</tr>
-        ${filas.map(fila=>`<tr>${c.columnas.map((_,ci)=>`<td style="border:1px solid #ccc;padding:4px;font-size:11px">${fila?.[ci]||''}</td>`).join('')}</tr>`).join('')}
+        ${filas.map(fila=>`<tr>${c.columnas.map((colRaw,ci)=>{
+          const col = typeof colRaw==='string' ? {tipo:'texto'} : colRaw;
+          const v = fila?.[ci];
+          let contenido = v||'';
+          if(col.tipo==='foto' && v && v.startsWith('data:image')) contenido = `<img src="${v}" style="width:60px;height:auto"/>`;
+          else if(col.tipo==='si_no') contenido = v==='si'?'Sí':v==='no'?'No':'';
+          return `<td style="border:1px solid #ccc;padding:4px;font-size:11px">${contenido}</td>`;
+        }).join('')}</tr>`).join('')}
       </table>`;
       return `<tr><td colspan="2" style="padding:8px;border-bottom:1px solid #e6e9ef"><div style="font-weight:600;font-size:12px;margin-bottom:4px">${c.etiqueta}</div>${tablaInterna}</td></tr>`;
     }
