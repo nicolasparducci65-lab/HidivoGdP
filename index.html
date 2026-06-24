@@ -553,9 +553,12 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <div class="card">
           <div class="card-header">
             <div><div class="card-title">Mis proyectos</div><div class="card-subtitle">Vista general de todas las obras</div></div>
-            <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <select id="filtroContratante" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
                 <option value="">— Todos los contratantes —</option>
+              </select>
+              <select id="filtroContratista" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+                <option value="">— Todos los contratistas —</option>
               </select>
               <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -569,6 +572,14 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 
       <!-- PROYECTOS -->
       <div class="page" id="page-proyectos">
+        <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <select id="filtroContratanteProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+            <option value="">— Todos los contratantes —</option>
+          </select>
+          <select id="filtroContratistaProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+            <option value="">— Todos los contratistas —</option>
+          </select>
+        </div>
         <div id="proyectosList">
           <div class="page-loader"><div class="spinner"></div>Cargando...</div>
         </div>
@@ -2657,6 +2668,16 @@ async function cargarDashboard(){
     if(valorActual) sel.value = valorActual;
   }
 
+  // Poblar filtro de contratistas
+  const contratistas = [...new Set(proyectos.map(p=>p.contratista).filter(Boolean))].sort();
+  const selC = document.getElementById('filtroContratista');
+  if(selC){
+    const valorActualC = selC.value;
+    selC.innerHTML = '<option value="">— Todos los contratistas —</option>' +
+      contratistas.map(c=>`<option value="${c}">${c}</option>`).join('');
+    if(valorActualC) selC.value = valorActualC;
+  }
+
   await actualizarMetricasDashboard(proyectos);
   renderProyectosTabla('dashProyectosList', proyectos);
 }
@@ -2800,7 +2821,10 @@ async function renderProyectosTabla(containerId, lista){
 
 async function filtrarProyectosDashboard(){
   const contratante = document.getElementById('filtroContratante')?.value||'';
-  const filtrados = contratante ? proyectos.filter(p=>p.contratante===contratante) : proyectos;
+  const contratista = document.getElementById('filtroContratista')?.value||'';
+  let filtrados = proyectos;
+  if(contratante) filtrados = filtrados.filter(p=>p.contratante===contratante);
+  if(contratista) filtrados = filtrados.filter(p=>p.contratista===contratista);
   await actualizarMetricasDashboard(filtrados);
   renderProyectosTabla('dashProyectosList', filtrados);
 }
@@ -2825,7 +2849,37 @@ async function cargarProyectosLista(){
     data = proy||[];
   }
   proyectos = data;
+
+  // Poblar filtro de contratantes
+  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
+  const selCte = document.getElementById('filtroContratanteProyectos');
+  if(selCte){
+    const valorActual = selCte.value;
+    selCte.innerHTML = '<option value="">— Todos los contratantes —</option>' +
+      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
+    if(valorActual) selCte.value = valorActual;
+  }
+
+  // Poblar filtro de contratistas
+  const contratistas = [...new Set(proyectos.map(p=>p.contratista).filter(Boolean))].sort();
+  const selCta = document.getElementById('filtroContratistaProyectos');
+  if(selCta){
+    const valorActualC = selCta.value;
+    selCta.innerHTML = '<option value="">— Todos los contratistas —</option>' +
+      contratistas.map(c=>`<option value="${c}">${c}</option>`).join('');
+    if(valorActualC) selCta.value = valorActualC;
+  }
+
   renderProyectosTabla('proyectosList', proyectos);
+}
+
+async function filtrarProyectosLista(){
+  const contratante = document.getElementById('filtroContratanteProyectos')?.value||'';
+  const contratista = document.getElementById('filtroContratistaProyectos')?.value||'';
+  let filtrados = proyectos;
+  if(contratante) filtrados = filtrados.filter(p=>p.contratante===contratante);
+  if(contratista) filtrados = filtrados.filter(p=>p.contratista===contratista);
+  renderProyectosTabla('proyectosList', filtrados);
 }
 
 async function cargarProyectosSelector(){
@@ -3313,7 +3367,11 @@ async function guardarRubro(){
 
 async function eliminarRubro(id, descripcion){
   if(!confirm(`¿Eliminar el rubro "${descripcion}"?\n\nEsta acción no se puede deshacer.`)) return;
-  await sb.from('rubros').delete().eq('id',id);
+  const { error } = await sb.from('rubros').delete().eq('id',id);
+  if(error){
+    toast('No se pudo eliminar: '+error.message,'error');
+    return;
+  }
   toast('Rubro eliminado','success');
   cargarRubros();
 }
