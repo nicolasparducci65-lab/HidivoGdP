@@ -1907,6 +1907,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div style="overflow-x:auto;margin-bottom:16px">
         <table>
           <thead><tr>
+            <th>Código</th>
             <th>Descripción</th>
             <th style="text-align:center">Unidad</th>
             <th style="text-align:right">Cant. contrato</th>
@@ -1916,7 +1917,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
             <th style="text-align:right">Monto período</th>
           </tr></thead>
           <tbody id="planRubrosTabla">
-            <tr><td colspan="7" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>
           </tbody>
           <tfoot>
             <tr style="background:#1a1a2e">
@@ -1972,6 +1973,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <div style="overflow-x:auto;margin-bottom:16px">
         <table>
           <thead><tr>
+            <th>Código</th>
             <th>Descripción</th>
             <th style="text-align:center">Unidad</th>
             <th style="text-align:right">Ant.</th>
@@ -3117,12 +3119,13 @@ function renderRubros(rubros){
     </div>
     <div class="card">
       <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
-      ${rubros.length ? `<table style="table-layout:fixed;width:100%"><thead><tr><th style="width:22%">Descripción</th><th style="width:7%">Unidad</th><th style="width:9%">Cantidad</th><th style="width:9%">P. Unitario</th><th style="width:10%">Contratado</th><th style="width:9%">Ejecutado</th><th style="width:10%">Total Prod.</th><th style="width:8%">% Rubro</th><th style="width:9%">Estado</th><th style="width:7%"></th></tr></thead><tbody>
+      ${rubros.length ? `<table style="table-layout:fixed;width:100%"><thead><tr><th style="width:8%">Código</th><th style="width:19%">Descripción</th><th style="width:6%">Unidad</th><th style="width:8%">Cantidad</th><th style="width:8%">P. Unitario</th><th style="width:9%">Contratado</th><th style="width:8%">Ejecutado</th><th style="width:9%">Total Prod.</th><th style="width:7%">% Rubro</th><th style="width:8%">Estado</th><th style="width:6%"></th></tr></thead><tbody>
         ${rubros.map(r=>{
           const pct = r.cantidad_contrato>0 ? Math.min((r.cantidad_ejecutada||0)/r.cantidad_contrato*100,100) : 0;
           const color = pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
           const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
           return `<tr>
+            <td style="white-space:nowrap;font-size:12px;color:#676879">${r.codigo||'—'}</td>
             <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
             <td style="white-space:nowrap">${r.unidad||'—'}</td>
             <td style="text-align:right;white-space:nowrap">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
@@ -3762,6 +3765,7 @@ async function cargarCurvaS(){
     const c = cronMap[r.id] || {};
     return {
       rubro_id: r.id,
+      codigo: r.codigo||'',
       descripcion: r.descripcion,
       unidad: r.unidad||'',
       monto_contrato: r.monto_contrato||0,
@@ -3841,13 +3845,14 @@ function renderCurvaS(proy){
     <div style="overflow-x:auto">
       <table style="table-layout:fixed;width:100%">
         <thead><tr>
-          <th style="width:30%">Descripción</th>
-          <th style="width:10%;text-align:center">Peso %</th>
-          <th style="width:13%;text-align:center">Inicio plan.</th>
-          <th style="width:13%;text-align:center">Fin plan.</th>
-          <th style="width:8%;text-align:center">Días</th>
+          <th style="width:8%">Código</th>
+          <th style="width:25%">Descripción</th>
+          <th style="width:9%;text-align:center">Peso %</th>
+          <th style="width:12%;text-align:center">Inicio plan.</th>
+          <th style="width:12%;text-align:center">Fin plan.</th>
+          <th style="width:7%;text-align:center">Días</th>
           <th style="width:13%;text-align:center">Avance real</th>
-          <th style="width:13%;text-align:center">Estado</th>
+          <th style="width:14%;text-align:center">Estado</th>
         </tr></thead>
         <tbody id="curvaSTabla"></tbody>
       </table>
@@ -3862,6 +3867,7 @@ function renderCurvaS(proy){
     const estadoLabel = atraso==='atrasado'?'⚠️ Atrasado':atraso==='adelantado'?'✅ Adelantado':'— Sin datos';
     const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
     return `<tr>
+      <td style="font-size:11px;color:#676879;white-space:nowrap">${r.codigo||'—'}</td>
       <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
       <td style="text-align:center;font-weight:600;white-space:nowrap">${r.pesoEfectivo.toFixed(1)}%</td>
       <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
@@ -7078,7 +7084,7 @@ async function abrirModalNuevaPlanilla(){
   document.getElementById('planFechaFin').value = hoy.toISOString().split('T')[0];
   document.getElementById('planObservaciones').value='';
   document.getElementById('planArchivos').value='';
-  document.getElementById('planRubrosTabla').innerHTML='<tr><td colspan="7" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>';
+  document.getElementById('planRubrosTabla').innerHTML='<tr><td colspan="8" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>';
   document.getElementById('planTotal').textContent='$0.00';
   document.getElementById('modalNuevaPlanilla').classList.add('show');
 }
@@ -7131,6 +7137,7 @@ async function cargarRubrosPlanilla(){
     total += montoPeriodo;
     const pct = r.cantidad_contrato>0 ? Math.min(cantAcumulada/r.cantidad_contrato*100,100) : 0;
     return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}">
+      <td style="font-size:11px;white-space:nowrap;color:#676879">${r.codigo||'—'}</td>
       <td style="font-size:11px;max-width:160px">${r.descripcion}</td>
       <td style="text-align:center">${r.unidad||'—'}</td>
       <td style="text-align:right">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
@@ -7289,7 +7296,7 @@ async function guardarPlanilla(estado){
 
 async function verPlanilla(id){
   const { data: p } = await sb.from('planillas_pago').select('*').eq('id',id).single();
-  const { data: rubros } = await sb.from('planilla_rubros').select('*,rubro:rubros(descripcion,unidad)').eq('planilla_id',id);
+  const { data: rubros } = await sb.from('planilla_rubros').select('*,rubro:rubros(codigo,descripcion,unidad)').eq('planilla_id',id);
   const { data: archivos } = await sb.from('planilla_archivos').select('*').eq('planilla_id',id);
   const { data: historial } = await sb.from('planilla_historial').select('*').eq('planilla_id',id).order('created_at');
 
@@ -7305,6 +7312,7 @@ async function verPlanilla(id){
   // Tabla rubros
   document.getElementById('planDetalleRubros').innerHTML = (rubros||[]).map(r=>`
     <tr>
+      <td style="font-size:11px;color:#676879;white-space:nowrap">${r.rubro?.codigo||'—'}</td>
       <td style="font-size:11px">${r.rubro?.descripcion||'—'}</td>
       <td style="text-align:center">${r.rubro?.unidad||'—'}</td>
       <td style="text-align:right">${Number(r.cantidad_anterior||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
