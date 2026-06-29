@@ -4738,6 +4738,7 @@ async function guardarRespuesta(){
   // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', `Respuesta en observación: ${window._obsActiva.titulo}`, texto||'');
   await notificarPorEmail('observacion', window._obsActiva.titulo, texto||'Se registró una respuesta en esta observación.', window._obsActiva.numero);
+  await notificarPorPush('observacion', `Respuesta: ${window._obsActiva.titulo}`, texto||'Se registró una respuesta en esta observación.');
   verObservacion(window._obsActiva.id);
   cargarObservaciones();
 }
@@ -4754,6 +4755,7 @@ async function cambiarEstadoObs(id, estadoActual){
     const detalle = `Estado actualizado a: ${estadoObsLabel(nuevo)}`;
     await notificarResidenteViaDM('observacion', `Cambio de estado: ${obsCambiada.titulo}`, detalle);
     await notificarPorEmail('observacion', obsCambiada.titulo, detalle, obsCambiada.numero);
+    await notificarPorPush('observacion', `Cambio de estado: ${obsCambiada.titulo}`, detalle);
   }
   cargarObservaciones();
 }
@@ -4833,6 +4835,7 @@ async function guardarObservacionNueva(){
   // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', titulo, desc);
   await notificarPorEmail('observacion', titulo, desc, siguienteNumero);
+  await notificarPorPush('observacion', `Nueva observación: ${titulo}`, desc);
   cargarObservaciones();
 }
 
@@ -8257,6 +8260,42 @@ async function notificarPorEmail(tipo, titulo, mensaje, numero){
   }
 }
 
+// Envía una notificación push (web push) a los residentes del proyecto actual,
+// excluyendo al autor de la acción. No bloquea el flujo si falla.
+async function notificarPorPush(tipo, titulo, mensaje){
+  if(!currentProyecto) return;
+  try{
+    const { data: miembros } = await sb.from('proyecto_miembros')
+      .select('usuario_id').eq('proyecto_id', currentProyecto).eq('rol','residente');
+    if(!miembros?.length) return;
+
+    const usuarioIds = miembros.map(m=>m.usuario_id).filter(id=>id!==currentUser?.id);
+    if(!usuarioIds.length) return;
+
+    const emoji = tipo==='observacion' ? '🔍' : '📋';
+    const proyectoNombre = proyectos.find(p=>p.id===currentProyecto)?.nombre||'';
+
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/enviar-push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({
+        usuarioIds,
+        titulo: `${emoji} ${titulo}`,
+        cuerpo: `${mensaje||''}${proyectoNombre?' — '+proyectoNombre:''}`,
+        url: '/HidivoGdP/',
+        tag: tipo
+      })
+    });
+    const data = await resp.json();
+    if(data.error) console.error('Error notificando por push:', data.error);
+  }catch(err){
+    console.error('Error notificando por push:', err);
+  }
+}
+
 // ── SOLICITUDES ──
 const TIPOS_SOLICITUD = {
   planilla:      { label:'Aprobación de Planillas',    emoji:'📄', color:'#0073ea' },
@@ -8405,6 +8444,7 @@ async function guardarNuevaSolicitud(){
   // Notificar al residente/fiscalizador via DM y por correo
   await notificarResidenteViaDM('solicitud', titulo, desc);
   await notificarPorEmail('solicitud', titulo, desc, siguienteNumero);
+  await notificarPorPush('solicitud', `Nueva solicitud: ${titulo}`, desc);
   cargarSolicitudes();
 }
 
@@ -8516,6 +8556,7 @@ async function responderSolicitud(accion){
   const accionLabel = {aprobar:'aprobó ✅',rechazar:'rechazó ❌',correccion:'solicitó corrección 🔄',comentario:'comentó 💬'}[accion]||accion;
   await notificarResidenteViaDM('solicitud', `${accionLabel}: ${window._solActiva.titulo}`, texto||'');
   await notificarPorEmail('solicitud', window._solActiva.titulo, `${accionLabel}${texto?': '+texto:''}`, window._solActiva.numero);
+  await notificarPorPush('solicitud', `${accionLabel}: ${window._solActiva.titulo}`, texto||'');
   cerrarModal('modalVerSolicitud');
   cargarSolicitudes();
 }
