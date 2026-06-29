@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidivo-v1';
+const CACHE_NAME = 'hidivo-v2';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
@@ -45,5 +45,46 @@ self.addEventListener('fetch', e => {
         return res;
       })
       .catch(() => caches.match(e.request))
+  );
+});
+
+// ── WEB PUSH ──
+
+// Recibir una notificación push del servidor y mostrarla
+self.addEventListener('push', e => {
+  let datos = {};
+  try{
+    datos = e.data ? e.data.json() : {};
+  }catch(err){
+    datos = { titulo: 'HIDIVO', cuerpo: e.data ? e.data.text() : 'Tienes una notificación nueva' };
+  }
+
+  const titulo = datos.titulo || 'HIDIVO';
+  const opciones = {
+    body: datos.cuerpo || '',
+    icon: 'https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png',
+    badge: 'https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png',
+    data: { url: datos.url || '/HidivoGdP/' },
+    tag: datos.tag || undefined,
+    renotify: !!datos.tag
+  };
+
+  e.waitUntil(self.registration.showNotification(titulo, opciones));
+});
+
+// Click en la notificación: enfocar una pestaña existente o abrir una nueva
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/HidivoGdP/';
+
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientsArr => {
+      for(const client of clientsArr){
+        if(client.url.includes('/HidivoGdP/') && 'focus' in client){
+          return client.focus();
+        }
+      }
+      if(self.clients.openWindow) return self.clients.openWindow(url);
+    })
   );
 });
