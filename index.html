@@ -3182,7 +3182,8 @@ async function importarRubrosExcel(input){
       // Columnas desde fila de encabezado — se declara ANTES de usarse
       const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c||'').toLowerCase().trim()) : [];
       const colIdx = {
-        codigo:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='código'||h==='codigo'||h==='item'),
+        codigo:   headers.findIndex(h=>h==='código'||h==='codigo'||h==='cód. rubro'||h==='cod. rubro'||h==='código rubro'||h==='codigo rubro'),
+        numero:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='item'),
         descrip:  headers.findIndex(h=>h==='descripción'||h==='descripcion'||h==='rubro'||h==='detalle'||h.includes('descrip')),
         unidad:   headers.findIndex(h=>h==='unidad'||h==='u'||h==='u.'||h.includes('unid')),
         cantidad: headers.findIndex(h=>h==='cantidad'||h.includes('cant')||h==='vol'),
@@ -3190,6 +3191,8 @@ async function importarRubrosExcel(input){
         fechaIni: headers.findIndex(h=>h==='fecha inicio'||h.includes('inicio')||h.includes('start')||h.includes('desde')),
         fechaFin: headers.findIndex(h=>h==='fecha fin'||h.includes('fin')||h.includes('end')||h.includes('hasta')),
       };
+      // Si no hay columna de Código real, usar N°/Item como respaldo (comportamiento anterior)
+      if(colIdx.codigo===-1) colIdx.codigo = colIdx.numero;
 
       // Fallback si no se detectaron columnas
       if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
