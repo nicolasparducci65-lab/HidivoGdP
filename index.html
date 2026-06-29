@@ -476,6 +476,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </div>
     </div>
     <div class="sidebar-bottom">
+      <button id="btnActivarPush" onclick="toggleNotificacionesPush()" class="btn" style="width:100%;margin-bottom:8px;justify-content:center;gap:6px;font-size:12px">
+        🔔 Activar notificaciones
+      </button>
       <div class="user-pill" onclick="logout()">
         <div class="user-avatar" id="sidebarAvatar">N</div>
         <div>
@@ -2321,6 +2324,100 @@ async function logout(){
   document.getElementById('authScreen').style.display='flex';
 }
 
+// ── WEB PUSH ──
+const VAPID_PUBLIC_KEY = 'BHLYkJlu7Fjrz8Db6woqwO8XsAtPlBgGRFsTuQmu8ckED-NmK7mV87Flyi_vN5tuVzBLbtw17RzxqO1lXbzUYks';
+
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i=0; i<rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function actualizarEstadoBotonPush(){
+  const btn = document.getElementById('btnActivarPush');
+  if(!btn) return;
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    btn.style.display = 'none';
+    return;
+  }
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if(sub){
+      btn.textContent = '🔔 Notificaciones activadas';
+      btn.style.color = '#00c875';
+    } else {
+      btn.textContent = '🔔 Activar notificaciones';
+      btn.style.color = '';
+    }
+  }catch(err){
+    console.error('Error verificando estado de push:', err);
+  }
+}
+
+async function toggleNotificacionesPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    toast('Tu navegador no soporta notificaciones push','error');
+    return;
+  }
+
+  const btn = document.getElementById('btnActivarPush');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Procesando...';
+
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const subExistente = await reg.pushManager.getSubscription();
+
+    if(subExistente){
+      // Ya estaba activado: desactivar
+      await sb.from('push_subscripciones').delete().eq('endpoint', subExistente.endpoint);
+      await subExistente.unsubscribe();
+      toast('Notificaciones desactivadas','success');
+    } else {
+      // Pedir permiso si no se ha pedido
+      const permiso = await Notification.requestPermission();
+      if(permiso !== 'granted'){
+        toast('No se otorgó permiso para notificaciones','error');
+        btn.disabled = false; btn.textContent = textoOriginal;
+        return;
+      }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+
+      const subJson = sub.toJSON();
+      const { error } = await sb.from('push_subscripciones').upsert({
+        usuario_id: currentUser.id,
+        endpoint: subJson.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+        user_agent: navigator.userAgent
+      }, { onConflict: 'endpoint' });
+
+      if(error){
+        toast('Error al guardar la suscripción: '+error.message,'error');
+        await sub.unsubscribe();
+        btn.disabled = false; btn.textContent = textoOriginal;
+        return;
+      }
+
+      toast('Notificaciones activadas ✓','success');
+    }
+  }catch(err){
+    console.error('Error con notificaciones push:', err);
+    toast('Error al procesar notificaciones: '+err.message,'error');
+  }
+
+  btn.disabled = false;
+  await actualizarEstadoBotonPush();
+}
+
 function mostrarCompletarPerfil(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('esperaAsignacionScreen').style.display='none';
@@ -2433,6 +2530,7 @@ async function mostrarApp(){
   iniciarPresencia();
   cargarDashboard();
   cargarProyectosSelector();
+  actualizarEstadoBotonPush();
   setTimeout(async ()=>{
     await actualizarRolEfectivo(currentProyecto);
     // Iniciar badge y suscripción global de chat
