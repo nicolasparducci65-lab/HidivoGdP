@@ -4176,57 +4176,43 @@ function calcularIndicadoresPuro(rubros, proy){
   return { SPI, BCWP, BCWS, avanceRealTotal, totalProduccion, montoContrato, atrasados, proyeccion };
 }
 
-function dibujarGraficoCurvaS(rubros, proy){
-  const canvasEl = document.getElementById('chartCurvaS');
-  if(!canvasEl) return; // El canvas no está en el DOM (ej. se llamó desde otra pantalla, como el reporte PDF de Libro de Obra)
-  if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
+// Calcula los datos puros del gráfico de Curva S (labels, plan, real), sin tocar ningún canvas.
+// Reutilizable tanto en pantalla como para generar la imagen del gráfico en el reporte PDF.
+function calcularDatosGraficoCurvaS(rubros, modo){
   const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
+
   if(!conFechas.length){
-    // Sin cronograma: solo mostrar avance real acumulado
     const labels = rubros.map((_,i)=>'R'+(i+1));
     let acum=0;
     const realArr = rubros.map(r=>{ acum+=(r.avance_real/100)*r.pesoEfectivo; return parseFloat(acum.toFixed(2)); });
-    curvaSGrafico = new Chart(document.getElementById('chartCurvaS'),{
-      type:'line',
-      data:{labels,datasets:[{label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:4}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom'}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{}}}
-    });
-    return;
+    return { labels, planArr:null, realArr, sinCronograma:true };
   }
 
-  // Calcular rango de fechas
   const fechas = conFechas.flatMap(r=>[new Date(r.fecha_inicio+'T00:00:00'),new Date(r.fecha_fin+'T00:00:00')]);
   let minFecha = new Date(Math.min(...fechas));
   let maxFecha = new Date(Math.max(...fechas));
 
-  // Generar períodos
   const periodos = [];
   const cur = new Date(minFecha);
-  if(curvaSModo==='semanas'){
-    cur.setDate(cur.getDate() - cur.getDay() + 1); // lunes
-    while(cur<=maxFecha){
-      periodos.push(new Date(cur));
-      cur.setDate(cur.getDate()+7);
-    }
+  if(modo==='semanas'){
+    cur.setDate(cur.getDate() - cur.getDay() + 1);
+    while(cur<=maxFecha){ periodos.push(new Date(cur)); cur.setDate(cur.getDate()+7); }
   } else {
     cur.setDate(1);
-    while(cur<=maxFecha){
-      periodos.push(new Date(cur));
-      cur.setMonth(cur.getMonth()+1);
-    }
+    while(cur<=maxFecha){ periodos.push(new Date(cur)); cur.setMonth(cur.getMonth()+1); }
   }
-  if(!periodos.length) return;
+  if(!periodos.length) return { labels:[], planArr:[], realArr:[], sinCronograma:false };
 
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   const labels = periodos.map(p=>{
-    if(curvaSModo==='semanas') return 'S'+getNumSemana(p)+'\n'+p.toLocaleDateString('es-EC',{day:'2-digit',month:'short'});
+    if(modo==='semanas') return 'S'+getNumSemana(p)+'\n'+p.toLocaleDateString('es-EC',{day:'2-digit',month:'short'});
     return p.toLocaleDateString('es-EC',{month:'short',year:'2-digit'});
   });
 
   const planArr=[], realArr=[];
   periodos.forEach(p=>{
-    const finPeriodo = curvaSModo==='semanas'
+    const finPeriodo = modo==='semanas'
       ? new Date(p.getTime()+6*86400000)
       : new Date(p.getFullYear(),p.getMonth()+1,0);
 
@@ -4235,10 +4221,8 @@ function dibujarGraficoCurvaS(rubros, proy){
       const ini=new Date(r.fecha_inicio+'T00:00:00');
       const fin=new Date(r.fecha_fin+'T00:00:00');
       const duracion=(fin-ini)||1;
-      // Planificado acumulado al fin del período
       const tPlan=Math.min(Math.max(finPeriodo-ini,0),duracion);
       acumPlan += Math.min(tPlan/duracion,1)*r.pesoEfectivo;
-      // Real acumulado al fin del período (si ya pasó)
       if(finPeriodo<=hoy){
         const tReal=Math.min(Math.max(finPeriodo-ini,0),duracion);
         acumReal += (r.avance_real/100)*r.pesoEfectivo*(tReal>=duracion?1:tReal/duracion);
@@ -4248,7 +4232,27 @@ function dibujarGraficoCurvaS(rubros, proy){
     realArr.push(finPeriodo<=hoy ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
   });
 
-  curvaSGrafico = new Chart(document.getElementById('chartCurvaS'),{
+  return { labels, planArr, realArr, sinCronograma:false };
+}
+
+function dibujarGraficoCurvaS(rubros, proy){
+  const canvasEl = document.getElementById('chartCurvaS');
+  if(!canvasEl) return; // El canvas no está en el DOM (ej. se llamó desde otra pantalla, como el reporte PDF de Libro de Obra)
+  if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
+
+  const { labels, planArr, realArr, sinCronograma } = calcularDatosGraficoCurvaS(rubros, curvaSModo);
+
+  if(sinCronograma){
+    curvaSGrafico = new Chart(canvasEl,{
+      type:'line',
+      data:{labels,datasets:[{label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom'}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{}}}
+    });
+    return;
+  }
+  if(!labels.length) return;
+
+  curvaSGrafico = new Chart(canvasEl,{
     type:'line',
     data:{
       labels,
@@ -4263,6 +4267,47 @@ function dibujarGraficoCurvaS(rubros, proy){
       scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{ticks:{maxRotation:45,font:{size:10}}}}
     }
   });
+}
+
+// Genera el gráfico de Curva S como imagen PNG (data URL), usando un canvas oculto temporal.
+// Pensado para insertarse en el HTML del reporte PDF de Libro de Obra, donde no hay un canvas visible en pantalla.
+async function generarImagenGraficoCurvaS(rubros, modo){
+  const { labels, planArr, realArr, sinCronograma } = calcularDatosGraficoCurvaS(rubros, modo);
+  if(!labels.length) return null;
+
+  const canvasTemp = document.createElement('canvas');
+  canvasTemp.width = 760;
+  canvasTemp.height = 320;
+  canvasTemp.style.position = 'fixed';
+  canvasTemp.style.left = '-9999px';
+  document.body.appendChild(canvasTemp);
+
+  const datasets = sinCronograma
+    ? [{label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:3}]
+    : [
+        {label:'Planificado (%)',data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:2,borderDash:[6,3]},
+        {label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:3,spanGaps:false}
+      ];
+
+  const chartTemp = new Chart(canvasTemp, {
+    type:'line',
+    data:{ labels, datasets },
+    options:{
+      responsive:false, animation:false,
+      plugins:{legend:{display:true,position:'bottom'}},
+      scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}},x:{ticks:{maxRotation:45,font:{size:9}}}}
+    }
+  });
+
+  // Esperar un frame para asegurar que el chart terminó de pintar antes de exportar
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+
+  const dataUrl = canvasTemp.toDataURL('image/png');
+
+  chartTemp.destroy();
+  document.body.removeChild(canvasTemp);
+
+  return dataUrl;
 }
 
 function getNumSemana(d){
@@ -9430,6 +9475,7 @@ async function generarReportePDF(){
       pesoEfectivo: r.peso!==null ? r.peso : pesoAuto
     }));
     curvaSDatos = calcularIndicadoresPuro(rubrosConPesoReporte, proy);
+    curvaSDatos.imagenGrafico = await generarImagenGraficoCurvaS(rubrosConPesoReporte, curvaSModo);
   }
 
   // Generar HTML del reporte (formato A4)
@@ -9518,6 +9564,10 @@ ${incCurvaS && curvaSDatos ? `
     <div class="resumen-card"><div class="num">${formatoKSinSigno(curvaSDatos.totalProduccion)}</div><div class="lbl">Producción total</div></div>
     <div class="resumen-card"><div class="num">${curvaSDatos.atrasados}</div><div class="lbl">Rubros atrasados</div></div>
   </div>
+  ${curvaSDatos.imagenGrafico ? `
+  <div style="text-align:center;margin-top:12px">
+    <img src="${curvaSDatos.imagenGrafico}" style="max-width:100%;height:auto"/>
+  </div>` : ''}
   ${curvaSDatos.proyeccion ? `
   <table style="margin-top:10px">
     <thead><tr><th>Fecha fin planificada</th><th>Fecha fin estimada</th><th>Estado</th></tr></thead>
