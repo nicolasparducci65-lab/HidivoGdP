@@ -6012,10 +6012,19 @@ function renderFormularioLlenado(campos){
 
     if(c.tipo==='tabla_repetible'){
       const filas = Array.isArray(val) ? val : [];
+      const ANCHO_POR_TIPO = { fecha:'110px', numero:'90px', si_no:'80px', seleccion:'150px', foto:'110px' };
       return campoWrap(c, `
         <div style="overflow-x:auto">
-          <table style="width:100%;font-size:14px">
-            <thead><tr>${c.columnas.map(col=>`<th style="font-size:13px;padding:8px 6px">${typeof col==='string'?col:col.nombre}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
+          <table style="width:100%;font-size:14px;table-layout:fixed">
+            <colgroup>
+              ${c.columnas.map(col=>{
+                const colObj = typeof col==='string' ? {tipo:'texto'} : col;
+                const ancho = ANCHO_POR_TIPO[colObj.tipo];
+                return ancho ? `<col style="width:${ancho}"/>` : `<col style="width:auto;min-width:180px"/>`;
+              }).join('')}
+              ${ro?'':'<col style="width:50px"/>'}
+            </colgroup>
+            <thead><tr>${c.columnas.map(col=>`<th style="font-size:13px;padding:8px 6px;overflow-wrap:break-word">${typeof col==='string'?col:col.nombre}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
             <tbody id="tablaRep_${c.id}">
               ${filas.map((fila,fi)=>renderFilaTablaRepetible(c.id, c.columnas, fila, fi, ro)).join('')}
             </tbody>
@@ -6092,7 +6101,7 @@ function renderFilaTablaRepetible(campoId, columnas, fila, fi, ro){
         const tieneFoto = valorActual && valorActual.startsWith('data:image');
         return `<td style="text-align:center">
           ${tieneFoto?`<img src="${valorActual}" style="width:44px;height:34px;object-fit:cover;border-radius:4px;border:1px solid #e6e9ef;display:block;margin:0 auto 4px"/>`:''}
-          ${ro?'':`<input type="file" accept="image/*" style="font-size:10px;width:100px" onchange="seleccionarFotoCeldaTabla('${campoId}',${fi},${ci},this)"/>`}
+          ${ro?'':`<input type="file" accept="image/*" style="font-size:10px;width:100%" onchange="seleccionarFotoCeldaTabla('${campoId}',${fi},${ci},this)"/>`}
         </td>`;
       }
 
@@ -6315,15 +6324,23 @@ function exportarPdfFormato(){
 
     if(c.tipo==='tabla_repetible'){
       const filas = Array.isArray(val) ? val : [];
-      const tablaInterna = `<table style="width:100%;border-collapse:collapse;margin-top:4px">
-        <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8">${typeof col==='string'?col:col.nombre}</th>`).join('')}</tr>
+      const ANCHO_PDF_POR_TIPO = { fecha:'70px', numero:'55px', si_no:'45px', seleccion:'90px', foto:'70px' };
+      const tablaInterna = `<table style="width:100%;border-collapse:collapse;margin-top:4px;table-layout:fixed">
+        <colgroup>
+          ${c.columnas.map(col=>{
+            const colObj = typeof col==='string' ? {tipo:'texto'} : col;
+            const ancho = ANCHO_PDF_POR_TIPO[colObj.tipo];
+            return ancho ? `<col style="width:${ancho}"/>` : `<col style="width:auto"/>`;
+          }).join('')}
+        </colgroup>
+        <tr>${c.columnas.map(col=>`<th style="border:1px solid #ccc;padding:4px;font-size:11px;background:#f5f6f8;overflow-wrap:break-word">${typeof col==='string'?col:col.nombre}</th>`).join('')}</tr>
         ${filas.map(fila=>`<tr>${c.columnas.map((colRaw,ci)=>{
           const col = typeof colRaw==='string' ? {tipo:'texto'} : colRaw;
           const v = fila?.[ci];
           let contenido = v||'';
           if(col.tipo==='foto' && v && v.startsWith('data:image')) contenido = `<img src="${v}" style="width:60px;height:auto"/>`;
           else if(col.tipo==='si_no') contenido = v==='si'?'Sí':v==='no'?'No':'';
-          return `<td style="border:1px solid #ccc;padding:4px;font-size:11px">${contenido}</td>`;
+          return `<td style="border:1px solid #ccc;padding:4px;font-size:11px;overflow-wrap:break-word">${contenido}</td>`;
         }).join('')}</tr>`).join('')}
       </table>`;
       const dibujoPerfil = generarDibujoPerfilSuelo(c, filas);
