@@ -9407,10 +9407,7 @@ async function generarReporteDashboard(){
   const metricas = incMetricas ? await calcularMetricasDashboard(listaProyectos) : null;
   const { spiEstados, montosReales } = await calcularEstadosProyectos(listaProyectos);
 
-  const filtrosTexto = [
-    contratante ? `Contratante: ${contratante}` : null,
-    contratista ? `Contratista: ${contratista}` : null
-  ].filter(Boolean).join(' · ');
+  const filtrosTexto = `${contratante || 'Todos los Contratantes'} - ${contratista || 'Todos los Contratistas'}`;
 
   const estadoLabelMap = {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'};
   const estadoColorMap = {planificacion:'#0073ea',ejecucion:'#ff9f00',pausado:'#676879',finalizado:'#00c875',cancelado:'#e2445c'};
@@ -9423,7 +9420,7 @@ async function generarReporteDashboard(){
 <div class="header">
   <div class="header-logo">
     <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png"
-         style="height:48px;object-fit:contain;filter:brightness(0) invert(1)"
+         style="height:48px;width:auto;max-width:160px;object-fit:contain;filter:brightness(0) invert(1)"
          crossorigin="anonymous" alt="HIDIVO"/>
     <div>
       <div class="header-logo-sub">Gestión de Obras Civiles</div>
@@ -9431,7 +9428,7 @@ async function generarReporteDashboard(){
   </div>
   <div class="header-info">
     <div class="title">Reporte General de Proyectos</div>
-    <div class="sub">Generado el ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}${filtrosTexto?' — '+filtrosTexto:''}</div>
+    <div class="sub">Generado el ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})} — ${filtrosTexto}</div>
   </div>
 </div>
 
@@ -9655,7 +9652,7 @@ async function generarReportePDF(){
 <div class="header">
   <div class="header-logo">
     <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png" 
-         style="height:48px;object-fit:contain;filter:brightness(0) invert(1)" 
+         style="height:48px;width:auto;max-width:160px;object-fit:contain;filter:brightness(0) invert(1)" 
          crossorigin="anonymous" alt="HIDIVO"/>
     <div>
       <div class="header-logo-sub">Gestión de Obras Civiles</div>
