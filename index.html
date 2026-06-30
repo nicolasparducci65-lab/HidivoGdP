@@ -3242,7 +3242,7 @@ function renderRubros(rubros){
             </td>
             <td style="white-space:nowrap">
               <button onclick="abrirModalNuevoRubro(${JSON.stringify(r).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 8px;font-size:11px" title="Editar">✏️</button>
-              <button onclick="eliminarRubro('${r.id}','${r.descripcion.substring(0,20).replace(/'/g,"\\'")}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>
+              <button onclick="eliminarRubro('${r.id}','${escaparParaAtributo(r.descripcion.substring(0,20))}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>
             </td>
           </tr>`;}).join('')}
       </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Usa el botón "Nuevo rubro" arriba para agregar</div></div>`}
@@ -3698,11 +3698,18 @@ async function abrirModalLibro(){
   document.getElementById('modalLibro').classList.add('show');
 }
 
+function escaparParaAtributo(texto){
+  return (texto||'')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;');
+}
+
 function renderRubrosLibroModal(rubros){
   if(!rubros.length){ document.getElementById('libroRubrosLista').innerHTML='<div style="color:#676879;font-size:13px">No hay rubros en este proyecto</div>'; return; }
   document.getElementById('libroRubrosLista').innerHTML = rubros.map(r=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8" id="rubro-row-${r.id}">
-      <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${r.codigo}','${(r.descripcion||'').replace(/'/g,"\\'")}','${r.unidad||''}')" style="width:16px;height:16px;cursor:pointer"/>
+      <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${escaparParaAtributo(r.codigo)}','${escaparParaAtributo(r.descripcion)}','${escaparParaAtributo(r.unidad)}')" style="width:16px;height:16px;cursor:pointer"/>
       <span style="font-size:12px;color:#676879;min-width:30px">${r.codigo}</span>
       <span style="font-size:13px;flex:1">${r.descripcion}</span>
       <span style="font-size:11px;color:#676879">${r.unidad||''}</span>
@@ -5029,7 +5036,7 @@ async function cargarArchivosGlobal(){
               <td style="max-width:280px">
                 ${a.descripcion_ia ? `
                   <div style="font-size:12px;color:#323338;line-height:1.5">${a.descripcion_ia}
-                    <button onclick="editarDescripcionArchivo('${a.id}','${(a.descripcion_ia||'').replace(/'/g,"\\'")}')" style="background:none;border:none;color:#0073ea;cursor:pointer;font-size:11px;margin-left:4px">✏️</button>
+                    <button onclick="editarDescripcionArchivo('${a.id}','${escaparParaAtributo(a.descripcion_ia)}')" style="background:none;border:none;color:#0073ea;cursor:pointer;font-size:11px;margin-left:4px">✏️</button>
                   </div>
                 ` : `
                   <button onclick="editarDescripcionArchivo('${a.id}','')" 
@@ -5043,7 +5050,7 @@ async function cargarArchivosGlobal(){
               </td>
               <td style="text-align:center;white-space:nowrap">
                 <a href="${a.url}" target="_blank" class="btn" style="padding:4px 8px;font-size:11px" title="Ver">👁</a>
-                ${puedeEliminar?`<button onclick="eliminarArchivoGlobal('${a.id}','${a.url.replace(/'/g,"\\'")}','${a.modulo||''}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>`:''}
+                ${puedeEliminar?`<button onclick="eliminarArchivoGlobal('${a.id}','${escaparParaAtributo(a.url)}','${a.modulo||''}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>`:''}
               </td>
             </tr>`;
           }).join('')}
@@ -6612,7 +6619,7 @@ async function cargarStockMateriales(){
           <td style="text-align:right;color:#676879">${Number(s.stock_minimo||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
           <td style="text-align:center"><span style="background:${color}20;color:${color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${label}</span></td>
           <td style="white-space:nowrap">
-            <button onclick="abrirModalEditarStock('${s.id}','${s.nombre.replace(/'/g,"\\'")}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
+            <button onclick="abrirModalEditarStock('${s.id}','${escaparParaAtributo(s.nombre)}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>
             <button onclick="eliminarMaterialStock('${s.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>
           </td>
         </tr>`;
@@ -7674,7 +7681,7 @@ async function cargarCanalesChat(){
   const canalesFiltrados = canales.filter(c => !c.es_privado || esAdmin || miembrosDe.has(c.id));
 
   el.innerHTML = canalesFiltrados.map(c=>`
-    <div onclick="abrirCanal('${c.id}','${c.nombre}','canal',null,'${(c.descripcion||'').replace(/'/g,"\\'")}')"
+    <div onclick="abrirCanal('${c.id}','${escaparParaAtributo(c.nombre)}','canal',null,'${escaparParaAtributo(c.descripcion)}')"
       id="canal-${c.id}"
       style="padding:6px 16px;cursor:pointer;border-radius:6px;margin:1px 8px;display:flex;align-items:center;justify-content:space-between;
       ${chatCanalActivo?.id===c.id?'background:#ffffff20;color:#fff':'color:#ffffffb0'}"
@@ -7741,7 +7748,7 @@ async function cargarDMsChat(){
     const esDmActivo = chatCanalActivo?.id === item.dm?.id;
     const onclick = item.dm
       ? `abrirCanal('${item.dm.id}','${item.nombre}','dm',null,'')`
-      : `iniciarDMCon('${item.id}','${item.nombre.replace(/'/g,"\\'")}')`;
+      : `iniciarDMCon('${item.id}','${escaparParaAtributo(item.nombre)}')`;
     const dotColor = item.enLinea ? '#00c875' : '#676879';
     return `<div onclick="${onclick}"
       id="${item.dm ? 'canal-'+item.dm.id : 'dm-user-'+item.id}"
@@ -8739,7 +8746,7 @@ async function cargarMiembrosPorProyecto(){
     <div class="card" style="margin-bottom:12px">
       <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e6e9ef">
         <div style="font-weight:600;font-size:14px;color:#323338">🏗 ${p.nombre}</div>
-        <button onclick="abrirModalAgregarMiembro('${p.id}','${p.nombre.replace(/'/g,"\\'")}')" class="btn" style="padding:4px 12px;font-size:12px">+ Agregar miembro</button>
+        <button onclick="abrirModalAgregarMiembro('${p.id}','${escaparParaAtributo(p.nombre)}')" class="btn" style="padding:4px 12px;font-size:12px">+ Agregar miembro</button>
       </div>
       <div style="padding:12px 16px">
         ${miembrosProyecto.length?miembrosProyecto.map(m=>`
