@@ -3845,9 +3845,11 @@ let cronogramaData = []; // [{rubro_id, descripcion, peso, fecha_inicio, fecha_f
 
 async function cargarCurvaS(){
   if(!currentProyecto) return;
+  const elCurvaSContent = document.getElementById('curvaSContent');
   const { data: rubs } = await sb.from('rubros').select('*').eq('proyecto_id', currentProyecto).order('orden');
   if(!rubs||!rubs.length){
-    document.getElementById('curvaSContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega rubros al proyecto para usar la Curva S</div></div>';
+    if(elCurvaSContent) elCurvaSContent.innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Agrega rubros al proyecto para usar la Curva S</div></div>';
+    cronogramaData = [];
     return;
   }
   // Cargar cronograma guardado
@@ -3885,6 +3887,13 @@ async function cargarCurvaS(){
 }
 
 function renderCurvaS(proy){
+  const elCurvaSContent = document.getElementById('curvaSContent');
+  if(!elCurvaSContent){
+    // Llamado desde un contexto sin esta pantalla visible (ej. reporte PDF de Libro de Obra).
+    // Solo necesitamos que cronogramaData quede poblado; calcularIndicadores se llama aparte.
+    return;
+  }
+
   const totalMonto = cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
 
   // Calcular pesos automáticos para los que no tienen definido
@@ -4109,18 +4118,60 @@ function calcularIndicadores(rubros, proy){
       <div><div class="metric-value" style="color:${spiColor}">${SPI!==null?SPI.toFixed(2):'—'}</div><div class="metric-label">SPI ${spiLabel}</div></div></div>
     <div class="metric-card"><div class="metric-icon ${atrasados>0?'purple':'green'}">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-      <div><div class="metric-value" style="color:${atrasados>0?'#e2445c':'#00c875'}">${atrasados}</div><div class="metric-label">Rubros atrasados</div></div></div>
-    <div class="metric-card"><div class="metric-icon orange">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <div><div class="metric-value">${atrasados}</div><div class="metric-label">Rubros atrasados</div></div></div>
+    <div class="metric-card"><div class="metric-icon blue"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
       <div><div class="metric-value">${conFechas.length}</div><div class="metric-label">Rubros con cronograma</div></div></div>
-    <div class="metric-card"><div class="metric-icon ${rubrosOC.length?'orange':'green'}">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
-      <div><div class="metric-value">${formatoKSinSigno(totalOC)}</div><div class="metric-label">🔄 Total OC (${rubrosOC.length})</div></div></div>`;
-
+    <div class="metric-card"><div class="metric-icon orange"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+      <div><div class="metric-value">${formatoKSinSigno(totalOC)}</div><div class="metric-label">Total OC (${rubrosOC.length})</div></div></div>
+  `;
   return { SPI, BCWP, BCWS };
 }
 
+// Versión pura (sin tocar el DOM) de los cálculos de Curva S, reutilizable en el reporte PDF.
+// Requiere que cronogramaData ya esté poblado (llamar antes a cargarCurvaS para el proyecto actual).
+function calcularIndicadoresPuro(rubros, proy){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
+
+  let BCWP=0, BCWS=0;
+  conFechas.forEach(r=>{
+    const inicio=new Date(r.fecha_inicio+'T00:00:00');
+    const fin=new Date(r.fecha_fin+'T00:00:00');
+    const duracion=(fin-inicio)||1;
+    const transcurrido=Math.min(Math.max(hoy-inicio,0),duracion);
+    const pctPlan=Math.min((transcurrido/duracion)*100,100);
+    BCWP += (r.avance_real/100)*r.pesoEfectivo;
+    BCWS += (pctPlan/100)*r.pesoEfectivo;
+  });
+
+  const SPI = BCWS>0 ? BCWP/BCWS : null;
+  const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
+
+  const totalProduccion = cronogramaData.reduce((s,r)=>s+(r.total_produccion||0),0);
+  const montoContrato = cronogramaData.reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const avanceRealTotal = montoContrato>0 ? (totalProduccion/montoContrato)*100 : 0;
+
+  let proyeccion = null;
+  if(proy?.fecha_inicio && proy?.fecha_fin_planificada && SPI && SPI>0){
+    const inicioProyecto = new Date(proy.fecha_inicio+'T00:00:00');
+    const finPlanificado = new Date(proy.fecha_fin_planificada+'T00:00:00');
+    const duracionPlanDias = Math.round((finPlanificado-inicioProyecto)/(1000*60*60*24));
+    const duracionEstimadaDias = Math.round(duracionPlanDias/SPI);
+    const fechaEntregaEstimada = new Date(inicioProyecto.getTime() + duracionEstimadaDias*24*60*60*1000);
+    const diasAtraso = Math.round((fechaEntregaEstimada-finPlanificado)/(1000*60*60*24));
+    proyeccion = {
+      fechaPlanificada: finPlanificado,
+      fechaEstimada: fechaEntregaEstimada,
+      diasAtraso
+    };
+  }
+
+  return { SPI, BCWP, BCWS, avanceRealTotal, totalProduccion, montoContrato, atrasados, proyeccion };
+}
+
 function dibujarGraficoCurvaS(rubros, proy){
+  const canvasEl = document.getElementById('chartCurvaS');
+  if(!canvasEl) return; // El canvas no está en el DOM (ej. se llamó desde otra pantalla, como el reporte PDF de Libro de Obra)
   if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
   const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
   if(!conFechas.length){
@@ -9357,6 +9408,23 @@ async function generarReportePDF(){
     observaciones = obs||[];
   }
 
+  // Calcular indicadores de Curva S si el checkbox está activo
+  let curvaSDatos = null;
+  if(incCurvaS){
+    await cargarCurvaS();
+    // Replicar el cálculo de pesoEfectivo que normalmente hace renderCurvaS (pantalla),
+    // ya que aquí no se renderiza esa pantalla y por tanto cronogramaData no trae ese campo.
+    const pesosDefinidos = cronogramaData.filter(r=>r.peso!==null);
+    const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+r.peso,0);
+    const sinPeso = cronogramaData.filter(r=>r.peso===null);
+    const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
+    const rubrosConPesoReporte = cronogramaData.map(r=>({
+      ...r,
+      pesoEfectivo: r.peso!==null ? r.peso : pesoAuto
+    }));
+    curvaSDatos = calcularIndicadoresPuro(rubrosConPesoReporte, proy);
+  }
+
   // Generar HTML del reporte (formato A4)
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -9433,6 +9501,30 @@ async function generarReportePDF(){
     </tfoot>
   </table>` : '<div style="font-size:9px;color:#676879;padding:6px 0">No hay rubros registrados en este período</div>'}
 </div>
+
+${incCurvaS && curvaSDatos ? `
+<div class="section">
+  <div class="section-title">Curva S e Indicadores de Desempeño</div>
+  <div class="resumen-grid">
+    <div class="resumen-card"><div class="num">${curvaSDatos.avanceRealTotal.toFixed(1)}%</div><div class="lbl">Avance real</div></div>
+    <div class="resumen-card"><div class="num">${curvaSDatos.SPI!==null?curvaSDatos.SPI.toFixed(2):'—'}</div><div class="lbl">SPI</div></div>
+    <div class="resumen-card"><div class="num">${formatoKSinSigno(curvaSDatos.totalProduccion)}</div><div class="lbl">Producción total</div></div>
+    <div class="resumen-card"><div class="num">${curvaSDatos.atrasados}</div><div class="lbl">Rubros atrasados</div></div>
+  </div>
+  ${curvaSDatos.proyeccion ? `
+  <table style="margin-top:10px">
+    <thead><tr><th>Fecha fin planificada</th><th>Fecha fin estimada</th><th>Estado</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>${curvaSDatos.proyeccion.fechaPlanificada.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'})}</td>
+        <td>${curvaSDatos.proyeccion.fechaEstimada.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'})}</td>
+        <td style="font-weight:700;color:${curvaSDatos.proyeccion.diasAtraso<=0?'#00c875':curvaSDatos.proyeccion.diasAtraso<=15?'#ff9f00':'#e2445c'}">
+          ${curvaSDatos.proyeccion.diasAtraso<=0 ? `✅ ${Math.abs(curvaSDatos.proyeccion.diasAtraso)} días adelantado` : `🔴 ${curvaSDatos.proyeccion.diasAtraso} días de atraso`}
+        </td>
+      </tr>
+    </tbody>
+  </table>` : '<div style="font-size:9px;color:#676879;padding:6px 0">Sin datos suficientes para proyectar fecha de entrega (falta fecha de inicio o fin planificada del proyecto)</div>'}
+</div>` : ''}
 
 <div class="section">
   <div class="section-title">Registros del Período — ${registros.length} registro(s)</div>
