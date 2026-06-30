@@ -563,6 +563,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <select id="filtroContratista" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
                 <option value="">— Todos los contratistas —</option>
               </select>
+              <button class="btn" onclick="abrirModalReporteDashboard()">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Reporte PDF
+              </button>
               <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Nuevo proyecto
@@ -1096,6 +1100,39 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
     <div class="modal-footer">
       <button class="btn" onclick="cerrarModal('modalReporte')">Cancelar</button>
       <button class="btn primary" onclick="verReportePantalla()" id="btnGenerarPDF">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Vista previa
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIGURACIÓN REPORTE DASHBOARD -->
+<div class="modal-overlay" id="modalReporteDashboard">
+  <div class="modal" style="width:420px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📄 Reporte General de Proyectos</div>
+      <button class="btn" onclick="cerrarModal('modalReporteDashboard')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:#676879;margin-bottom:16px">
+        El reporte incluye los proyectos visibles actualmente en el Dashboard, respetando los filtros de Contratante/Contratista aplicados.
+      </div>
+      <div class="form-group">
+        <label class="form-label">Incluir en el reporte</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptDashMetricas" checked style="width:16px;height:16px;accent-color:#0073ea"/> Métricas generales
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptDashTiempo" checked style="width:16px;height:16px;accent-color:#0073ea"/> Columna de Tiempo (SPI)
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalReporteDashboard')">Cancelar</button>
+      <button class="btn primary" onclick="generarReporteDashboard()">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Vista previa
       </button>
@@ -2782,54 +2819,48 @@ async function cargarDashboard(){
   renderProyectosTabla('dashProyectosList', proyectos);
 }
 
-async function actualizarMetricasDashboard(lista){
+// Calcula las métricas del Dashboard sin tocar el DOM, reutilizable en pantalla y en el PDF.
+async function calcularMetricasDashboard(lista){
   const enEjecucion = lista.filter(p=>p.estado==='ejecucion');
-  document.getElementById('mProyectos').textContent = enEjecucion.length;
-
   const ids = lista.map(p=>p.id);
-  if(ids.length){
-    // Total registros libro de obra
-    const { count: totalRegistros } = await sb.from('libro_obra')
-      .select('id',{count:'exact',head:true})
-      .in('proyecto_id', ids);
-    document.getElementById('mRegistros').textContent = totalRegistros||0;
 
-    // Producción total, avance y suma de contratos — todo desde rubros (igual que Curva S)
-    const { data: rubros } = await sb.from('rubros')
-      .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
-      .in('proyecto_id', ids);
-
-    if(rubros&&rubros.length){
-      const produccionTotal = rubros.reduce((acc,r)=>acc+(r.total_produccion||0),0);
-      const montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
-      const avance = montoTotal>0 ? (produccionTotal/montoTotal*100).toFixed(1) : 0;
-      document.getElementById('mProduccion').textContent = formatoK(produccionTotal);
-      document.getElementById('mAvance').textContent = avance+'%';
-      document.getElementById('mSumaContratos').textContent = formatoK(montoTotal);
-    } else {
-      document.getElementById('mProduccion').textContent = '$0 K';
-      document.getElementById('mAvance').textContent = '0%';
-      document.getElementById('mSumaContratos').textContent = '$0 K';
-    }
-  } else {
-    document.getElementById('mProyectos').textContent = '0';
-    document.getElementById('mRegistros').textContent = '0';
-    document.getElementById('mProduccion').textContent = '$0 K';
-    document.getElementById('mAvance').textContent = '0%';
-    document.getElementById('mSumaContratos').textContent = '$0 K';
+  if(!ids.length){
+    return { proyectosActivos:0, registros:0, produccionTotal:0, avance:0, sumaContratos:0 };
   }
+
+  const { count: totalRegistros } = await sb.from('libro_obra')
+    .select('id',{count:'exact',head:true})
+    .in('proyecto_id', ids);
+
+  const { data: rubros } = await sb.from('rubros')
+    .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
+    .in('proyecto_id', ids);
+
+  let produccionTotal=0, montoTotal=0, avance=0;
+  if(rubros&&rubros.length){
+    produccionTotal = rubros.reduce((acc,r)=>acc+(r.total_produccion||0),0);
+    montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
+    avance = montoTotal>0 ? parseFloat((produccionTotal/montoTotal*100).toFixed(1)) : 0;
+  }
+
+  return { proyectosActivos:enEjecucion.length, registros:totalRegistros||0, produccionTotal, avance, sumaContratos:montoTotal };
 }
 
-async function renderProyectosTabla(containerId, lista){
-  const container = document.getElementById(containerId);
-  if(!lista||!lista.length){
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">Crea tu primer proyecto para comenzar</div><button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button></div>`;
-    return;
-  }
+async function actualizarMetricasDashboard(lista){
+  const m = await calcularMetricasDashboard(lista);
+  document.getElementById('mProyectos').textContent = m.proyectosActivos;
+  document.getElementById('mRegistros').textContent = m.registros;
+  document.getElementById('mProduccion').textContent = formatoK(m.produccionTotal);
+  document.getElementById('mAvance').textContent = m.avance+'%';
+  document.getElementById('mSumaContratos').textContent = formatoK(m.sumaContratos);
+}
+
+// Calcula avance, SPI y monto real por proyecto, sin tocar el DOM.
+// Reutilizable en pantalla (renderProyectosTabla) y en el reporte PDF del Dashboard.
+async function calcularEstadosProyectos(lista){
   const avances = {};
   const spiEstados = {};
   const montosReales = {};
-  const hoy = new Date();
 
   for(const p of lista){
     const { data: rubros } = await sb.from('rubros')
@@ -2884,22 +2915,31 @@ async function renderProyectosTabla(containerId, lista){
     }
   }
 
+  return { avances, spiEstados, montosReales };
+}
+
+function etiquetaTiempoPorSPI(spi){
+  if(spi===null) return { label:'N/A', color:'#676879', icon:'—' };
+  if(spi>=0.95) return { label:'A tiempo', color:'#00c875', icon:'✅' };
+  if(spi>=0.80) return { label:'Leve atraso', color:'#ff9f00', icon:'⚠️' };
+  return { label:'Atrasado', color:'#e2445c', icon:'🔴' };
+}
+
+async function renderProyectosTabla(containerId, lista){
+  const container = document.getElementById(containerId);
+  if(!lista||!lista.length){
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">Crea tu primer proyecto para comenzar</div><button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button></div>`;
+    return;
+  }
+  const { avances, spiEstados, montosReales } = await calcularEstadosProyectos(lista);
+
   const rol = currentPerfil?.rol;
   const puedeEditar = rol==='admin';
   container.innerHTML = `<table>
     <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
       const spi = spiEstados[p.id];
-      let tiempoLabel, tiempoColor, tiempoIcon;
-      if(spi===null){
-        tiempoLabel='N/A'; tiempoColor='#676879'; tiempoIcon='—';
-      } else if(spi>=0.95){
-        tiempoLabel='A tiempo'; tiempoColor='#00c875'; tiempoIcon='✅';
-      } else if(spi>=0.80){
-        tiempoLabel='Leve atraso'; tiempoColor='#ff9f00'; tiempoIcon='⚠️';
-      } else {
-        tiempoLabel='Atrasado'; tiempoColor='#e2445c'; tiempoIcon='🔴';
-      }
+      const { label:tiempoLabel, color:tiempoColor, icon:tiempoIcon } = etiquetaTiempoPorSPI(spi);
       return `
       <tr>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
@@ -9343,6 +9383,117 @@ function abrirModalReporte(){
   document.getElementById('rptActividadesSiguiente').value = '';
   seleccionarTipoReporte('cliente');
   document.getElementById('modalReporte').classList.add('show');
+}
+
+function abrirModalReporteDashboard(){
+  document.getElementById('modalReporteDashboard').classList.add('show');
+}
+
+async function generarReporteDashboard(){
+  const btn = document.querySelector('#modalReporteDashboard .btn.primary');
+  const textoOriginal = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Generando...';
+
+  const incMetricas = document.getElementById('rptDashMetricas').checked;
+  const incTiempo = document.getElementById('rptDashTiempo').checked;
+
+  // Respetar los filtros de Contratante/Contratista actualmente aplicados en el Dashboard
+  const contratante = document.getElementById('filtroContratante')?.value||'';
+  const contratista = document.getElementById('filtroContratista')?.value||'';
+  let listaProyectos = proyectos;
+  if(contratante) listaProyectos = listaProyectos.filter(p=>p.contratante===contratante);
+  if(contratista) listaProyectos = listaProyectos.filter(p=>p.contratista===contratista);
+
+  const metricas = incMetricas ? await calcularMetricasDashboard(listaProyectos) : null;
+  const { spiEstados, montosReales } = await calcularEstadosProyectos(listaProyectos);
+
+  const filtrosTexto = [
+    contratante ? `Contratante: ${contratante}` : null,
+    contratista ? `Contratista: ${contratista}` : null
+  ].filter(Boolean).join(' · ');
+
+  const estadoLabelMap = {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'};
+  const estadoColorMap = {planificacion:'#0073ea',ejecucion:'#ff9f00',pausado:'#676879',finalizado:'#00c875',cancelado:'#e2445c'};
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"/></head>
+<body>
+
+<div class="header">
+  <div class="header-logo">
+    <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/96beb8c70ba84669857fc94d2be25a07/original/logo-Hidivo.png"
+         style="height:48px;object-fit:contain;filter:brightness(0) invert(1)"
+         crossorigin="anonymous" alt="HIDIVO"/>
+    <div>
+      <div class="header-logo-sub">Gestión de Obras Civiles</div>
+    </div>
+  </div>
+  <div class="header-info">
+    <div class="title">Reporte General de Proyectos</div>
+    <div class="sub">Generado el ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}${filtrosTexto?' — '+filtrosTexto:''}</div>
+  </div>
+</div>
+
+${metricas ? `
+<div class="section">
+  <div class="section-title">Métricas Generales</div>
+  <div class="resumen-grid">
+    <div class="resumen-card"><div class="num">${metricas.proyectosActivos}</div><div class="lbl">Proyectos activos</div></div>
+    <div class="resumen-card"><div class="num">${metricas.avance}%</div><div class="lbl">Avance promedio</div></div>
+    <div class="resumen-card"><div class="num">${formatoKSinSigno(metricas.produccionTotal)}</div><div class="lbl">Producción total</div></div>
+    <div class="resumen-card"><div class="num">${metricas.registros}</div><div class="lbl">Registros libro</div></div>
+    <div class="resumen-card"><div class="num">${formatoKSinSigno(metricas.sumaContratos)}</div><div class="lbl">Suma contratos</div></div>
+  </div>
+</div>` : ''}
+
+<div class="section">
+  <div class="section-title">Proyectos — ${listaProyectos.length} proyecto(s)</div>
+  ${listaProyectos.length ? `
+  <table>
+    <thead><tr>
+      <th>Proyecto</th><th>Contratante</th><th>Monto Contrato</th><th>Fecha Fin Planificada</th><th>Estado</th>${incTiempo?'<th>Tiempo</th>':''}
+    </tr></thead>
+    <tbody>
+      ${listaProyectos.map(p=>{
+        const tiempo = incTiempo ? etiquetaTiempoPorSPI(spiEstados[p.id]) : null;
+        const spiTexto = spiEstados[p.id]!=null ? ` (SPI ${spiEstados[p.id].toFixed(2)})` : '';
+        return `<tr>
+        <td>${p.nombre}</td>
+        <td>${p.contratante||'—'}</td>
+        <td>${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td>${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
+        <td style="font-weight:700;color:${estadoColorMap[p.estado]||'#676879'}">${estadoLabelMap[p.estado]||p.estado}</td>
+        ${incTiempo?`<td style="color:${tiempo.color};font-weight:600">${tiempo.icon} ${tiempo.label}${spiTexto}</td>`:''}
+      </tr>`;
+      }).join('')}
+    </tbody>
+  </table>` : '<div style="font-size:9px;color:#676879;padding:6px 0">No hay proyectos para mostrar con los filtros actuales</div>'}
+</div>
+
+<div class="footer">
+  <div>HIDIVO — Gestión de Obras Civiles</div>
+  <div>Documento generado automáticamente</div>
+</div>
+
+</body></html>`;
+
+  // Extraer solo el body para mostrarlo editable, igual que el reporte de Libro de Obra
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const bodyContent = doc.body.innerHTML;
+  const editableHtml = bodyContent.replace(
+    /(<(p|div|span|td|th|h[1-6]|strong|label)[^>]*)(>)([^<]+)(<\/\2>)/g,
+    (match, open, tag, gt, text, close) => {
+      if(text.trim()) return open + ' contenteditable="true"' + gt + text + close;
+      return match;
+    }
+  );
+
+  btn.disabled = false; btn.innerHTML = textoOriginal;
+  document.getElementById('reporteContenido').innerHTML = editableHtml;
+  cerrarModal('modalReporteDashboard');
+  document.getElementById('modalVistaReporte').classList.add('show');
 }
 
 async function generarReportePDF(){
