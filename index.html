@@ -89,6 +89,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Topbar */
 .topbar-title{font-size:16px;font-weight:600;color:#323338;flex:1}
 .topbar-actions{display:flex;gap:8px;align-items:center}
+#listaBuscarProyecto{position:absolute;top:100%;left:0;right:0;max-height:320px;overflow-y:auto;background:#fff;border:1px solid #d0d4e4;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:2000;margin-top:4px}
+.opcion-buscar-proyecto{padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0f1f5;white-space:normal;line-height:1.35}
+.opcion-buscar-proyecto:last-child{border-bottom:none}
+.opcion-buscar-proyecto:hover,.opcion-buscar-proyecto.activa{background:#f0f7ff}
+.opcion-buscar-proyecto.seleccionada{background:#e6f1fd;font-weight:600}
 .btn{font-size:13px;padding:7px 14px;border-radius:7px;border:1px solid #c5c7d4;background:#fff;color:#323338;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .btn:hover{background:#f5f6f8}
 .btn.primary{background:#0073ea;color:#fff;border-color:#0073ea}
@@ -499,8 +504,12 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </button>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       <div class="topbar-actions">
-        <div id="proyectoSelector" style="display:none">
-          <select class="form-control" id="selectProyecto" onchange="cambiarProyecto(this.value)" style="min-width:220px">
+        <div id="proyectoSelector" style="display:none;position:relative">
+          <input type="text" class="form-control" id="inputBuscarProyecto" placeholder="Buscar proyecto..." autocomplete="off" style="min-width:220px"
+                 onfocus="abrirBuscadorProyecto()" oninput="filtrarBuscadorProyecto()" onkeydown="teclaBuscadorProyecto(event)"
+                 onblur="setTimeout(cerrarBuscadorProyecto,150)">
+          <div id="listaBuscarProyecto" style="display:none"></div>
+          <select id="selectProyecto" onchange="cambiarProyecto(this.value)" style="display:none">
             <option value="">Selecciona un proyecto...</option>
           </select>
         </div>
@@ -3039,8 +3048,67 @@ async function cargarProyectosSelector(){
     data = proy||[];
   }
   const sel = document.getElementById('selectProyecto');
+  const valorPrevio = sel.value;
   sel.innerHTML = '<option value="">Selecciona un proyecto...</option>' +
-    data.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
+    data.map(p=>`<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('');
+  if(valorPrevio) sel.value = valorPrevio;
+  sincronizarBuscadorProyecto();
+}
+
+// ── BUSCADOR DE PROYECTOS (combobox sobre #selectProyecto) ──
+function normBusquedaProyecto(s){
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function abrirBuscadorProyecto(){
+  const inp = document.getElementById('inputBuscarProyecto');
+  inp.select();
+  renderListaBuscarProyecto('');
+}
+function filtrarBuscadorProyecto(){
+  renderListaBuscarProyecto(document.getElementById('inputBuscarProyecto').value);
+}
+function renderListaBuscarProyecto(filtro){
+  const sel = document.getElementById('selectProyecto');
+  const lista = document.getElementById('listaBuscarProyecto');
+  const f = normBusquedaProyecto(filtro);
+  const opts = [...sel.options].filter(o=>o.value && (!f || normBusquedaProyecto(o.textContent).includes(f)));
+  lista.innerHTML = opts.length
+    ? opts.map(o=>`<div class="opcion-buscar-proyecto${o.value===sel.value?' seleccionada':''}" data-id="${o.value}" onmousedown="event.preventDefault();seleccionarProyectoBuscador('${o.value}')">${escAttr(o.textContent)}</div>`).join('')
+    : '<div style="padding:12px;font-size:13px;color:#676879">Sin resultados</div>';
+  lista.style.display = 'block';
+}
+function teclaBuscadorProyecto(e){
+  if(e.key === 'Escape'){ cerrarBuscadorProyecto(); e.target.blur(); return; }
+  const lista = document.getElementById('listaBuscarProyecto');
+  const ops = [...lista.querySelectorAll('.opcion-buscar-proyecto')];
+  if(!ops.length) return;
+  let idx = ops.findIndex(o=>o.classList.contains('activa'));
+  if(e.key === 'ArrowDown'){ e.preventDefault(); idx = Math.min(idx+1, ops.length-1); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); idx = Math.max(idx-1, 0); }
+  else if(e.key === 'Enter'){ e.preventDefault(); seleccionarProyectoBuscador(ops[idx>=0?idx:0].dataset.id); return; }
+  else return;
+  ops.forEach(o=>o.classList.remove('activa'));
+  ops[idx].classList.add('activa');
+  ops[idx].scrollIntoView({block:'nearest'});
+}
+function seleccionarProyectoBuscador(id){
+  const sel = document.getElementById('selectProyecto');
+  sel.value = id;
+  cerrarBuscadorProyecto();
+  document.getElementById('inputBuscarProyecto').blur();
+  cambiarProyecto(id);
+}
+function cerrarBuscadorProyecto(){
+  const lista = document.getElementById('listaBuscarProyecto');
+  if(lista) lista.style.display = 'none';
+  sincronizarBuscadorProyecto();
+}
+function sincronizarBuscadorProyecto(){
+  const sel = document.getElementById('selectProyecto');
+  const inp = document.getElementById('inputBuscarProyecto');
+  if(!sel || !inp) return;
+  const opt = sel.options[sel.selectedIndex];
+  inp.value = (sel.value && opt) ? opt.textContent : '';
 }
 
 async function cambiarProyecto(id){
@@ -3125,6 +3193,7 @@ function aplicarModulosProyecto(modulos){
 
 async function abrirProyecto(id){
   document.getElementById('selectProyecto').value=id;
+  sincronizarBuscadorProyecto();
   await cambiarProyecto(id);
   const destino = currentPerfil?.rol==='cliente' ? 'curvaS' : 'rubros';
   navTo(destino, document.querySelector(`.nav-item[onclick*="${destino}"]`));
