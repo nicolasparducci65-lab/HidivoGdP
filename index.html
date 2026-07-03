@@ -7255,18 +7255,46 @@ async function abrirModalEquipo(equipo=null){
 
 async function eliminarTodosRubros(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
-  if(!confirm('⚠️ ¿Estás seguro de eliminar TODOS los rubros del proyecto?\n\nEsta acción también eliminará el cronograma asociado y no se puede deshacer.')) return;
 
+  // ── GUARDA: bloquear si existen cantidades trabajadas o planillas vinculadas ──
   const btn = document.getElementById('btnEliminarRubros');
-  btn.disabled=true; btn.textContent='Eliminando...';
+  btn.disabled=true; btn.textContent='Verificando...';
+
+  const { data: registros } = await sb.from('libro_obra').select('id').eq('proyecto_id', currentProyecto);
+  let avancesLibro = 0;
+  if(registros?.length){
+    const { count } = await sb.from('libro_obra_rubros').select('*',{count:'exact',head:true}).in('registro_id', registros.map(r=>r.id));
+    avancesLibro = count || 0;
+  }
+  const { data: rubrosProy } = await sb.from('rubros').select('id').eq('proyecto_id', currentProyecto);
+  let enPlanillas = 0;
+  if(rubrosProy?.length){
+    const { count } = await sb.from('planilla_rubros').select('*',{count:'exact',head:true}).in('rubro_id', rubrosProy.map(r=>r.id));
+    enPlanillas = count || 0;
+  }
+
+  if(avancesLibro > 0 || enPlanillas > 0){
+    btn.disabled=false; btn.textContent='Limpiar rubros';
+    let detalle = '';
+    if(avancesLibro > 0) detalle += `\n• ${avancesLibro} cantidad(es) trabajada(s) registrada(s) en el Libro de Obra`;
+    if(enPlanillas > 0) detalle += `\n• ${enPlanillas} rubro(s) incluido(s) en Planillas de Pago`;
+    alert('🛑 NO SE PUEDE LIMPIAR LOS RUBROS\n\nEste proyecto tiene avance registrado que se destruiría:' + detalle + '\n\nPara proteger esos datos, la limpieza está bloqueada. Si realmente necesitas rehacer los rubros, primero elimina esos avances desde los registros del Libro de Obra y/o las Planillas correspondientes.');
+    toast('Limpieza bloqueada: hay avance registrado vinculado a los rubros','error');
+    return;
+  }
+
+  if(!confirm('⚠️ ¿Estás seguro de eliminar TODOS los rubros del proyecto?\n\nEsta acción también eliminará el cronograma asociado (fechas y pesos de Curva S) y no se puede deshacer.')){
+    btn.disabled=false; btn.textContent='Limpiar rubros';
+    return;
+  }
+
+  btn.textContent='Eliminando...';
 
   // Eliminar cronograma de rubros
   await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto);
-  // Eliminar rubros del libro de obra
-  const { data: registros } = await sb.from('libro_obra').select('id').eq('proyecto_id', currentProyecto);
+  // Limpieza defensiva de vínculos en libro de obra (la guarda ya verificó que no hay avances)
   if(registros?.length){
-    const ids = registros.map(r=>r.id);
-    await sb.from('libro_obra_rubros').delete().in('registro_id', ids);
+    await sb.from('libro_obra_rubros').delete().in('registro_id', registros.map(r=>r.id));
   }
   // Eliminar rubros
   await sb.from('rubros').delete().eq('proyecto_id', currentProyecto);
