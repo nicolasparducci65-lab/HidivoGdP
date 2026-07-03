@@ -3264,7 +3264,7 @@ function renderRubros(rubros){
           const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
           return `<tr>
             <td style="white-space:nowrap;font-size:12px;color:#676879">${r.codigo||'—'}</td>
-            <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
+            <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${escAttr(r.descripcion)}</td>
             <td style="white-space:nowrap">${r.unidad||'—'}</td>
             <td style="text-align:right;white-space:nowrap">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
             <td style="text-align:right;white-space:nowrap">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
@@ -3674,8 +3674,8 @@ async function verDetalleLibro(id){
 
   const fotosHtml = fotos&&fotos.length ? fotos.map(f=>`
     <div style="position:relative">
-      <img src="${f.url}" alt="${f.descripcion||''}" style="width:100%;height:120px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="window.open('${f.url}','_blank')"/>
-      ${f.descripcion?`<div style="font-size:11px;color:#676879;margin-top:4px;text-align:center">${f.descripcion}</div>`:''}
+      <img src="${f.url}" alt="${escAttr(f.descripcion)}" style="width:100%;height:120px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="window.open('${f.url}','_blank')"/>
+      ${f.descripcion?`<div style="font-size:11px;color:#676879;margin-top:4px;text-align:center">${escAttr(f.descripcion)}</div>`:''}
     </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin fotos</div>';
 
   const rubrosHtml = rubros&&rubros.length ? rubros.map(rv=>`
@@ -3745,13 +3745,22 @@ function escaparParaAtributo(texto){
     .replace(/"/g, '&quot;');
 }
 
+// Escapa texto para insertarlo de forma segura en HTML (atributos y nodos de texto)
+function escAttr(texto){
+  return String(texto??'')
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
 function renderRubrosLibroModal(rubros){
   if(!rubros.length){ document.getElementById('libroRubrosLista').innerHTML='<div style="color:#676879;font-size:13px">No hay rubros en este proyecto</div>'; return; }
   document.getElementById('libroRubrosLista').innerHTML = rubros.map(r=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8" id="rubro-row-${r.id}">
       <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${escaparParaAtributo(r.codigo)}','${escaparParaAtributo(r.descripcion)}','${escaparParaAtributo(r.unidad)}')" style="width:16px;height:16px;cursor:pointer"/>
-      <span style="font-size:12px;color:#676879;min-width:30px">${r.codigo}</span>
-      <span style="font-size:13px;flex:1">${r.descripcion}</span>
+      <span style="font-size:12px;color:#676879;min-width:30px">${escAttr(r.codigo)}</span>
+      <span style="font-size:13px;flex:1">${escAttr(r.descripcion)}</span>
       <span style="font-size:11px;color:#676879">${r.unidad||''}</span>
       <input type="number" id="qty-${r.id}" placeholder="0" step="0.01" min="0" style="width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;display:none" onchange="actualizarCantidadRubro('${r.id}',this.value)"/>
     </div>`).join('');
@@ -3792,7 +3801,7 @@ function renderFotosPreview(){
     <div style="position:relative">
       <img src="${f.dataUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:6px"/>
       <button onclick="eliminarFotoLibro(${i})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
-      <input type="text" placeholder="Descripción..." value="${f.descripcion}" onchange="libroFotosSeleccionadas[${i}].descripcion=this.value" style="width:100%;font-size:11px;padding:3px 6px;border:1px solid #e6e9ef;border-radius:4px;margin-top:4px"/>
+      <input type="text" placeholder="Descripción..." value="${escAttr(f.descripcion)}" onchange="libroFotosSeleccionadas[${i}].descripcion=this.value" style="width:100%;font-size:11px;padding:3px 6px;border:1px solid #e6e9ef;border-radius:4px;margin-top:4px"/>
     </div>`).join('');
 }
 
@@ -4025,7 +4034,7 @@ function renderCurvaS(proy){
     const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
     return `<tr>
       <td style="font-size:11px;color:#676879;white-space:nowrap">${r.codigo||'—'}</td>
-      <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${r.descripcion}</td>
+      <td style="font-size:12px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${escAttr(r.descripcion)}</td>
       <td style="text-align:center;font-weight:600;white-space:nowrap">${r.pesoEfectivo.toFixed(1)}%</td>
       <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_inicio?formatFecha(r.fecha_inicio):'—'}</td>
       <td style="text-align:center;font-size:12px;white-space:nowrap">${r.fecha_fin?formatFecha(r.fecha_fin):'—'}</td>
@@ -4376,7 +4385,7 @@ function abrirModalCronograma(){
   const totalMonto=cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
   const rows = cronogramaData.map((r,i)=>`
     <tr>
-      <td style="font-size:11px;max-width:180px;padding:6px 8px">${r.descripcion}</td>
+      <td style="font-size:11px;max-width:180px;padding:6px 8px">${escAttr(r.descripcion)}</td>
       <td style="padding:4px"><input type="number" value="${r.peso!==null?r.peso.toFixed(1):(r.monto_contrato/totalMonto*100).toFixed(1)}" min="0" max="100" step="0.1"
         style="width:70px;padding:5px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;text-align:right"
         onchange="cronogramaData[${i}].peso=parseFloat(this.value)||0"/></td>
@@ -4419,7 +4428,7 @@ async function importarCronograma(input){
     const text = await file.text();
     parseMSProjectXML(text);
   } else if(ext==='xlsx'||ext==='xls'){
-    toast('Para Excel: usa columnas "Descripcion", "FechaInicio", "FechaFin", "Peso"','info');
+    toast('Leyendo Excel: columnas Descripcion, FechaInicio, FechaFin, Peso (opcionales: # y Codigo)','info');
     await parsearExcelCronograma(file);
   }
   input.value='';
@@ -4433,35 +4442,107 @@ async function parsearExcelCronograma(file){
   const data = await file.arrayBuffer();
   const wb = XLSX.read(data, {type:'array', cellDates:false});
   const ws = wb.Sheets[wb.SheetNames[0]];
-  // Leer desde fila 3 (índice 2) donde están los encabezados reales
-  const rows = XLSX.utils.sheet_to_json(ws, {raw:true, range:2});
-  let importados=0;
-  rows.forEach(row=>{
-    const num = parseInt(row['#']||0);
-    if(num >= 1 && num <= cronogramaData.length){
-      const match = cronogramaData[num-1];
-      const fi = row['FechaInicio']||null;
-      const ff = row['FechaFin']||null;
-      const p  = row['Peso']||null;
-      if(fi) match.fecha_inicio = excelFechaToISO(fi);
-      if(ff) match.fecha_fin    = excelFechaToISO(ff);
-      if(p)  match.peso         = parseFloat(p)||null;
-      importados++;
+
+  // Normalizador: minúsculas, sin tildes, espacios colapsados
+  const norm = s => String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+  // Clave de encabezado: solo letras, números y #
+  const normKey = s => norm(s).replace(/[^a-z0-9#]/g,'');
+
+  // Detectar automáticamente la fila de encabezados (buscar en las primeras 15 filas)
+  const matriz = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
+  let filaHeader = -1;
+  for(let i=0; i<Math.min(matriz.length,15); i++){
+    const celdas = (matriz[i]||[]).map(normKey);
+    if(celdas.includes('descripcion') || (celdas.includes('fechainicio') && celdas.includes('fechafin'))){
+      filaHeader = i; break;
     }
+  }
+  if(filaHeader === -1){
+    toast('No encontré encabezados. El Excel necesita columnas: Descripcion, FechaInicio, FechaFin, Peso','error');
+    return;
+  }
+
+  const rows = XLSX.utils.sheet_to_json(ws, {raw:true, range:filaHeader});
+  // Buscar valor de columna por nombres alternativos (normalizados)
+  const getCol = (row, ...nombres) => {
+    for(const k of Object.keys(row)){
+      if(nombres.includes(normKey(k))) return row[k];
+    }
+    return undefined;
+  };
+
+  // Índices de búsqueda: por combinación codigo|descripcion y por descripción única
+  const porCombo = {};
+  const porDesc = {};
+  cronogramaData.forEach((r, idx) => {
+    porCombo[norm(r.codigo)+'|'+norm(r.descripcion)] = idx;
+    const d = norm(r.descripcion);
+    porDesc[d] = (d in porDesc) ? -1 : idx; // -1 = descripción duplicada, ambigua
   });
-  toast(`${importados} rubros importados del Excel`,'success');
+
+  let importados = 0;
+  const noEncontrados = [];
+  rows.forEach(row => {
+    const desc = getCol(row,'descripcion','rubro','descripciondelrubro');
+    const cod  = getCol(row,'codigo','cod');
+    const num  = parseInt(getCol(row,'#')||0);
+
+    // Prioridad: columna # (posición) → codigo+descripcion → descripción única
+    let idx = -1;
+    if(num >= 1 && num <= cronogramaData.length){
+      idx = num - 1;
+    } else if(desc !== undefined && desc !== null && String(desc).trim() !== ''){
+      const combo = norm(cod)+'|'+norm(desc);
+      if(combo in porCombo) idx = porCombo[combo];
+      else if(porDesc[norm(desc)] >= 0) idx = porDesc[norm(desc)];
+    }
+
+    if(idx === -1){
+      if(desc || cod || num) noEncontrados.push(String(desc || cod || ('fila #'+num)));
+      return;
+    }
+
+    const match = cronogramaData[idx];
+    const fi = getCol(row,'fechainicio','inicio','fechadeinicio');
+    const ff = getCol(row,'fechafin','fin','fechadefin');
+    const p  = getCol(row,'peso','pesopct');
+    if(fi) match.fecha_inicio = excelFechaToISO(fi);
+    if(ff) match.fecha_fin    = excelFechaToISO(ff);
+    if(p !== undefined && p !== null && String(p).trim() !== '') match.peso = parseFloat(p)||null;
+    importados++;
+  });
+
+  if(importados === 0){
+    toast('0 rubros coincidieron. Verifica que las descripciones del Excel coincidan con las del proyecto','error');
+  } else if(noEncontrados.length){
+    toast(`${importados} importados · ${noEncontrados.length} sin coincidencia (ej: ${noEncontrados[0].substring(0,35)}...)`,'info');
+    console.warn('Filas del Excel sin coincidencia:', noEncontrados);
+  } else {
+    toast(`${importados} rubros importados del Excel ✓`,'success');
+  }
   abrirModalCronograma();
 }
 
 function excelFechaToISO(val){
-  if(!val) return null;
-  if(typeof val==='number'){
-    // Excel serial date: días desde 1900-01-01 (con bug del año bisiesto 1900)
-    const d = new Date((val - 25569) * 86400000);
-    return d.toISOString().split('T')[0];
+  if(val === null || val === undefined || val === '') return null;
+  // Fecha serial de Excel (días desde 1900)
+  if(typeof val === 'number'){
+    const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    return isNaN(d) ? null : d.toISOString().split('T')[0];
   }
-  const d = new Date(val);
-  if(!isNaN(d)) return d.toISOString().split('T')[0];
+  if(val instanceof Date) return isNaN(val) ? null : val.toISOString().split('T')[0];
+  const s = String(val).trim();
+  // Ya en formato ISO (AAAA-MM-DD)
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+  // DD/MM/AAAA — acepta separadores / - . , dígitos sueltos (3/6/2026)
+  // y tolera la segunda barra faltante (03/062026)
+  const m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.]?(\d{4})$/);
+  if(m){
+    const dd = parseInt(m[1]), mm = parseInt(m[2]), yy = parseInt(m[3]);
+    if(mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31){
+      return `${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    }
+  }
   return null;
 }
 
@@ -5375,7 +5456,7 @@ async function abrirModalSubcontrato(id=null){
   document.getElementById('subcontratoRubrosList').innerHTML = (rubros||[]).map(r=>`
     <label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:12px;cursor:pointer;border-bottom:1px solid #f5f6f8">
       <input type="checkbox" value="${r.id}" ${rubrosAsignados.includes(r.id)?'checked':''} style="accent-color:#0073ea"/>
-      <span style="flex:1">${r.descripcion}</span>
+      <span style="flex:1">${escAttr(r.descripcion)}</span>
       <span style="color:#676879;white-space:nowrap">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</span>
     </label>`).join('') || '<div style="color:#676879;font-size:12px">Sin rubros en este proyecto</div>';
 
@@ -7402,7 +7483,7 @@ async function cargarRubrosPlanilla(){
     const pct = r.cantidad_contrato>0 ? Math.min(cantAcumulada/r.cantidad_contrato*100,100) : 0;
     return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}">
       <td style="font-size:11px;white-space:nowrap;color:#676879">${r.codigo||'—'}</td>
-      <td style="font-size:11px;max-width:160px">${r.descripcion}</td>
+      <td style="font-size:11px;max-width:160px">${escAttr(r.descripcion)}</td>
       <td style="text-align:center">${r.unidad||'—'}</td>
       <td style="text-align:right">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
       <td style="text-align:right">${Number(cantAnterior).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
@@ -9703,8 +9784,8 @@ async function generarReportePDF(){
     <tbody>
       ${rubrosResumenArr.map(r=>`
       <tr>
-        <td>${r.codigo}</td>
-        <td>${r.descripcion}</td>
+        <td>${escAttr(r.codigo)}</td>
+        <td>${escAttr(r.descripcion)}</td>
         <td>${r.unidad}</td>
         <td class="td-qty">${r.cantidad.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         <td style="text-align:right">$${Number(r.precio_unitario).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
@@ -9774,7 +9855,7 @@ ${incCurvaS && curvaSDatos ? `
         <div class="fotos-grid">
           ${fotosData[r.id].map(f=>`<div class="foto-item">
             <img src="${f.url}" crossorigin="anonymous"/>
-            ${f.descripcion ? `<div class="foto-desc">${f.descripcion}</div>` : ''}
+            ${f.descripcion ? `<div class="foto-desc">${escAttr(f.descripcion)}</div>` : ''}
           </div>`).join('')}
         </div></div>` : ''}
     </div>
@@ -9805,7 +9886,7 @@ ${incCuadroRubros && todosRubros.length ? `
         const avance = r.monto_contrato>0 ? Math.min((r.total_produccion||0)/r.monto_contrato*100,100) : 0;
         return `<tr>
           <td style="font-size:8px">${r.codigo||'—'}</td>
-          <td style="font-size:8px">${r.descripcion}</td>
+          <td style="font-size:8px">${escAttr(r.descripcion)}</td>
           <td style="text-align:center">${r.unidad||'—'}</td>
           <td style="text-align:right">${Number(r.cantidad||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
           <td style="text-align:right">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>

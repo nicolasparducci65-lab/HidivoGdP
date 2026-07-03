@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidivo-v2';
+const CACHE_NAME = 'hidivo-v3';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
@@ -31,6 +31,8 @@ self.addEventListener('activate', e => {
 
 // Fetch: network first, fallback a cache
 self.addEventListener('fetch', e => {
+  // Solo manejar peticiones http/https (ignorar chrome-extension:// y otros esquemas)
+  if(!e.request.url.startsWith('http')) return;
   // No interceptar peticiones a Supabase (necesitan red siempre)
   if(e.request.url.includes('supabase.co')) return;
 
