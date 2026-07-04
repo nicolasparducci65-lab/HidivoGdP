@@ -89,6 +89,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Topbar */
 .topbar-title{font-size:16px;font-weight:600;color:#323338;flex:1}
 .topbar-actions{display:flex;gap:8px;align-items:center}
+#notiBadge{position:absolute;top:-5px;right:-5px;background:#e2445c;color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:9px;align-items:center;justify-content:center;padding:0 4px;line-height:1}
+#panelNotificaciones{position:absolute;top:100%;right:0;margin-top:6px;width:min(360px,90vw);max-height:70vh;overflow-y:auto;background:#fff;border:1px solid #d0d4e4;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:2500}
+.noti-proyecto{padding:10px 14px 4px;font-size:12px;font-weight:700;color:#323338;border-top:1px solid #f0f1f5;white-space:normal;line-height:1.3}
+.noti-proyecto:first-child{border-top:none}
+.noti-item{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;font-size:13px;color:#444}
+.noti-item:hover{background:#f0f7ff}
+.noti-count{margin-left:auto;background:#0073ea;color:#fff;border-radius:10px;font-size:11px;font-weight:600;padding:1px 8px}
 #listaBuscarProyecto{position:absolute;top:100%;left:0;right:0;max-height:320px;overflow-y:auto;background:#fff;border:1px solid #d0d4e4;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:2000;margin-top:4px}
 .opcion-buscar-proyecto{padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0f1f5;white-space:normal;line-height:1.35}
 .opcion-buscar-proyecto:last-child{border-bottom:none}
@@ -504,6 +511,13 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </button>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       <div class="topbar-actions">
+        <div id="notiCentro" style="position:relative">
+          <button class="btn" id="btnNotificaciones" onclick="togglePanelNotificaciones()" title="Pendientes en tus proyectos" style="position:relative;padding:8px 10px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="16" height="16"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span id="notiBadge" style="display:none"></span>
+          </button>
+          <div id="panelNotificaciones" style="display:none"></div>
+        </div>
         <div id="proyectoSelector" style="display:none;position:relative">
           <input type="text" class="form-control" id="inputBuscarProyecto" placeholder="Buscar proyecto..." autocomplete="off" style="min-width:220px"
                  onfocus="abrirBuscadorProyecto()" oninput="filtrarBuscadorProyecto()" onkeydown="teclaBuscadorProyecto(event)"
@@ -2582,10 +2596,165 @@ async function mostrarApp(){
     // Iniciar badge y suscripción global de chat
     actualizarBadgeChat();
     suscribirseGlobalChat();
-    // Actualizar badge cada 30 segundos
+    cargarNotificacionesGlobales();
+    // Actualizar badges periódicamente
     setInterval(actualizarBadgeChat, 30000);
+    setInterval(cargarNotificacionesGlobales, 60000);
   }, 500);
 }
+
+// ── CENTRO DE NOTIFICACIONES GLOBALES (chat + observaciones + solicitudes por proyecto) ──
+let notiDatos = null;
+
+async function cargarNotificacionesGlobales(){
+  try{
+    if(!currentUser) return;
+    const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+    let membresias = [];
+    if(esAdminGlobal){
+      const { data: proys } = await sb.from('proyectos').select('id');
+      membresias = (proys||[]).map(p=>({proyecto_id:p.id, rol:'admin'}));
+    } else {
+      const { data: membs } = await sb.from('proyecto_miembros').select('proyecto_id,rol').eq('usuario_id', currentUser.id);
+      membresias = membs||[];
+    }
+    const rolPorProyecto = {};
+    membresias.forEach(m=>rolPorProyecto[m.proyecto_id]=m.rol);
+    const idsProyectos = membresias.map(m=>m.proyecto_id);
+    // Alcance por módulo según rol en cada proyecto
+    const idsChat = idsProyectos.filter(id=>rolPorProyecto[id]!=='cliente');
+    const idsObs  = idsProyectos.filter(id=>['admin','fiscalizador','residente'].includes(rolPorProyecto[id]));
+    const idsSolRespondedor = idsProyectos.filter(id=>['admin','fiscalizador'].includes(rolPorProyecto[id]));
+    const idsSolResidente   = idsProyectos.filter(id=>rolPorProyecto[id]==='residente');
+
+    const porProyecto = {};
+    const asegura = pid => porProyecto[pid] = porProyecto[pid] || {chat:0, obs:0, sol:0};
+    let dmNoLeidos = 0;
+
+    // Chat: canales de TODOS los proyectos accesibles + mensajes directos
+    const { data: dms } = await sb.from('canales_chat').select('id')
+      .eq('tipo','dm').or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
+    let canales = [];
+    if(idsChat.length){
+      const { data: cs } = await sb.from('canales_chat').select('id,proyecto_id')
+        .eq('tipo','canal').in('proyecto_id', idsChat);
+      canales = cs||[];
+    }
+    const todosCanales = [...(dms||[]).map(c=>({id:c.id, proyecto_id:null})), ...canales];
+    if(todosCanales.length){
+      const { data: leidos } = await sb.from('mensajes_leidos').select('canal_id,ultimo_leido_at').eq('usuario_id', currentUser.id);
+      const leidosMap = {};
+      (leidos||[]).forEach(l=>leidosMap[l.canal_id]=l.ultimo_leido_at);
+      const conteos = await Promise.all(todosCanales.map(c =>
+        sb.from('mensajes_chat').select('id',{count:'exact',head:true})
+          .eq('canal_id', c.id).is('hilo_id',null).neq('autor_id', currentUser.id)
+          .gt('created_at', leidosMap[c.id] || '2000-01-01')
+          .then(r=>({c, n:r.count||0}))
+      ));
+      conteos.forEach(({c,n})=>{
+        if(!n) return;
+        if(c.proyecto_id) asegura(c.proyecto_id).chat += n;
+        else dmNoLeidos += n;
+      });
+    }
+
+    // Observaciones abiertas
+    if(idsObs.length){
+      const { data: obs } = await sb.from('observaciones').select('id,proyecto_id')
+        .eq('estado','abierta').in('proyecto_id', idsObs);
+      (obs||[]).forEach(o=>asegura(o.proyecto_id).obs++);
+    }
+
+    // Solicitudes según el rol en cada proyecto
+    if(idsSolRespondedor.length){
+      const { data: s1 } = await sb.from('solicitudes').select('id,proyecto_id')
+        .in('estado',['pendiente','en_revision']).in('proyecto_id', idsSolRespondedor);
+      (s1||[]).forEach(s=>asegura(s.proyecto_id).sol++);
+    }
+    if(idsSolResidente.length){
+      const { data: s2 } = await sb.from('solicitudes').select('id,proyecto_id')
+        .eq('estado','correccion').in('proyecto_id', idsSolResidente);
+      (s2||[]).forEach(s=>asegura(s.proyecto_id).sol++);
+    }
+
+    notiDatos = { porProyecto, dmNoLeidos };
+    pintarBadgeNotificaciones();
+    const panel = document.getElementById('panelNotificaciones');
+    if(panel && panel.style.display==='block') renderPanelNotificaciones();
+  }catch(err){ console.warn('Notificaciones:', err); }
+}
+
+function totalNotificaciones(){
+  if(!notiDatos) return 0;
+  let t = notiDatos.dmNoLeidos;
+  Object.values(notiDatos.porProyecto).forEach(p=>t += p.chat + p.obs + p.sol);
+  return t;
+}
+
+function pintarBadgeNotificaciones(){
+  const b = document.getElementById('notiBadge');
+  if(!b) return;
+  const t = totalNotificaciones();
+  b.style.display = t>0 ? 'flex' : 'none';
+  b.textContent = t>99 ? '99+' : t;
+}
+
+function nombreProyectoNoti(pid){
+  const sel = document.getElementById('selectProyecto');
+  const opt = [...sel.options].find(o=>o.value===pid);
+  return opt ? opt.textContent : 'Proyecto';
+}
+
+function togglePanelNotificaciones(){
+  const panel = document.getElementById('panelNotificaciones');
+  if(panel.style.display==='block'){ panel.style.display='none'; return; }
+  renderPanelNotificaciones();
+  panel.style.display='block';
+  cargarNotificacionesGlobales();
+}
+
+function renderPanelNotificaciones(){
+  const panel = document.getElementById('panelNotificaciones');
+  if(!notiDatos){ panel.innerHTML = '<div style="padding:16px;font-size:13px;color:#676879">Cargando...</div>'; return; }
+  const { porProyecto, dmNoLeidos } = notiDatos;
+  const pids = Object.keys(porProyecto)
+    .filter(pid=>{ const p = porProyecto[pid]; return p.chat||p.obs||p.sol; })
+    .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
+
+  if(!pids.length && !dmNoLeidos){
+    panel.innerHTML = '<div style="padding:18px;font-size:13px;color:#676879;text-align:center">✓ No tienes pendientes</div>';
+    return;
+  }
+  let html = '';
+  if(dmNoLeidos){
+    html += `<div class="noti-proyecto">Mensajes directos</div>
+      <div class="noti-item" onclick="irANotificacion(null,'chat')">💬 Mensajes sin leer<span class="noti-count">${dmNoLeidos}</span></div>`;
+  }
+  pids.forEach(pid=>{
+    const p = porProyecto[pid];
+    html += `<div class="noti-proyecto">${escAttr(nombreProyectoNoti(pid))}</div>`;
+    if(p.chat) html += `<div class="noti-item" onclick="irANotificacion('${pid}','chat')">💬 Mensajes sin leer<span class="noti-count">${p.chat}</span></div>`;
+    if(p.obs)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','fiscalizacion')">📋 Observaciones abiertas<span class="noti-count">${p.obs}</span></div>`;
+    if(p.sol)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','solicitudes')">📨 Solicitudes por atender<span class="noti-count">${p.sol}</span></div>`;
+  });
+  panel.innerHTML = html;
+}
+
+async function irANotificacion(pid, seccion){
+  document.getElementById('panelNotificaciones').style.display='none';
+  if(pid && pid!==currentProyecto){
+    document.getElementById('selectProyecto').value = pid;
+    sincronizarBuscadorProyecto();
+    await cambiarProyecto(pid);
+  }
+  navTo(seccion, document.querySelector(`.nav-item[onclick*="${seccion}"]`));
+}
+
+document.addEventListener('click', e=>{
+  const cont = document.getElementById('notiCentro');
+  const panel = document.getElementById('panelNotificaciones');
+  if(cont && panel && panel.style.display==='block' && !cont.contains(e.target)) panel.style.display='none';
+});
 
 function esVisualizador(){
   return currentPerfil?.rol === 'visualizador';
