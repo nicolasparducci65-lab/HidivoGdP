@@ -10275,7 +10275,7 @@ ${incCuadroRubros && todosRubros.length ? `
           <td style="font-size:8px">${r.codigo||'—'}</td>
           <td style="font-size:8px">${escAttr(r.descripcion)}</td>
           <td style="text-align:center">${r.unidad||'—'}</td>
-          <td style="text-align:right">${Number(r.cantidad||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="text-align:right">${Number(r.cantidad_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
           <td style="text-align:right">$${Number(r.precio_unitario||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
           <td style="text-align:right;font-weight:600">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
           <td style="text-align:right;font-weight:700;color:${avance>=100?'#00c875':avance>=50?'#ff9f00':'#e2445c'}">${avance.toFixed(1)}%</td>
@@ -10290,7 +10290,7 @@ ${incCuadroRubros && todosRubros.length ? `
           $${todosRubros.reduce((s,r)=>s+(r.monto_contrato||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
         </td>
         <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:10px">
-          ${(todosRubros.reduce((s,r)=>s+(r.monto_contrato>0?(r.total_produccion||0)/r.monto_contrato*100:0),0)/todosRubros.filter(r=>r.monto_contrato>0).length||0).toFixed(1)}%
+          ${(()=>{ const tc=todosRubros.reduce((s,r)=>s+(r.monto_contrato||0),0); const tp=todosRubros.reduce((s,r)=>s+(r.total_produccion||0),0); return tc>0?(tp/tc*100).toFixed(1):'0.0'; })()}%
         </td>
         <td style="text-align:right;font-weight:800;color:#00c2ff;padding:6px 8px;font-size:10px">
           $${todosRubros.reduce((s,r)=>s+(r.total_produccion||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
