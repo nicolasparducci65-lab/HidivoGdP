@@ -7919,12 +7919,12 @@ async function cargarRubrosPlanilla(){
   let total = 0;
   const rows = rubros.map(r=>{
     const cantAnterior = cantAnt[r.id]||0;
-    const cantPeriodo = prodPeriodo[r.rubro_id]||0;
+    const cantPeriodo = prodPeriodo[r.id]||0;
     const cantAcumulada = cantAnterior + cantPeriodo;
     const montoPeriodo = cantPeriodo * (r.precio_unitario||0);
     total += montoPeriodo;
     const pct = r.cantidad_contrato>0 ? Math.min(cantAcumulada/r.cantidad_contrato*100,100) : 0;
-    return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}">
+    return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}" data-cant-ant="${cantAnterior}">
       <td style="font-size:11px;white-space:nowrap;color:#676879">${r.codigo||'—'}</td>
       <td style="font-size:11px;max-width:160px">${escAttr(r.descripcion)}</td>
       <td style="text-align:center">${r.unidad||'—'}</td>
@@ -7949,12 +7949,18 @@ function recalcularFilaPlanilla(input, rubroId, precio){
   const cant = parseFloat(input.value)||0;
   const monto = cant * precio;
   document.getElementById('monto-'+rubroId).textContent = '$'+monto.toLocaleString('es-EC',{minimumFractionDigits:2});
-  // Recalcular total
+  // Recalcular total SIEMPRE desde los datos (cantidad × precio), nunca desde texto formateado
+  document.getElementById('planTotal').textContent = '$'+calcularTotalPlanilla().toLocaleString('es-EC',{minimumFractionDigits:2});
+}
+
+function calcularTotalPlanilla(){
   let total = 0;
-  document.querySelectorAll('[id^="monto-"]').forEach(el=>{
-    total += parseFloat(el.textContent.replace('$','').replace(/,/g,''))||0;
+  document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]').forEach(row=>{
+    const cant = parseFloat(row.querySelector('input')?.value)||0;
+    const precio = parseFloat(row.dataset.precio)||0;
+    total += cant * precio;
   });
-  document.getElementById('planTotal').textContent = '$'+total.toLocaleString('es-EC',{minimumFractionDigits:2});
+  return total;
 }
 
 async function editarPlanilla(id){
@@ -7995,7 +8001,7 @@ async function guardarPlanilla(estado){
 
   // Número de planilla — desde variable o DOM
   const numero = window._planillaNumero || parseInt(document.getElementById('planNumero')?.textContent||'0');
-  const totalMonto = parseFloat(document.getElementById('planTotal').textContent.replace('$','').replace(/,/g,''))||0;
+  const totalMonto = calcularTotalPlanilla();
 
   // Si es edición, actualizar en lugar de crear
   if(window._editandoPlanillaId){
@@ -8012,7 +8018,7 @@ async function guardarPlanilla(estado){
     rows.forEach(row=>{
       const rubroId=row.dataset.rubroId; const precio=parseFloat(row.dataset.precio)||0;
       const cantPeriodo=parseFloat(row.querySelector('input').value)||0;
-      const cantAnt=parseFloat(row.cells[3].textContent.replace(/,/g,''))||0;
+      const cantAnt=parseFloat(row.dataset.cantAnt)||0;
       rubrosPayload2.push({planilla_id:window._editandoPlanillaId,rubro_id:rubroId,cantidad_anterior:cantAnt,cantidad_periodo:cantPeriodo,cantidad_acumulada:cantAnt+cantPeriodo,precio_unitario:precio,monto_periodo:cantPeriodo*precio});
     });
     if(rubrosPayload2.length) await sb.from('planilla_rubros').insert(rubrosPayload2);
@@ -8043,7 +8049,7 @@ async function guardarPlanilla(estado){
     const rubroId = row.dataset.rubroId;
     const precio = parseFloat(row.dataset.precio)||0;
     const cantPeriodo = parseFloat(row.querySelector('input').value)||0;
-    const cantAnt = parseFloat(row.cells[3].textContent.replace(/,/g,''))||0;
+    const cantAnt = parseFloat(row.dataset.cantAnt)||0;
     rubrosPayload.push({
       planilla_id: planilla.id, rubro_id: rubroId,
       cantidad_anterior: cantAnt, cantidad_periodo: cantPeriodo,
