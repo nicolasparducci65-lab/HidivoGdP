@@ -2659,34 +2659,58 @@ async function cargarNotificacionesGlobales(){
     const idsSolResidente   = idsProyectos.filter(id=>rolPorProyecto[id]==='residente');
 
     const porProyecto = {};
-    const asegura = pid => porProyecto[pid] = porProyecto[pid] || {chat:0, obs:0, sol:0};
-    let dmNoLeidos = 0;
+    const asegura = pid => porProyecto[pid] = porProyecto[pid] || {canales:[], obs:0, sol:0};
+    let dmsPendientes = [];
 
     // Chat: canales de TODOS los proyectos accesibles + mensajes directos
-    const { data: dms } = await sb.from('canales_chat').select('id')
+    const { data: dms } = await sb.from('canales_chat').select('id,dm_user1_id,dm_user2_id')
       .eq('tipo','dm').or(`dm_user1_id.eq.${currentUser.id},dm_user2_id.eq.${currentUser.id}`);
     let canales = [];
     if(idsChat.length){
-      const { data: cs } = await sb.from('canales_chat').select('id,proyecto_id')
+      const { data: cs } = await sb.from('canales_chat').select('id,proyecto_id,nombre')
         .eq('tipo','canal').in('proyecto_id', idsChat);
       canales = cs||[];
     }
-    const todosCanales = [...(dms||[]).map(c=>({id:c.id, proyecto_id:null})), ...canales];
+    const todosCanales = [
+      ...(dms||[]).map(c=>({id:c.id, proyecto_id:null, nombre:null, otroId:(c.dm_user1_id===currentUser.id?c.dm_user2_id:c.dm_user1_id)})),
+      ...canales
+    ];
     if(todosCanales.length){
       const { data: leidos } = await sb.from('mensajes_leidos').select('canal_id,ultimo_leido_at').eq('usuario_id', currentUser.id);
       const leidosMap = {};
       (leidos||[]).forEach(l=>leidosMap[l.canal_id]=l.ultimo_leido_at);
       const conteos = await Promise.all(todosCanales.map(c =>
-        sb.from('mensajes_chat').select('id',{count:'exact',head:true})
+        sb.from('mensajes_chat').select('autor_id',{count:'exact'})
           .eq('canal_id', c.id).is('hilo_id',null).neq('autor_id', currentUser.id)
           .gt('created_at', leidosMap[c.id] || '2000-01-01')
-          .then(r=>({c, n:r.count||0}))
+          .limit(30)
+          .then(r=>({c, n:r.count||0, autores:[...new Set((r.data||[]).map(m=>m.autor_id))]}))
       ));
-      conteos.forEach(({c,n})=>{
+      // Resolver nombres de autores y contrapartes de DM en una sola consulta
+      const idsPersonas = new Set();
+      conteos.forEach(({c,n,autores})=>{ if(n){ autores.forEach(a=>idsPersonas.add(a)); if(c.otroId) idsPersonas.add(c.otroId); } });
+      let nombres = {};
+      if(idsPersonas.size){
+        const { data: perfs } = await sb.from('perfiles').select('id,nombre,apellido').in('id', [...idsPersonas]);
+        (perfs||[]).forEach(p=>nombres[p.id] = `${p.nombre||''} ${p.apellido||''}`.trim() || 'Usuario');
+      }
+      const nombreCorto = id => {
+        const n = nombres[id] || 'Usuario';
+        const partes = n.split(' ');
+        return partes.length>1 ? `${partes[0]} ${partes[1][0]}.` : partes[0];
+      };
+      conteos.forEach(({c,n,autores})=>{
         if(!n) return;
-        if(c.proyecto_id) asegura(c.proyecto_id).chat += n;
-        else dmNoLeidos += n;
+        if(c.proyecto_id){
+          asegura(c.proyecto_id).canales.push({
+            id:c.id, nombre:c.nombre||'general', tipo:'canal', n,
+            autores: autores.map(nombreCorto)
+          });
+        } else {
+          dmsPendientes.push({ id:c.id, otroId:c.otroId, nombre:nombres[c.otroId]||'Usuario', n });
+        }
       });
+      dmsPendientes.sort((a,b)=>b.n-a.n);
     }
 
     // Observaciones abiertas
@@ -2708,7 +2732,7 @@ async function cargarNotificacionesGlobales(){
       (s2||[]).forEach(s=>asegura(s.proyecto_id).sol++);
     }
 
-    notiDatos = { porProyecto, dmNoLeidos };
+    notiDatos = { porProyecto, dmsPendientes };
     pintarBadgeNotificaciones();
     const panel = document.getElementById('panelNotificaciones');
     if(panel && panel.style.display==='block') renderPanelNotificaciones();
@@ -2717,8 +2741,10 @@ async function cargarNotificacionesGlobales(){
 
 function totalNotificaciones(){
   if(!notiDatos) return 0;
-  let t = notiDatos.dmNoLeidos;
-  Object.values(notiDatos.porProyecto).forEach(p=>t += p.chat + p.obs + p.sol);
+  let t = notiDatos.dmsPendientes.reduce((s,d)=>s+d.n, 0);
+  Object.values(notiDatos.porProyecto).forEach(p=>{
+    t += p.obs + p.sol + p.canales.reduce((s,c)=>s+c.n, 0);
+  });
   return t;
 }
 
@@ -2747,28 +2773,58 @@ function togglePanelNotificaciones(){
 function renderPanelNotificaciones(){
   const panel = document.getElementById('panelNotificaciones');
   if(!notiDatos){ panel.innerHTML = '<div style="padding:16px;font-size:13px;color:#676879">Cargando...</div>'; return; }
-  const { porProyecto, dmNoLeidos } = notiDatos;
+  const { porProyecto, dmsPendientes } = notiDatos;
+  const listaAutores = arr => {
+    const u = [...new Set(arr)];
+    return u.length>3 ? `${u.slice(0,3).join(', ')} +${u.length-3}` : u.join(', ');
+  };
   const pids = Object.keys(porProyecto)
-    .filter(pid=>{ const p = porProyecto[pid]; return p.chat||p.obs||p.sol; })
+    .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol; })
     .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
 
-  if(!pids.length && !dmNoLeidos){
+  if(!pids.length && !dmsPendientes.length){
     panel.innerHTML = '<div style="padding:18px;font-size:13px;color:#676879;text-align:center">✓ No tienes pendientes</div>';
     return;
   }
   let html = '';
-  if(dmNoLeidos){
-    html += `<div class="noti-proyecto">Mensajes directos</div>
-      <div class="noti-item" onclick="irANotificacion(null,'chat')">💬 Mensajes sin leer<span class="noti-count">${dmNoLeidos}</span></div>`;
+  if(dmsPendientes.length){
+    html += `<div class="noti-proyecto">Mensajes directos</div>` + dmsPendientes.map(d=>
+      `<div class="noti-item" onclick="irANotiChat(null,'${d.id}')">💬 ${escAttr(d.nombre)}<span class="noti-count">${d.n}</span></div>`
+    ).join('');
   }
   pids.forEach(pid=>{
     const p = porProyecto[pid];
     html += `<div class="noti-proyecto">${escAttr(nombreProyectoNoti(pid))}</div>`;
-    if(p.chat) html += `<div class="noti-item" onclick="irANotificacion('${pid}','chat')">💬 Mensajes sin leer<span class="noti-count">${p.chat}</span></div>`;
+    p.canales.forEach(c=>{
+      html += `<div class="noti-item" onclick="irANotiChat('${pid}','${c.id}')">
+        <div style="flex:1;min-width:0">💬 #${escAttr(c.nombre)}
+          <div style="font-size:11px;color:#676879;margin-top:2px">De: ${escAttr(listaAutores(c.autores))}</div>
+        </div><span class="noti-count">${c.n}</span></div>`;
+    });
     if(p.obs)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','fiscalizacion')">📋 Observaciones abiertas<span class="noti-count">${p.obs}</span></div>`;
     if(p.sol)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','solicitudes')">📨 Solicitudes por atender<span class="noti-count">${p.sol}</span></div>`;
   });
   panel.innerHTML = html;
+}
+
+async function irANotiChat(pid, canalId){
+  document.getElementById('panelNotificaciones').style.display='none';
+  if(pid && pid!==currentProyecto){
+    document.getElementById('selectProyecto').value = pid;
+    sincronizarBuscadorProyecto();
+    await cambiarProyecto(pid);
+  }
+  navTo('chat', document.querySelector(`.nav-item[onclick*="chat"]`));
+  // Abrir la conversación específica
+  let info = null;
+  if(pid){
+    const c = (notiDatos?.porProyecto[pid]?.canales||[]).find(x=>x.id===canalId);
+    if(c) info = { nombre:c.nombre, tipo:'canal', dmUsuarioId:null };
+  } else {
+    const d = (notiDatos?.dmsPendientes||[]).find(x=>x.id===canalId);
+    if(d) info = { nombre:d.nombre, tipo:'dm', dmUsuarioId:d.otroId };
+  }
+  if(info) setTimeout(()=>abrirCanal(canalId, info.nombre, info.tipo, info.dmUsuarioId, ''), 400);
 }
 
 async function irANotificacion(pid, seccion){
