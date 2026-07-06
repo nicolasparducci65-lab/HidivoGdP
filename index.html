@@ -1238,8 +1238,18 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </div>
       <div class="form-group">
         <label class="form-label">Fotos</label>
-        <input type="file" id="obsNuevaFotos" accept="image/*" multiple class="form-control"
-          onchange="previewObsFotos(this)"/>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn primary" onclick="document.getElementById('obsFotoCamara').click()" style="flex:1;min-width:140px">
+            📷 Tomar foto
+          </button>
+          <button type="button" class="btn" onclick="document.getElementById('obsNuevaFotos').click()" style="flex:1;min-width:140px">
+            🖼️ Galería
+          </button>
+        </div>
+        <input type="file" id="obsFotoCamara" accept="image/*" capture="environment" style="display:none"
+          onchange="agregarFotosObs(this)"/>
+        <input type="file" id="obsNuevaFotos" accept="image/*" multiple style="display:none"
+          onchange="agregarFotosObs(this)"/>
         <div id="obsNuevaFotosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
       </div>
       <div id="obsNuevaPinInfo" style="font-size:12px;color:#676879;padding:8px;background:#f5f6f8;border-radius:8px"></div>
@@ -5238,20 +5248,60 @@ function abrirModalObservacion(planoId=null, pinX=null, pinY=null){
   document.getElementById('obsNuevaTitulo').value='';
   document.getElementById('obsNuevaDesc').value='';
   document.getElementById('obsNuevaFotos').value='';
+  document.getElementById('obsFotoCamara').value='';
+  obsFotosPendientes = [];
   document.getElementById('obsNuevaFotosPreview').innerHTML='';
   const pinInfo = document.getElementById('obsNuevaPinInfo');
   pinInfo.textContent = pinX!==null ? `📍 Pin colocado en (${pinX}%, ${pinY}%)` : 'Sin pin — puedes colocarlo desde el visor de planos';
   document.getElementById('modalObsNueva').classList.add('show');
 }
 
-function previewObsFotos(input){
+let obsFotosPendientes = [];
+
+function agregarFotosObs(input){
+  [...input.files].forEach(f=>{
+    if(f.type.startsWith('image/')) obsFotosPendientes.push(f);
+  });
+  input.value=''; // permitir tomar/elegir la misma foto de nuevo
+  renderPreviewObsFotos();
+}
+
+function quitarFotoObs(idx){
+  obsFotosPendientes.splice(idx,1);
+  renderPreviewObsFotos();
+}
+
+function renderPreviewObsFotos(){
   const preview = document.getElementById('obsNuevaFotosPreview');
   if(!preview) return;
-  preview.innerHTML='';
-  [...input.files].forEach(f=>{
-    const url=URL.createObjectURL(f);
-    preview.innerHTML+=`<img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>`;
-  });
+  preview.innerHTML = obsFotosPendientes.map((f,i)=>{
+    const url = URL.createObjectURL(f);
+    return `<div style="position:relative">
+      <img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e6e9ef"/>
+      <button type="button" onclick="quitarFotoObs(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#e2445c;color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// Comprime una imagen a máx 1600px de lado (JPEG 0.82) para subida rápida en campo
+async function comprimirImagenObs(file){
+  if(!file.type.startsWith('image/') || file.size < 400*1024) return file;
+  try{
+    const bitmap = await createImageBitmap(file);
+    const MAX = 1600;
+    const escala = Math.min(1, MAX/Math.max(bitmap.width, bitmap.height));
+    if(escala === 1 && file.size < 1024*1024) return file;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width*escala);
+    canvas.height = Math.round(bitmap.height*escala);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(res=>canvas.toBlob(res,'image/jpeg',0.82));
+    if(!blob || blob.size >= file.size) return file;
+    const nombre = file.name.replace(/\.[^.]+$/,'') + '.jpg';
+    return new File([blob], nombre, {type:'image/jpeg'});
+  }catch(e){
+    return file; // si algo falla, subir la original
+  }
 }
 
 async function guardarObservacionNueva(){
@@ -5279,10 +5329,10 @@ async function guardarObservacionNueva(){
     creado_por: currentUser?.id||null
   }).select().single();
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
-  // Subir fotos
-  const files = document.getElementById('obsNuevaFotos').files;
-  for(let i=0;i<files.length;i++){
-    const f=files[i];
+  // Subir fotos (comprimidas) desde el acumulador cámara + galería
+  for(let i=0;i<obsFotosPendientes.length;i++){
+    btn.textContent = `Subiendo foto ${i+1}/${obsFotosPendientes.length}...`;
+    const f = await comprimirImagenObs(obsFotosPendientes[i]);
     const path=`observaciones/${obs.id}/${Date.now()}_${f.name}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path,f,{contentType:f.type,upsert:true});
     if(!upErr){
@@ -5290,6 +5340,7 @@ async function guardarObservacionNueva(){
       await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
     }
   }
+  obsFotosPendientes = [];
   toast('Observación creada ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalObsNueva');
