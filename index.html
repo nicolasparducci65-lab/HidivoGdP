@@ -8186,6 +8186,11 @@ async function confirmarAccionPlanilla(){
     autor_id: currentUser?.id
   });
 
+  // Notificar al residente del cambio de estado (push + email; no bloquean si fallan)
+  const numP = window._planillaActiva?.numero ? `N° ${window._planillaActiva.numero}` : '';
+  notificarPorPush('planilla', `Planilla ${numP}: ${accionLabel}`, comentario||'');
+  notificarPorEmail('planilla', accionLabel, comentario||'', window._planillaActiva?.numero||null);
+
   toast(accionLabel+' ✓','success');
   btn.disabled=false; btn.textContent='Confirmar';
   cerrarModal('modalAccionPlanilla');
