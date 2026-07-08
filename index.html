@@ -2782,6 +2782,18 @@ async function cargarNotificacionesGlobales(){
       dmsPendientes.sort((a,b)=>b.n-a.n);
     }
 
+    // Libro de obra: por aprobar (gestión) y observados (residente)
+    if(idsSolRespondedor.length){
+      const { data: libP } = await sb.from('libro_obra').select('id,proyecto_id')
+        .eq('estado_aprobacion','pendiente').in('proyecto_id', idsSolRespondedor);
+      (libP||[]).forEach(l=>{ asegura(l.proyecto_id).libro = (asegura(l.proyecto_id).libro||0)+1; });
+    }
+    if(idsSolResidente.length){
+      const { data: libO } = await sb.from('libro_obra').select('id,proyecto_id')
+        .eq('estado_aprobacion','observado').in('proyecto_id', idsSolResidente);
+      (libO||[]).forEach(l=>{ asegura(l.proyecto_id).libroObs = (asegura(l.proyecto_id).libroObs||0)+1; });
+    }
+
     // Garantías por vencer (≤5 días) o vencidas — para roles de gestión
     if(idsSolRespondedor.length){
       const limite = new Date(Date.now() + 5*86400000).toISOString().split('T')[0];
@@ -2820,7 +2832,7 @@ function totalNotificaciones(){
   if(!notiDatos) return 0;
   let t = notiDatos.dmsPendientes.reduce((s,d)=>s+d.n, 0);
   Object.values(notiDatos.porProyecto).forEach(p=>{
-    t += p.obs + p.sol + (p.gar||0) + p.canales.reduce((s,c)=>s+c.n, 0);
+    t += p.obs + p.sol + (p.gar||0) + (p.libro||0) + (p.libroObs||0) + p.canales.reduce((s,c)=>s+c.n, 0);
   });
   return t;
 }
@@ -2856,7 +2868,7 @@ function renderPanelNotificaciones(){
     return u.length>3 ? `${u.slice(0,3).join(', ')} +${u.length-3}` : u.join(', ');
   };
   const pids = Object.keys(porProyecto)
-    .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol||p.gar; })
+    .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol||p.gar||p.libro||p.libroObs; })
     .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
 
   if(!pids.length && !dmsPendientes.length){
@@ -2881,6 +2893,8 @@ function renderPanelNotificaciones(){
     if(p.obs)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','fiscalizacion')">📋 Observaciones abiertas<span class="noti-count">${p.obs}</span></div>`;
     if(p.sol)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','solicitudes')">📨 Solicitudes por atender<span class="noti-count">${p.sol}</span></div>`;
     if(p.gar)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','contrato')">🛡️ Garantías por vencer<span class="noti-count">${p.gar}</span></div>`;
+    if(p.libro)    html += `<div class="noti-item" onclick="irANotificacion('${pid}','libro')">📖 Registros por aprobar<span class="noti-count">${p.libro}</span></div>`;
+    if(p.libroObs) html += `<div class="noti-item" onclick="irANotificacion('${pid}','libro')">📖 Registros observados<span class="noti-count">${p.libroObs}</span></div>`;
   });
   panel.innerHTML = html;
 }
@@ -3952,6 +3966,76 @@ async function cargarLibroObra(){
   cargarArchivos('libro');
 }
 
+// ── APROBACIÓN DEL LIBRO DE OBRA ──
+const ESTADOS_LIBRO = {
+  pendiente: { label:'Pendiente', color:'#b8860b', bg:'#fdf6e3', emoji:'⏳' },
+  aprobado:  { label:'Aprobado',  color:'#00854d', bg:'#e6f4ee', emoji:'✅' },
+  observado: { label:'Observado', color:'#e2445c', bg:'#fdecef', emoji:'⚠️' }
+};
+
+function badgeAprobacionLibro(r){
+  const e = ESTADOS_LIBRO[r.estado_aprobacion]||ESTADOS_LIBRO.pendiente;
+  return `<span title="${escAttr(r.observacion_aprobacion||'')}" style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${e.emoji} ${e.label}</span>`;
+}
+
+function esAprobadorLibro(){
+  return ['admin','fiscalizador'].includes(currentPerfil?.rol);
+}
+
+async function aprobarRegistroLibro(id, numero){
+  if(!esAprobadorLibro()) return;
+  if(!confirm(`¿Aprobar el Registro N° ${numero}?\n\nQuedará sellado con tu nombre y no podrá editarse.`)) return;
+  const { error } = await sb.from('libro_obra').update({
+    estado_aprobacion:'aprobado', aprobado_por: currentUser?.id,
+    aprobado_at: new Date().toISOString(), observacion_aprobacion: null
+  }).eq('id', id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'aprobado', autor_id:currentUser?.id});
+  notificarPorPush('libro', `Registro N° ${numero} del libro de obra aprobado ✅`, '');
+  notificarPorEmail('libro', 'Registro aprobado', '', numero);
+  toast(`Registro N° ${numero} aprobado ✓`,'success');
+  cargarLibroObra();
+  cargarNotificacionesGlobales();
+}
+
+async function observarRegistroLibro(id, numero){
+  if(!esAprobadorLibro()) return;
+  const comentario = prompt(`Observación para el Registro N° ${numero}\n(el residente la recibirá para corregir):`);
+  if(comentario === null) return;
+  if(!comentario.trim()){ toast('Escribe la observación','error'); return; }
+  const { error } = await sb.from('libro_obra').update({
+    estado_aprobacion:'observado', observacion_aprobacion: comentario.trim(),
+    aprobado_por: null, aprobado_at: null
+  }).eq('id', id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'observado', comentario:comentario.trim(), autor_id:currentUser?.id});
+  notificarPorPush('libro', `Registro N° ${numero} observado ⚠️`, comentario.trim());
+  notificarPorEmail('libro', 'Registro observado — requiere corrección', comentario.trim(), numero);
+  toast(`Registro N° ${numero} devuelto con observación`,'success');
+  cargarLibroObra();
+  cargarNotificacionesGlobales();
+}
+
+async function reabrirRegistroLibro(id, numero){
+  if(currentPerfil?.rol !== 'admin'){ toast('Solo un administrador puede reabrir un registro aprobado','error'); return; }
+  if(!confirm(`¿Reabrir el Registro N° ${numero}?\n\nPerderá el sello de aprobación y quedará pendiente. La acción quedará en el historial.`)) return;
+  await sb.from('libro_obra').update({estado_aprobacion:'pendiente', aprobado_por:null, aprobado_at:null}).eq('id', id);
+  await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'reabierto', autor_id:currentUser?.id});
+  toast(`Registro N° ${numero} reabierto`,'success');
+  cargarLibroObra();
+}
+
+function accionesAprobacionLibro(r){
+  const num = r.numero_registro||0;
+  if(!esAprobadorLibro()) return '';
+  if(r.estado_aprobacion === 'aprobado'){
+    return currentPerfil?.rol==='admin'
+      ? `<button class="btn" style="padding:3px 8px;font-size:11px" title="Reabrir (admin)" onclick="event.stopPropagation();reabrirRegistroLibro('${r.id}',${num})">🔓</button>` : '';
+  }
+  return `<button class="btn" style="padding:3px 8px;font-size:11px;color:#00854d;border-color:#00854d" title="Aprobar" onclick="event.stopPropagation();aprobarRegistroLibro('${r.id}',${num})">✓</button>
+    <button class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c;border-color:#e2445c" title="Observar" onclick="event.stopPropagation();observarRegistroLibro('${r.id}',${num})">⚠</button>`;
+}
+
 function renderLibroObra(registros){
   const header = `<div class="card" style="margin-bottom:20px">
     <div class="card-header">
@@ -3972,7 +4056,7 @@ function renderLibroObra(registros){
   }
 
   document.getElementById('libroContent').innerHTML = header + `
-    <table><thead><tr><th>#</th><th>Fecha</th><th>Clima</th><th>Temp.</th><th>Personal</th><th>Actividades</th><th>Novedades</th><th>Fotos</th><th></th></tr></thead><tbody>
+    <table><thead><tr><th>#</th><th>Fecha</th><th>Clima</th><th>Temp.</th><th>Personal</th><th>Actividades</th><th>Novedades</th><th>Fotos</th><th>Aprobación</th><th></th></tr></thead><tbody>
     ${registros.map(r=>`<tr>
       <td style="font-weight:600;color:#0073ea;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.numero_registro||'—'}</td>
       <td style="font-weight:600;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'})}</td>
@@ -3982,6 +4066,7 @@ function renderLibroObra(registros){
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.actividades_ejecutadas||'—'}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.novedades||'—'}</td>
       <td id="fotos-count-${r.id}" style="cursor:pointer" onclick="verDetalleLibro('${r.id}')"><span style="color:#676879">—</span></td>
+      <td style="white-space:nowrap" onclick="event.stopPropagation()">${badgeAprobacionLibro(r)} ${accionesAprobacionLibro(r)}</td>
       <td onclick="event.stopPropagation()"><button onclick="confirmarEliminarRegistro('${r.id}',${r.numero_registro||0})" style="background:none;border:1px solid #e2445c;color:#e2445c;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#e2445c';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#e2445c'">🗑️</button></td>
     </tr>`).join('')}
     </tbody></table></div>`;
@@ -4091,7 +4176,7 @@ async function verDetalleLibro(id){
   document.getElementById('detalleLibroBody').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div class="info-item"><div class="info-label">Fecha</div><div class="info-value">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</div></div>
-      <div class="info-item"><div class="info-label">Registro N°</div><div class="info-value">${r.numero_registro||'—'}</div></div>
+      <div class="info-item"><div class="info-label">Registro N°</div><div class="info-value">${r.numero_registro||'—'} ${badgeAprobacionLibro(r)}</div></div>
       <div class="info-item"><div class="info-label">☀️ Clima diurno</div><div class="info-value">${climaIcon(r.clima_diurno||r.clima)} ${r.clima_diurno||r.clima||'—'}</div></div>
       <div class="info-item"><div class="info-label">🌙 Clima nocturno</div><div class="info-value">${climaIcon(r.clima_nocturno)} ${r.clima_nocturno||'—'}</div></div>
       <div class="info-item"><div class="info-label">Temperatura</div><div class="info-value">${r.temperatura_min!=null?r.temperatura_min+'°C':''} — ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</div></div>
@@ -4247,9 +4332,21 @@ async function guardarRegistroLibro(){
     resoluciones: document.getElementById('lResoluciones').value.trim()||null,
     created_by: currentUser?.id
   };
+  // Estado de aprobación según rol: fiscalizador/admin nace aprobado; residente queda pendiente
+  if(esAprobadorLibro()){
+    payload.estado_aprobacion = 'aprobado';
+    payload.aprobado_por = currentUser?.id;
+    payload.aprobado_at = new Date().toISOString();
+  } else {
+    payload.estado_aprobacion = 'pendiente';
+  }
 
   const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
   if(error){ toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro'; return; }
+  await sb.from('libro_obra_aprobaciones').insert({registro_id:registro.id, accion: esAprobadorLibro()?'aprobado':'enviado', autor_id:currentUser?.id});
+  if(!esAprobadorLibro()){
+    notificarFiscalizadorViaDM(`📖 Registro N°${registro.numero_registro||''} del libro de obra por aprobar`, `Fecha: ${payload.fecha}`);
+  }
 
   // Guardar equipos y materiales en libro_obra_items
   const todosItems = [...libroEquiposSeleccionados, ...libroMaterialesSeleccionados];
@@ -8205,9 +8302,10 @@ async function cargarRubrosPlanilla(){
     (rubrosAnt||[]).forEach(r=>{ cantAnt[r.rubro_id] = (cantAnt[r.rubro_id]||0) + (r.cantidad_periodo||0); });
   }
 
-  // Obtener producción del período via libro_obra (join por registro_id)
+  // Obtener producción del período via libro_obra — SOLO registros aprobados por fiscalización
   const { data: registros } = await sb.from('libro_obra')
     .select('id').eq('proyecto_id', currentProyecto)
+    .eq('estado_aprobacion','aprobado')
     .gte('fecha', fechaInicio).lte('fecha', fechaFin);
 
   const prodPeriodo = {};
@@ -10363,6 +10461,14 @@ async function generarReportePDF(){
     .lte('fecha', fechaFin)
     .order('fecha', {ascending: true});
 
+  // Nombres de quienes aprobaron (para el sello en el PDF)
+  window._nombresAprobadores = {};
+  const idsAprob = [...new Set((registros||[]).map(r=>r.aprobado_por).filter(Boolean))];
+  if(idsAprob.length){
+    const { data: perfAprob } = await sb.from('perfiles').select('id,nombre,apellido').in('id', idsAprob);
+    (perfAprob||[]).forEach(p=>{ window._nombresAprobadores[p.id] = `${p.nombre||''} ${p.apellido||''}`.trim(); });
+  }
+
   if(!registros || !registros.length){
     toast('No hay registros en el período seleccionado','error');
     btn.disabled = false;
@@ -10607,6 +10713,9 @@ ${incCurvaS && curvaSDatos ? `
   <div class="registro-block">
     <div class="registro-header">
       <span class="reg-num">Registro N° ${r.numero_registro||'—'} — ${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</span>
+      ${r.estado_aprobacion==='aprobado'
+        ? `<span style="float:right;font-size:9px;color:#00854d;font-weight:700">✓ APROBADO${window._nombresAprobadores?.[r.aprobado_por]?' por '+window._nombresAprobadores[r.aprobado_por]:''}${r.aprobado_at?' — '+new Date(r.aprobado_at).toLocaleString('es-EC',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}</span>`
+        : `<span style="float:right;font-size:9px;color:${r.estado_aprobacion==='observado'?'#e2445c':'#b8860b'};font-weight:700">${r.estado_aprobacion==='observado'?'⚠ OBSERVADO':'⏳ PENDIENTE DE APROBACIÓN'}</span>`}
     </div>
     <div class="registro-meta">
       <span>${climaIcon(r.clima_diurno||r.clima)} ${r.clima_diurno||r.clima||'—'} / 🌙 ${climaIcon(r.clima_nocturno)} ${r.clima_nocturno||'—'}</span>
@@ -10779,6 +10888,10 @@ ${incFiscalizacion && observaciones.length ? `
 async function abrirEditarRegistro(id){
   cerrarModal('modalDetalleLibro');
   const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
+  if(r?.estado_aprobacion === 'aprobado'){
+    toast('Este registro está aprobado y sellado. Un administrador debe reabrirlo (🔓) antes de editar.','error');
+    return;
+  }
   const { data: fotosExistentes } = await sb.from('libro_obra_fotos').select('*').eq('registro_id',id).order('orden');
 
   libroFotosSeleccionadas = [];
@@ -10886,6 +10999,13 @@ async function guardarEdicionRegistro(){
     novedades: document.getElementById('lNovedades').value.trim()||null,
     resoluciones: document.getElementById('lResoluciones').value.trim()||null,
   };
+  // Al editar: fiscalizador/admin re-aprueba; residente re-envía a pendiente
+  if(esAprobadorLibro()){
+    payload.estado_aprobacion='aprobado'; payload.aprobado_por=currentUser?.id;
+    payload.aprobado_at=new Date().toISOString(); payload.observacion_aprobacion=null;
+  } else {
+    payload.estado_aprobacion='pendiente'; payload.aprobado_por=null; payload.aprobado_at=null;
+  }
 
   const { error } = await sb.from('libro_obra').update(payload).eq('id', id);
   if(error){ toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar cambios'; return; }
@@ -10958,6 +11078,11 @@ async function guardarEdicionRegistro(){
 }
 
 async function confirmarEliminarRegistro(id, num){
+  const { data: reg } = await sb.from('libro_obra').select('estado_aprobacion').eq('id',id).single();
+  if(reg?.estado_aprobacion === 'aprobado'){
+    toast('Un registro aprobado no se puede eliminar. Un administrador debe reabrirlo primero (🔓).','error');
+    return;
+  }
   if(!confirm(`¿Eliminar el Registro N° ${num||id}?\n\nEsta acción no se puede deshacer.`)) return;
 
   // Obtener rubros afectados antes de eliminar
