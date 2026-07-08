@@ -552,6 +552,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Plantilla
         </button>
+        <button id="btnOrdenesCambio" style="display:none" class="btn" onclick="abrirModalOCs()" title="Órdenes de cambio">
+          🔄 Órdenes de cambio
+        </button>
         <button id="btnEliminarRubros" style="display:none" class="btn" onclick="eliminarTodosRubros()" title="Eliminar todos los rubros" style="color:#e2445c">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           Limpiar rubros
@@ -1242,6 +1245,14 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalOC">
+  <div class="modal" style="max-width:840px">
+    <div class="modal-header"><h3 id="ocTituloModal">Órdenes de cambio</h3>
+      <button class="modal-close" onclick="document.getElementById('modalOC').classList.remove('show')">✕</button></div>
+    <div class="modal-body" id="ocModalBody" style="max-height:70vh;overflow-y:auto"></div>
+    <div class="modal-footer" id="ocModalFooter"></div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalGarantia">
   <div class="modal" style="max-width:520px">
     <div class="modal-header"><h3 id="garTituloModal">Nueva garantía</h3>
@@ -3085,6 +3096,8 @@ function navTo(page, btn){
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
+  const btnOC = document.getElementById('btnOrdenesCambio');
+  if(btnOC) btnOC.style.display = (page==='rubros' && currentProyecto && ['admin','fiscalizador'].includes(currentPerfil?.rol)) ? 'flex' : 'none';
   const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
@@ -3964,6 +3977,279 @@ async function cargarLibroObra(){
   const { data } = await sb.from('libro_obra').select('*').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false});
   renderLibroObra(data||[]);
   cargarArchivos('libro');
+}
+
+// ── ÓRDENES DE CAMBIO ──
+const ESTADOS_OC = {
+  borrador:   { label:'Borrador',   color:'#676879', bg:'#f5f6f8' },
+  solicitada: { label:'Solicitada', color:'#b8860b', bg:'#fdf6e3' },
+  aprobada:   { label:'Aprobada',   color:'#00854d', bg:'#e6f4ee' },
+  rechazada:  { label:'Rechazada',  color:'#e2445c', bg:'#fdecef' }
+};
+let _ocItems = [];
+let _ocEditando = null;
+let _ocRubros = [];
+const fmtOC = v => (v<0?'−$':'$') + Math.abs(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function abrirModalOCs(){
+  document.getElementById('modalOC').classList.add('show');
+  await renderListaOCs();
+}
+
+async function renderListaOCs(){
+  document.getElementById('ocTituloModal').textContent = 'Órdenes de cambio';
+  const body = document.getElementById('ocModalBody');
+  body.innerHTML = '<div style="padding:20px;text-align:center;color:#676879">Cargando...</div>';
+  document.getElementById('ocModalFooter').innerHTML = `
+    <button class="btn" onclick="document.getElementById('modalOC').classList.remove('show')">Cerrar</button>
+    <button class="btn primary" onclick="abrirEditorOC()">+ Nueva orden de cambio</button>`;
+  const { data: ocs } = await sb.from('ordenes_cambio').select('*').eq('proyecto_id', currentProyecto).order('numero');
+  if(!ocs || !ocs.length){
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">🔄</div><div class="empty-title">Sin órdenes de cambio</div><div class="empty-sub">Crea la primera con el botón de abajo</div></div>';
+    return;
+  }
+  const montoOCsAprobadas = ocs.filter(o=>o.estado==='aprobada').reduce((s,o)=>s+(o.monto_total||0),0);
+  body.innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:#676879">Impacto de OCs aprobadas al contrato: <b style="color:${montoOCsAprobadas>=0?'#00854d':'#e2445c'}">${fmtOC(montoOCsAprobadas)}</b></div>
+    <table style="width:100%"><thead><tr><th>N°</th><th>Título</th><th style="text-align:right">Monto</th><th>Estado</th><th>Aprobación</th><th></th></tr></thead><tbody>
+    ${ocs.map(o=>{
+      const e = ESTADOS_OC[o.estado]||ESTADOS_OC.borrador;
+      return `<tr>
+        <td style="font-weight:700;color:#0073ea;white-space:nowrap">OC-${String(o.numero).padStart(2,'0')}</td>
+        <td>${escAttr(o.titulo)}</td>
+        <td style="text-align:right;font-weight:600;white-space:nowrap;color:${(o.monto_total||0)>=0?'#323338':'#e2445c'}">${fmtOC(o.monto_total)}</td>
+        <td><span style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">${e.label}</span></td>
+        <td style="font-size:12px;color:#676879;white-space:nowrap">${o.estado==='aprobada'?`${escAttr(o.oficio_referencia||'')} ${o.fecha_aprobacion||''} ${o.archivo_url?`<a href="${o.archivo_url}" target="_blank">📎</a>`:''}`:'—'}</td>
+        <td style="white-space:nowrap"><button class="btn" style="padding:3px 10px;font-size:12px" onclick="abrirEditorOC('${o.id}')">${['borrador','solicitada'].includes(o.estado)?'✏️ Editar':'👁 Ver'}</button></td>
+      </tr>`;
+    }).join('')}
+    </tbody></table>`;
+}
+
+async function abrirEditorOC(id=null){
+  const body = document.getElementById('ocModalBody');
+  body.innerHTML = '<div style="padding:20px;text-align:center;color:#676879">Cargando...</div>';
+  const { data: rubs } = await sb.from('rubros').select('id,codigo,descripcion,unidad,precio_unitario,cantidad_contrato').eq('proyecto_id', currentProyecto).order('orden');
+  _ocRubros = rubs||[];
+  _ocEditando = null;
+  _ocItems = [];
+  if(id){
+    const { data: oc } = await sb.from('ordenes_cambio').select('*').eq('id', id).single();
+    const { data: items } = await sb.from('orden_cambio_items').select('*').eq('orden_id', id).order('created_at');
+    _ocEditando = oc;
+    _ocItems = (items||[]).map(i=>({tipo:i.tipo, rubro_id:i.rubro_id, codigo:i.codigo, descripcion:i.descripcion, unidad:i.unidad, precio_unitario:i.precio_unitario, cantidad:i.cantidad}));
+  }
+  const oc = _ocEditando;
+  const soloLectura = oc && ['aprobada','rechazada'].includes(oc.estado);
+  document.getElementById('ocTituloModal').textContent = oc ? `OC-${String(oc.numero).padStart(2,'0')} · ${ESTADOS_OC[oc.estado].label}` : 'Nueva orden de cambio';
+
+  body.innerHTML = `
+    ${oc?.estado==='rechazada' && oc.motivo_rechazo ? `<div style="background:#fdecef;color:#e2445c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"><b>Rechazada:</b> ${escAttr(oc.motivo_rechazo)}</div>`:''}
+    <div class="form-group"><label class="form-label">Título *</label>
+      <input type="text" class="form-control" id="ocTitulo" value="${escAttr(oc?.titulo||'')}" ${soloLectura?'disabled':''}/></div>
+    <div class="form-group"><label class="form-label">Justificación técnica</label>
+      <textarea class="form-control" id="ocJustificacion" rows="2" ${soloLectura?'disabled':''}>${escAttr(oc?.justificacion||'')}</textarea></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px">
+      <b style="font-size:14px">Ítems de la orden</b>
+      ${soloLectura?'':`<span><button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('nuevo')">+ Rubro nuevo</button>
+      <button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('modificacion')">± Modificar cantidad</button></span>`}
+    </div>
+    <div id="ocItemsCont"></div>
+    <div style="text-align:right;font-size:15px;margin-top:10px">Monto total de la orden: <b id="ocMontoTotal">$0.00</b></div>
+    ${oc && oc.estado==='solicitada' && !soloLectura ? `
+    <div style="background:#f0f7ff;border-radius:8px;padding:14px;margin-top:16px">
+      <b style="font-size:13px">Datos de aprobación (oficio del contratante)</b>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
+        <input type="text" class="form-control" id="ocOficio" placeholder="N° oficio / referencia"/>
+        <input type="date" class="form-control" id="ocFechaAprob"/>
+        <input type="file" class="form-control" id="ocArchivo" accept=".pdf,image/*"/>
+      </div>
+    </div>`:''}`;
+  renderItemsOC(soloLectura);
+
+  const f = document.getElementById('ocModalFooter');
+  if(soloLectura){
+    f.innerHTML = `<button class="btn" onclick="renderListaOCs()">← Volver</button>`;
+  } else if(!oc){
+    f.innerHTML = `<button class="btn" onclick="renderListaOCs()">← Volver</button>
+      <button class="btn primary" onclick="guardarOC('borrador')">Guardar borrador</button>
+      <button class="btn primary" onclick="guardarOC('solicitada')">Guardar y solicitar</button>`;
+  } else if(oc.estado==='borrador'){
+    f.innerHTML = `<button class="btn" onclick="renderListaOCs()">← Volver</button>
+      <button class="btn" style="color:#e2445c" onclick="eliminarOC('${oc.id}')">Eliminar</button>
+      <button class="btn primary" onclick="guardarOC('borrador')">Guardar</button>
+      <button class="btn primary" onclick="guardarOC('solicitada')">Guardar y solicitar</button>`;
+  } else { // solicitada
+    f.innerHTML = `<button class="btn" onclick="renderListaOCs()">← Volver</button>
+      <button class="btn" onclick="guardarOC('solicitada')">Guardar cambios</button>
+      <button class="btn" style="color:#e2445c" onclick="rechazarOC('${oc.id}')">Rechazar</button>
+      <button class="btn primary" style="background:#00854d" onclick="aprobarOC('${oc.id}')">✓ Aprobar y aplicar</button>`;
+  }
+}
+
+function agregarItemOC(tipo){
+  _ocItems.push(tipo==='nuevo'
+    ? {tipo:'nuevo', codigo:'', descripcion:'', unidad:'', precio_unitario:0, cantidad:0}
+    : {tipo:'modificacion', rubro_id:'', cantidad:0});
+  renderItemsOC(false);
+}
+
+function quitarItemOC(i){ _ocItems.splice(i,1); renderItemsOC(false); }
+
+function actualizarItemOC(i, campo, valor){
+  _ocItems[i][campo] = ['precio_unitario','cantidad'].includes(campo) ? (parseFloat(valor)||0) : valor;
+  recalcularMontoOC();
+}
+
+function montoItemOC(it){
+  if(it.tipo==='nuevo') return (it.cantidad||0) * (it.precio_unitario||0);
+  const r = _ocRubros.find(x=>x.id===it.rubro_id);
+  return (it.cantidad||0) * (r?.precio_unitario||0);
+}
+
+function recalcularMontoOC(){
+  const total = _ocItems.reduce((s,it)=>s+montoItemOC(it),0);
+  const el = document.getElementById('ocMontoTotal');
+  if(el){ el.textContent = fmtOC(total); el.style.color = total>=0?'#00854d':'#e2445c'; }
+}
+
+function renderItemsOC(soloLectura){
+  const cont = document.getElementById('ocItemsCont');
+  if(!_ocItems.length){
+    cont.innerHTML = '<div style="color:#676879;font-size:13px;padding:10px;text-align:center;background:#f5f6f8;border-radius:8px">Sin ítems. Agrega rubros nuevos o modificaciones de cantidad.</div>';
+    recalcularMontoOC(); return;
+  }
+  cont.innerHTML = _ocItems.map((it,i)=>{
+    const eliminar = soloLectura?'':`<button class="btn" style="padding:2px 8px;font-size:12px;color:#e2445c" onclick="quitarItemOC(${i})">✕</button>`;
+    if(it.tipo==='nuevo'){
+      return `<div style="border:1px solid #e6e9ef;border-radius:8px;padding:10px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="font-size:12px;color:#0073ea">RUBRO NUEVO</b>${eliminar}</div>
+        <div style="display:grid;grid-template-columns:90px 1fr 70px 110px 110px;gap:8px">
+          <input class="form-control" placeholder="Código" value="${escAttr(it.codigo)}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'codigo',this.value)"/>
+          <input class="form-control" placeholder="Descripción" value="${escAttr(it.descripcion)}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'descripcion',this.value)"/>
+          <input class="form-control" placeholder="Und" value="${escAttr(it.unidad)}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'unidad',this.value)"/>
+          <input class="form-control" type="number" step="0.0001" placeholder="P. unitario" value="${it.precio_unitario||''}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'precio_unitario',this.value)"/>
+          <input class="form-control" type="number" step="0.01" placeholder="Cantidad" value="${it.cantidad||''}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'cantidad',this.value)"/>
+        </div></div>`;
+    }
+    const r = _ocRubros.find(x=>x.id===it.rubro_id);
+    return `<div style="border:1px solid #e6e9ef;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="font-size:12px;color:#b8860b">MODIFICACIÓN DE CANTIDAD</b>${eliminar}</div>
+      <div style="display:grid;grid-template-columns:1fr 150px;gap:8px">
+        <select class="form-control" ${soloLectura?'disabled':''} onchange="actualizarItemOC(${i},'rubro_id',this.value);renderItemsOC(${soloLectura})">
+          <option value="">— Selecciona el rubro —</option>
+          ${_ocRubros.map(x=>`<option value="${x.id}" ${x.id===it.rubro_id?'selected':''}>${escAttr(x.codigo+' — '+x.descripcion.substring(0,60))}</option>`).join('')}
+        </select>
+        <input class="form-control" type="number" step="0.01" placeholder="± Cantidad" value="${it.cantidad||''}" ${soloLectura?'disabled':''} oninput="actualizarItemOC(${i},'cantidad',this.value)"/>
+      </div>
+      ${r?`<div style="font-size:11px;color:#676879;margin-top:6px">Actual: ${r.cantidad_contrato||0} ${escAttr(r.unidad||'')} × ${fmtOC(r.precio_unitario)} · Nueva cantidad: <b>${((r.cantidad_contrato||0)+(it.cantidad||0)).toLocaleString('es-EC')}</b></div>`:''}
+    </div>`;
+  }).join('');
+  recalcularMontoOC();
+}
+
+async function guardarOC(estado){
+  const titulo = document.getElementById('ocTitulo').value.trim();
+  if(!titulo){ toast('El título es obligatorio','error'); return; }
+  if(estado==='solicitada' && !_ocItems.length){ toast('Agrega al menos un ítem antes de solicitar','error'); return; }
+  const invalido = _ocItems.some(it=> it.tipo==='nuevo' ? !it.descripcion.trim() : !it.rubro_id);
+  if(invalido){ toast('Completa todos los ítems (descripción o rubro)','error'); return; }
+
+  const montoTotal = _ocItems.reduce((s,it)=>s+montoItemOC(it),0);
+  let ocId = _ocEditando?.id;
+  if(!ocId){
+    const { data: maxN } = await sb.from('ordenes_cambio').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
+    const numero = (maxN?.[0]?.numero||0)+1;
+    const { data: nueva, error } = await sb.from('ordenes_cambio').insert({
+      proyecto_id: currentProyecto, numero, titulo,
+      justificacion: document.getElementById('ocJustificacion').value.trim()||null,
+      estado, monto_total: montoTotal, creado_por: currentUser?.id
+    }).select().single();
+    if(error){ toast('Error: '+error.message,'error'); return; }
+    ocId = nueva.id;
+  } else {
+    const { error } = await sb.from('ordenes_cambio').update({
+      titulo, justificacion: document.getElementById('ocJustificacion').value.trim()||null,
+      estado, monto_total: montoTotal
+    }).eq('id', ocId);
+    if(error){ toast('Error: '+error.message,'error'); return; }
+  }
+  await sb.from('orden_cambio_items').delete().eq('orden_id', ocId);
+  if(_ocItems.length){
+    await sb.from('orden_cambio_items').insert(_ocItems.map(it=>({
+      orden_id: ocId, tipo: it.tipo, rubro_id: it.rubro_id||null,
+      codigo: it.codigo||null, descripcion: it.descripcion||null, unidad: it.unidad||null,
+      precio_unitario: it.tipo==='nuevo' ? (it.precio_unitario||0) : (_ocRubros.find(x=>x.id===it.rubro_id)?.precio_unitario||0),
+      cantidad: it.cantidad||0, monto: montoItemOC(it)
+    })));
+  }
+  toast(`Orden de cambio guardada (${ESTADOS_OC[estado].label}) ✓`,'success');
+  renderListaOCs();
+}
+
+async function aprobarOC(id){
+  const oficio = document.getElementById('ocOficio')?.value.trim();
+  const fechaA = document.getElementById('ocFechaAprob')?.value;
+  if(!oficio || !fechaA){ toast('Registra el N° de oficio y la fecha de aprobación','error'); return; }
+  if(!confirm('¿Aprobar y APLICAR esta orden de cambio al presupuesto?\n\nSe insertarán/modificarán los rubros y la orden quedará sellada. Esta acción no se puede deshacer desde la app.')) return;
+
+  // Adjuntar oficio si hay archivo
+  let archivoUrl = null;
+  const file = document.getElementById('ocArchivo')?.files[0];
+  if(file){
+    const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
+    if(!upErr) archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
+  }
+
+  const oc = _ocEditando;
+  const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
+  // Aplicar impactos
+  const { data: maxOrden } = await sb.from('rubros').select('orden').eq('proyecto_id', currentProyecto).order('orden',{ascending:false}).limit(1);
+  let ordenSig = (maxOrden?.[0]?.orden||0)+1;
+  for(const it of _ocItems){
+    if(it.tipo==='nuevo'){
+      const { error } = await sb.from('rubros').insert({
+        proyecto_id: currentProyecto, orden: ordenSig++,
+        codigo: it.codigo||codigoOC, descripcion: it.descripcion, unidad: it.unidad||null,
+        cantidad_contrato: it.cantidad||0, precio_unitario: it.precio_unitario||0,
+        monto_contrato: (it.cantidad||0)*(it.precio_unitario||0),
+        cantidad_ejecutada: 0,
+        es_orden_cambio: true, orden_cambio_codigo: codigoOC, orden_cambio_id: oc.id
+      });
+      if(error){ toast('Error insertando rubro: '+error.message,'error'); return; }
+    } else {
+      const r = _ocRubros.find(x=>x.id===it.rubro_id);
+      if(!r) continue;
+      const nuevaCant = (r.cantidad_contrato||0)+(it.cantidad||0);
+      const { error } = await sb.from('rubros').update({
+        cantidad_contrato: nuevaCant,
+        monto_contrato: nuevaCant*(r.precio_unitario||0)
+      }).eq('id', it.rubro_id);
+      if(error){ toast('Error modificando rubro: '+error.message,'error'); return; }
+    }
+  }
+  const upd = { estado:'aprobada', oficio_referencia:oficio, fecha_aprobacion:fechaA, aprobado_por: currentUser?.id };
+  if(archivoUrl) upd.archivo_url = archivoUrl;
+  await sb.from('ordenes_cambio').update(upd).eq('id', id);
+  toast(`${codigoOC} aprobada y aplicada al presupuesto ✓`,'success');
+  renderListaOCs();
+  if(typeof cargarRubros==='function') cargarRubros();
+}
+
+async function rechazarOC(id){
+  const motivo = prompt('Motivo del rechazo:');
+  if(motivo===null) return;
+  await sb.from('ordenes_cambio').update({estado:'rechazada', motivo_rechazo:motivo.trim()||null}).eq('id', id);
+  toast('Orden de cambio rechazada','success');
+  renderListaOCs();
+}
+
+async function eliminarOC(id){
+  if(!confirm('¿Eliminar esta orden de cambio en borrador?')) return;
+  await sb.from('ordenes_cambio').delete().eq('id', id);
+  toast('Orden eliminada','success');
+  renderListaOCs();
 }
 
 // ── APROBACIÓN DEL LIBRO DE OBRA ──
