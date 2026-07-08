@@ -2086,6 +2086,13 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <td colspan="6" style="text-align:right;font-weight:700;color:#fff;padding:10px 8px">TOTAL PLANILLA</td>
               <td style="text-align:right;font-weight:800;color:#00c2ff;padding:10px 8px;font-size:16px" id="planTotal">$0.00</td>
             </tr>
+            <tr id="filaReajuste" style="display:none">
+              <td colspan="7" style="padding:8px"><div id="reajusteInputsCont" style="background:#f0f7ff;border-radius:8px;padding:10px"></div></td>
+            </tr>
+            <tr id="filaReajusteMonto" style="display:none">
+              <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(+) Reajuste provisional · factor <span id="reajusteFactorLabel">1.0000</span></td>
+              <td style="text-align:right;color:#0073ea;font-weight:600;padding:6px 8px" id="planReajuste">$0.00</td>
+            </tr>
             <tr id="filaAmort" style="display:none">
               <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(−) Amortización del anticipo <span id="amortModoLabel" style="font-size:10px"></span></td>
               <td style="text-align:right;padding:4px 8px"><input type="number" step="0.01" min="0" id="planAmort" class="form-control" style="width:130px;text-align:right;display:inline-block;padding:4px 8px;font-size:13px" oninput="recalcularLiquidoPlanilla(true)"/></td>
@@ -2094,9 +2101,17 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(−) Retención de garantía (<span id="retPctLabel">0</span>%)</td>
               <td style="text-align:right;color:#7b68ee;font-weight:600;padding:6px 8px" id="planRetencion">$0.00</td>
             </tr>
+            <tr id="filaMulta" style="display:none">
+              <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(−) Multa <input type="text" id="planMultaConcepto" class="form-control" placeholder="concepto" style="width:180px;display:inline-block;padding:3px 8px;font-size:12px"/></td>
+              <td style="text-align:right;padding:4px 8px"><input type="number" step="0.01" min="0" id="planMulta" class="form-control" style="width:130px;text-align:right;display:inline-block;padding:4px 8px;font-size:13px" value="0" oninput="recalcularLiquidoPlanilla(true)"/></td>
+            </tr>
             <tr id="filaLiquido" style="display:none;background:#0e3a2f">
               <td colspan="6" style="text-align:right;font-weight:700;color:#fff;padding:10px 8px">LÍQUIDO A PAGAR</td>
               <td style="text-align:right;font-weight:800;color:#2ecc8f;padding:10px 8px;font-size:16px" id="planLiquido">$0.00</td>
+            </tr>
+            <tr id="filaIva" style="display:none">
+              <td colspan="6" style="text-align:right;color:#9aa0b5;padding:5px 8px;font-size:11px">IVA <span id="ivaPctLabel">15</span>% sobre (total + reajuste) — informativo, va en la factura</td>
+              <td style="text-align:right;color:#9aa0b5;font-size:11px;padding:5px 8px" id="planIva">$0.00</td>
             </tr>
           </tfoot>
         </table>
@@ -8429,6 +8444,8 @@ async function cargarContrato(){
         </select></div>
       <div class="form-group" style="margin:0"><label class="form-label">Retención por planilla (%)</label>
         <input type="number" step="0.1" min="0" max="100" class="form-control" id="antRetPct" value="${ant?.retencion_pct||''}" ${puedeEditar?'':'disabled'}/></div>
+      <div class="form-group" style="margin:0"><label class="form-label">IVA informativo (%)</label>
+        <input type="number" step="0.1" min="0" max="100" class="form-control" id="antIvaPct" value="${ant?.iva_pct??15}" ${puedeEditar?'':'disabled'}/></div>
     </div>
     ${puedeEditar?'<button class="btn primary" onclick="guardarAnticipo()">Guardar configuración</button>':''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:18px">
@@ -8464,7 +8481,84 @@ async function cargarContrato(){
       }).join('') + '</tbody></table></div>'
       : '<div style="text-align:center;color:#676879;padding:24px">Sin garantías registradas</div>'
     }</div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:16px">📐 Fórmula polinómica de reajuste</h3>
+      ${puedeEditar?'<button class="btn primary" onclick="agregarTerminoReajuste()">+ Término</button>':''}
+    </div>
+    <div style="font-size:12px;color:#676879;margin-bottom:12px">P = Po × ( Σ coeficiente × índice actual / índice base ). Los coeficientes deben sumar 1.000. Si el proyecto no tiene reajuste contractual, deja la tabla vacía.</div>
+    <div id="reajusteTerminosCont"></div>
   </div>`;
+  window._reajusteTerminos = [];
+  cargarTerminosReajuste(puedeEditar);
+}
+
+async function cargarTerminosReajuste(puedeEditar){
+  const { data: terms } = await sb.from('reajuste_terminos').select('*').eq('proyecto_id', currentProyecto).order('orden');
+  window._reajusteTerminos = terms||[];
+  renderTerminosReajuste(puedeEditar);
+}
+
+function renderTerminosReajuste(puedeEditar){
+  const cont = document.getElementById('reajusteTerminosCont');
+  if(!cont) return;
+  const terms = window._reajusteTerminos;
+  if(!terms.length){
+    cont.innerHTML = '<div style="text-align:center;color:#676879;padding:18px;background:#f5f6f8;border-radius:8px">Sin fórmula de reajuste configurada</div>';
+    return;
+  }
+  const suma = terms.reduce((s,t)=>s+(t.coeficiente||0),0);
+  const sumaOk = Math.abs(suma-1) < 0.0005;
+  cont.innerHTML = `<div style="overflow-x:auto"><table style="width:100%"><thead><tr>
+    <th style="width:80px">Símbolo</th><th>Descripción</th><th style="width:120px;text-align:right">Coeficiente</th><th style="width:120px;text-align:right">Índice base</th>${puedeEditar?'<th style="width:50px"></th>':''}
+  </tr></thead><tbody>
+  ${terms.map((t,i)=>`<tr>
+    <td><input class="form-control" style="padding:4px 8px;font-weight:700" value="${escAttr(t.simbolo)}" ${puedeEditar?'':'disabled'} oninput="window._reajusteTerminos[${i}].simbolo=this.value"/></td>
+    <td><input class="form-control" style="padding:4px 8px" value="${escAttr(t.descripcion||'')}" ${puedeEditar?'':'disabled'} oninput="window._reajusteTerminos[${i}].descripcion=this.value"/></td>
+    <td><input class="form-control" type="number" step="0.001" style="padding:4px 8px;text-align:right" value="${t.coeficiente||''}" ${puedeEditar?'':'disabled'} oninput="window._reajusteTerminos[${i}].coeficiente=parseFloat(this.value)||0;actualizarSumaCoef()"/></td>
+    <td><input class="form-control" type="number" step="0.0001" style="padding:4px 8px;text-align:right" value="${t.indice_base||''}" ${puedeEditar?'':'disabled'} oninput="window._reajusteTerminos[${i}].indice_base=parseFloat(this.value)||0"/></td>
+    ${puedeEditar?`<td><button class="btn" style="padding:2px 8px;color:#e2445c" onclick="window._reajusteTerminos.splice(${i},1);renderTerminosReajuste(true)">✕</button></td>`:''}
+  </tr>`).join('')}
+  </tbody></table></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+    <span id="sumaCoefLabel" style="font-size:13px;font-weight:700;color:${sumaOk?'#00854d':'#e2445c'}">Σ coeficientes = ${suma.toFixed(3)} ${sumaOk?'✓':'(debe ser 1.000)'}</span>
+    ${puedeEditar?'<button class="btn primary" onclick="guardarTerminosReajuste()">Guardar fórmula</button>':''}
+  </div>`;
+}
+
+function actualizarSumaCoef(){
+  const suma = window._reajusteTerminos.reduce((s,t)=>s+(t.coeficiente||0),0);
+  const ok = Math.abs(suma-1) < 0.0005;
+  const el = document.getElementById('sumaCoefLabel');
+  if(el){ el.textContent = `Σ coeficientes = ${suma.toFixed(3)} ${ok?'✓':'(debe ser 1.000)'}`; el.style.color = ok?'#00854d':'#e2445c'; }
+}
+
+function agregarTerminoReajuste(){
+  window._reajusteTerminos.push({simbolo:'', descripcion:'', coeficiente:0, indice_base:0, orden:window._reajusteTerminos.length});
+  renderTerminosReajuste(true);
+}
+
+async function guardarTerminosReajuste(){
+  const terms = window._reajusteTerminos.filter(t=>t.simbolo.trim());
+  const suma = terms.reduce((s,t)=>s+(t.coeficiente||0),0);
+  if(terms.length && Math.abs(suma-1) >= 0.0005){
+    if(!confirm(`Los coeficientes suman ${suma.toFixed(3)} y no 1.000.\n\n¿Guardar de todas formas?`)) return;
+  }
+  if(terms.some(t=>t.coeficiente>0 && !(t.indice_base>0))){
+    toast('Todos los términos necesitan índice base mayor a 0','error'); return;
+  }
+  await sb.from('reajuste_terminos').delete().eq('proyecto_id', currentProyecto);
+  if(terms.length){
+    const { error } = await sb.from('reajuste_terminos').insert(terms.map((t,i)=>({
+      proyecto_id: currentProyecto, simbolo: t.simbolo.trim(), descripcion: t.descripcion||null,
+      coeficiente: t.coeficiente||0, indice_base: t.indice_base||0, orden: i
+    })));
+    if(error){ toast('Error: '+error.message,'error'); return; }
+  }
+  toast('Fórmula de reajuste guardada ✓','success');
+  cargarTerminosReajuste(true);
 }
 
 async function guardarAnticipo(){
@@ -8473,7 +8567,8 @@ async function guardarAnticipo(){
     monto: parseFloat(document.getElementById('antMonto').value)||0,
     fecha_entrega: document.getElementById('antFecha').value||null,
     modo_amortizacion: document.getElementById('antModo').value,
-    retencion_pct: parseFloat(document.getElementById('antRetPct').value)||0
+    retencion_pct: parseFloat(document.getElementById('antRetPct').value)||0,
+    iva_pct: parseFloat(document.getElementById('antIvaPct').value)||0
   };
   const { error } = await sb.from('contrato_anticipo').upsert(payload, {onConflict:'proyecto_id'});
   if(error){ toast('Error al guardar: '+error.message,'error'); return; }
@@ -8638,9 +8733,40 @@ async function cargarConfigAnticipo(){
     monto: ant?.monto||0,
     modo: ant?.modo_amortizacion||'proporcional',
     retPct: ant?.retencion_pct||0,
+    ivaPct: ant?.iva_pct??15,
     pct: (montoContrato>0 && ant?.monto>0) ? ant.monto/montoContrato : 0,
     saldo: Math.max(0, (ant?.monto||0) - amortOtras)
   };
+  const { data: terms } = await sb.from('reajuste_terminos').select('*').eq('proyecto_id', currentProyecto).order('orden');
+  window._antCfg.terminos = (terms||[]).filter(t=>t.indice_base>0);
+  renderReajusteInputs();
+}
+
+function renderReajusteInputs(indicesGuardados=null){
+  const cont = document.getElementById('reajusteInputsCont');
+  const terms = window._antCfg?.terminos||[];
+  if(!cont) return;
+  if(!terms.length){ document.getElementById('filaReajuste').style.display='none'; return; }
+  cont.innerHTML = `<b style="font-size:12px;color:#0073ea">REAJUSTE — índices del período (INEC)</b>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+    ${terms.map((t,i)=>`<div style="min-width:120px">
+      <div style="font-size:11px;color:#676879">${escAttr(t.simbolo)} · coef ${t.coeficiente} · base ${t.indice_base}</div>
+      <input type="number" step="0.0001" class="form-control" style="padding:4px 8px;font-size:13px" id="reajusteIdx-${i}"
+        value="${indicesGuardados?.[t.simbolo] ?? t.indice_base}" oninput="recalcularLiquidoPlanilla(true)"/>
+    </div>`).join('')}
+    </div>`;
+}
+
+function calcularFactorReajuste(){
+  const terms = window._antCfg?.terminos||[];
+  if(!terms.length) return {factor:1, indices:null};
+  let factor = 0; const indices = {};
+  terms.forEach((t,i)=>{
+    const idx = parseFloat(document.getElementById('reajusteIdx-'+i)?.value)||t.indice_base;
+    indices[t.simbolo] = idx;
+    factor += (t.coeficiente||0) * (idx/(t.indice_base||1));
+  });
+  return {factor, indices};
 }
 
 function recalcularLiquidoPlanilla(desdeManual=false){
@@ -8668,7 +8794,35 @@ function recalcularLiquidoPlanilla(desdeManual=false){
   const ret = hayRet ? total * cfg.retPct/100 : 0;
   document.getElementById('retPctLabel').textContent = cfg.retPct;
   document.getElementById('planRetencion').textContent = '$'+ret.toLocaleString('es-EC',{minimumFractionDigits:2});
-  document.getElementById('planLiquido').textContent = '$'+(total-amort-ret).toLocaleString('es-EC',{minimumFractionDigits:2});
+
+  // Reajuste provisional (fórmula polinómica)
+  const hayReajuste = (cfg.terminos||[]).length > 0;
+  document.getElementById('filaReajuste').style.display = hayReajuste ? '' : 'none';
+  document.getElementById('filaReajusteMonto').style.display = hayReajuste ? '' : 'none';
+  let reajuste = 0;
+  if(hayReajuste){
+    const { factor } = calcularFactorReajuste();
+    reajuste = total * (factor - 1);
+    document.getElementById('reajusteFactorLabel').textContent = factor.toFixed(4);
+    const elR = document.getElementById('planReajuste');
+    elR.textContent = (reajuste<0?'−$':'$')+Math.abs(reajuste).toLocaleString('es-EC',{minimumFractionDigits:2});
+    elR.style.color = reajuste>=0 ? '#0073ea' : '#e2445c';
+  }
+
+  // Multa manual
+  document.getElementById('filaMulta').style.display = (hayAnticipo||hayRet||hayReajuste) ? '' : 'none';
+  const multa = parseFloat(document.getElementById('planMulta')?.value)||0;
+
+  // IVA informativo sobre (total + reajuste)
+  const hayIva = (cfg.ivaPct||0) > 0 && (hayAnticipo||hayRet||hayReajuste);
+  document.getElementById('filaIva').style.display = hayIva ? '' : 'none';
+  if(hayIva){
+    document.getElementById('ivaPctLabel').textContent = cfg.ivaPct;
+    document.getElementById('planIva').textContent = '$'+((total+reajuste)*cfg.ivaPct/100).toLocaleString('es-EC',{minimumFractionDigits:2});
+  }
+
+  document.getElementById('filaLiquido').style.display = (hayAnticipo||hayRet||hayReajuste||multa>0) ? '' : 'none';
+  document.getElementById('planLiquido').textContent = '$'+(total+reajuste-amort-ret-multa).toLocaleString('es-EC',{minimumFractionDigits:2});
 }
 
 async function cargarRubrosPlanilla(){
@@ -8761,6 +8915,11 @@ function calcularTotalPlanilla(){
 }
 
 async function editarPlanilla(id){
+  const { data: pChk } = await sb.from('planillas_pago').select('estado').eq('id', id).single();
+  if(pChk?.estado === 'pagada'){
+    toast('Una planilla pagada no se puede editar (el reajuste queda definitivo al pagar)','error');
+    return;
+  }
   const { data: p } = await sb.from('planillas_pago').select('*').eq('id',id).single();
   if(!p) return;
   window._editandoPlanillaId = id;
@@ -8786,8 +8945,12 @@ async function editarPlanilla(id){
   // Restaurar amortización guardada si el modo es manual
   if(window._antCfg?.modo === 'manual' && p.amortizacion_anticipo > 0){
     document.getElementById('planAmort').value = p.amortizacion_anticipo.toFixed(2);
-    recalcularLiquidoPlanilla(true);
   }
+  // Restaurar índices de reajuste y multa guardados
+  if(p.reajuste_indices) renderReajusteInputs(p.reajuste_indices);
+  if(p.multa_monto > 0){ document.getElementById('planMulta').value = p.multa_monto; }
+  if(p.multa_concepto){ document.getElementById('planMultaConcepto').value = p.multa_concepto; }
+  recalcularLiquidoPlanilla(true);
 }
 
 async function guardarPlanilla(estado){
@@ -8804,10 +8967,14 @@ async function guardarPlanilla(estado){
   // Número de planilla — desde variable o DOM
   const numero = window._planillaNumero || parseInt(document.getElementById('planNumero')?.textContent||'0');
   const totalMonto = calcularTotalPlanilla();
-  const cfgAnt = window._antCfg||{monto:0,retPct:0,saldo:0};
+  const cfgAnt = window._antCfg||{monto:0,retPct:0,saldo:0,terminos:[]};
   const amortAnt = cfgAnt.monto>0 ? Math.min(parseFloat(document.getElementById('planAmort')?.value)||0, cfgAnt.saldo) : 0;
   const retGar = cfgAnt.retPct>0 ? totalMonto * cfgAnt.retPct/100 : 0;
-  const totalLiquido = totalMonto - amortAnt - retGar;
+  const { factor: reajFactor, indices: reajIndices } = calcularFactorReajuste();
+  const reajMonto = (cfgAnt.terminos||[]).length ? totalMonto * (reajFactor - 1) : 0;
+  const multaMonto = parseFloat(document.getElementById('planMulta')?.value)||0;
+  const multaConcepto = document.getElementById('planMultaConcepto')?.value.trim()||null;
+  const totalLiquido = totalMonto + reajMonto - amortAnt - retGar - multaMonto;
 
   // Si es edición, actualizar en lugar de crear
   if(window._editandoPlanillaId){
@@ -8815,6 +8982,8 @@ async function guardarPlanilla(estado){
       fecha_inicio: fechaInicio, fecha_fin: fechaFin,
       estado, total_monto: totalMonto,
       amortizacion_anticipo: amortAnt, retencion_garantia: retGar, total_liquido: totalLiquido,
+      reajuste_indices: reajIndices, reajuste_factor: reajIndices?reajFactor:null, reajuste_monto: reajMonto,
+      multa_monto: multaMonto, multa_concepto: multaConcepto,
       observaciones: document.getElementById('planObservaciones').value||null,
       updated_at: new Date().toISOString()
     }).eq('id', window._editandoPlanillaId);
@@ -8845,6 +9014,8 @@ async function guardarPlanilla(estado){
     numero, fecha_inicio: fechaInicio, fecha_fin: fechaFin,
     estado, total_monto: totalMonto,
     amortizacion_anticipo: amortAnt, retencion_garantia: retGar, total_liquido: totalLiquido,
+    reajuste_indices: reajIndices, reajuste_factor: reajIndices?reajFactor:null, reajuste_monto: reajMonto,
+    multa_monto: multaMonto, multa_concepto: multaConcepto,
     observaciones: document.getElementById('planObservaciones').value||null,
     creado_por: currentUser?.id
   }).select().single();
@@ -8910,8 +9081,9 @@ async function verPlanilla(id){
   document.getElementById('planDetalleEstado').innerHTML = `<span style="background:${est.bg};color:${est.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">${est.emoji} ${est.label}</span>`;
   document.getElementById('planDetallePeriodo').textContent = `${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}`;
   const fmtEc = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2});
-  document.getElementById('planDetalleTotal').innerHTML = (p.amortizacion_anticipo>0 || p.retencion_garantia>0)
-    ? `${fmtEc(p.total_monto)} <span style="font-size:11px;color:#676879;font-weight:400;display:block">− anticipo ${fmtEc(p.amortizacion_anticipo)} − retención ${fmtEc(p.retencion_garantia)} · <b style="color:#00854d">líquido ${fmtEc(p.total_liquido ?? (p.total_monto-(p.amortizacion_anticipo||0)-(p.retencion_garantia||0)))}</b></span>`
+  const hayDesglose = p.amortizacion_anticipo>0 || p.retencion_garantia>0 || p.reajuste_monto!=0 || p.multa_monto>0;
+  document.getElementById('planDetalleTotal').innerHTML = hayDesglose
+    ? `${fmtEc(p.total_monto)} <span style="font-size:11px;color:#676879;font-weight:400;display:block">${p.reajuste_monto?`+ reajuste ${fmtEc(p.reajuste_monto)} (f=${Number(p.reajuste_factor||1).toFixed(4)}) `:''}${p.amortizacion_anticipo?`− anticipo ${fmtEc(p.amortizacion_anticipo)} `:''}${p.retencion_garantia?`− retención ${fmtEc(p.retencion_garantia)} `:''}${p.multa_monto?`− multa ${fmtEc(p.multa_monto)}${p.multa_concepto?' ('+escAttr(p.multa_concepto)+')':''} `:''}· <b style="color:#00854d">líquido ${fmtEc(p.total_liquido ?? p.total_monto)}</b></span>`
     : fmtEc(p.total_monto);
 
   // Tabla rubros
