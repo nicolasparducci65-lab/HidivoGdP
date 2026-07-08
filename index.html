@@ -4020,7 +4020,8 @@ async function renderListaOCs(){
         <td style="text-align:right;font-weight:600;white-space:nowrap;color:${(o.monto_total||0)>=0?'#323338':'#e2445c'}">${fmtOC(o.monto_total)}</td>
         <td><span style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">${e.label}</span></td>
         <td style="font-size:12px;color:#676879;white-space:nowrap">${o.estado==='aprobada'?`${escAttr(o.oficio_referencia||'')} ${o.fecha_aprobacion||''} ${o.archivo_url?`<a href="${o.archivo_url}" target="_blank">📎</a>`:''}`:'—'}</td>
-        <td style="white-space:nowrap"><button class="btn" style="padding:3px 10px;font-size:12px" onclick="abrirEditorOC('${o.id}')">${['borrador','solicitada'].includes(o.estado)?'✏️ Editar':'👁 Ver'}</button></td>
+        <td style="white-space:nowrap"><button class="btn" style="padding:3px 10px;font-size:12px" onclick="abrirEditorOC('${o.id}')">${['borrador','solicitada'].includes(o.estado)?'✏️ Editar':'👁 Ver'}</button>
+        <button class="btn" style="padding:3px 10px;font-size:12px" title="Imprimir / PDF" onclick="imprimirOC('${o.id}')">🖨️</button></td>
       </tr>`;
     }).join('')}
     </tbody></table>`;
@@ -4081,6 +4082,7 @@ async function abrirEditorOC(id=null){
       <button class="btn primary" onclick="guardarOC('solicitada')">Guardar y solicitar</button>`;
   } else { // solicitada
     f.innerHTML = `<button class="btn" onclick="renderListaOCs()">← Volver</button>
+      <button class="btn" onclick="imprimirOC('${oc.id}')">🖨️ PDF</button>
       <button class="btn" onclick="guardarOC('solicitada')">Guardar cambios</button>
       <button class="btn" style="color:#e2445c" onclick="rechazarOC('${oc.id}')">Rechazar</button>
       <button class="btn primary" style="background:#00854d" onclick="aprobarOC('${oc.id}')">✓ Aprobar y aplicar</button>`;
@@ -4250,6 +4252,113 @@ async function eliminarOC(id){
   await sb.from('ordenes_cambio').delete().eq('id', id);
   toast('Orden eliminada','success');
   renderListaOCs();
+}
+
+async function imprimirOC(id){
+  const [{ data: oc }, { data: items }, { data: proy }] = await Promise.all([
+    sb.from('ordenes_cambio').select('*').eq('id', id).single(),
+    sb.from('orden_cambio_items').select('*').eq('orden_id', id).order('created_at'),
+    sb.from('proyectos').select('*').eq('id', currentProyecto).single()
+  ]);
+  if(!oc){ toast('No se pudo cargar la orden','error'); return; }
+
+  // Nombres de rubros para modificaciones y firmantes
+  const idsRubros = (items||[]).filter(i=>i.rubro_id).map(i=>i.rubro_id);
+  let rubrosMap = {};
+  if(idsRubros.length){
+    const { data: rs } = await sb.from('rubros').select('id,codigo,descripcion,unidad,precio_unitario').in('id', idsRubros);
+    (rs||[]).forEach(r=>rubrosMap[r.id]=r);
+  }
+  const idsPerf = [oc.creado_por, oc.aprobado_por].filter(Boolean);
+  let perfMap = {};
+  if(idsPerf.length){
+    const { data: ps } = await sb.from('perfiles').select('id,nombre,apellido').in('id', idsPerf);
+    (ps||[]).forEach(p=>perfMap[p.id]=`${p.nombre||''} ${p.apellido||''}`.trim());
+  }
+  const montoContrato = await obtenerMontoContratoProyecto();
+  const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
+  const esBorrador = oc.estado==='borrador';
+  const f = v => (v<0?'−$':'$') + Math.abs(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const e = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const filasItems = (items||[]).map((it,i)=>{
+    const r = it.rubro_id ? rubrosMap[it.rubro_id] : null;
+    const desc = it.tipo==='nuevo' ? it.descripcion : (r ? `${r.codigo} — ${r.descripcion}` : '(rubro)');
+    const cod = it.tipo==='nuevo' ? (it.codigo||'—') : (r?.codigo||'—');
+    const und = it.tipo==='nuevo' ? (it.unidad||'—') : (r?.unidad||'—');
+    return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:center">${i+1}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:center">${it.tipo==='nuevo'?'Rubro nuevo':'Modif. cantidad'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px">${e(cod)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px">${e(desc)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:center">${e(und)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:right">${f(it.precio_unitario)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:right;font-weight:600">${(it.cantidad||0)>0&&it.tipo==='modificacion'?'+':''}${(it.cantidad||0).toLocaleString('es-EC')}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e6e9ef;font-size:11px;text-align:right;font-weight:700;color:${(it.monto||0)>=0?'#323338':'#e2445c'}">${f(it.monto)}</td>
+    </tr>`;
+  }).join('');
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`
+    <html><head><title>${codigoOC} — ${e(oc.titulo)}</title>
+    <style>
+      body{font-family:Arial,sans-serif;color:#323338;padding:24px;max-width:900px;margin:0 auto}
+      .encabezado{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:3px solid #0073ea;padding-bottom:12px;margin-bottom:16px}
+      .encabezado img{height:56px;object-fit:contain}
+      h1{font-size:18px;color:#0073ea;margin:0 0 4px 0}
+      .sub{font-size:11px;color:#676879;margin:0}
+      .grid-info{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+      .info-box{background:#f5f6f8;border-radius:6px;padding:8px 10px}
+      .info-label{font-size:9px;color:#676879;letter-spacing:.5px;text-transform:uppercase}
+      .info-value{font-size:12px;font-weight:700}
+      .marca-borrador{color:#b8860b;border:2px dashed #b8860b;border-radius:8px;padding:4px 14px;font-weight:800;font-size:13px}
+      table{width:100%;border-collapse:collapse;margin-top:6px}
+      thead td{background:#1a1a2e;color:#fff;font-size:10px;font-weight:700;padding:7px 8px}
+      .resumen{margin-top:14px;margin-left:auto;width:320px;font-size:12px}
+      .resumen div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e6e9ef}
+      .firmas{display:flex;justify-content:space-between;gap:16px;margin-top:64px;page-break-inside:avoid}
+      .firma-box{flex:1;text-align:center}
+      .linea-firma{border-top:1px solid #323338;margin-bottom:6px}
+      .firma-rol{font-size:12px;font-weight:700}
+      .firma-nombre{font-size:11px;color:#676879}
+      @media print{ body{padding:0} }
+    </style></head>
+    <body>
+      <div class="encabezado">
+        <div style="display:flex;align-items:center;gap:16px">
+          <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HiDiVo"/>
+          <div>
+            <h1>ORDEN DE CAMBIO ${codigoOC}</h1>
+            <div class="sub">${e(oc.titulo)} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>
+          </div>
+        </div>
+        ${esBorrador?'<span class="marca-borrador">BORRADOR</span>':oc.estado==='aprobada'?'<span class="marca-borrador" style="color:#00854d;border-color:#00854d">APROBADA</span>':''}
+      </div>
+      <div class="grid-info">
+        <div class="info-box"><div class="info-label">Proyecto</div><div class="info-value">${e(proy?.nombre||'')}</div></div>
+        <div class="info-box"><div class="info-label">Contratante</div><div class="info-value">${e(proy?.contratante||'—')}</div></div>
+        <div class="info-box"><div class="info-label">Contratista</div><div class="info-value">${e(proy?.contratista||'—')}</div></div>
+      </div>
+      ${oc.justificacion?`<div style="background:#f5f6f8;border-radius:8px;padding:12px 14px;margin-bottom:12px"><div class="info-label">Justificación técnica</div><div style="font-size:12px;white-space:pre-line;margin-top:4px">${e(oc.justificacion)}</div></div>`:''}
+      ${oc.estado==='aprobada'?`<div style="font-size:12px;margin-bottom:10px;color:#00854d"><b>Aprobada</b> — Oficio: ${e(oc.oficio_referencia||'—')} · Fecha: ${oc.fecha_aprobacion||'—'}${perfMap[oc.aprobado_por]?' · Registrado por: '+e(perfMap[oc.aprobado_por]):''}</div>`:''}
+      <table>
+        <thead><tr><td>#</td><td>Tipo</td><td>Cód.</td><td>Descripción</td><td style="text-align:center">Und.</td><td style="text-align:right">P. Unitario</td><td style="text-align:right">Cantidad</td><td style="text-align:right">Monto</td></tr></thead>
+        <tbody>${filasItems||'<tr><td colspan="8" style="padding:12px;text-align:center;color:#676879">Sin ítems</td></tr>'}</tbody>
+      </table>
+      <div class="resumen">
+        <div><span>Monto contractual vigente</span><b>${f(montoContrato)}</b></div>
+        <div><span>Impacto de esta orden</span><b style="color:${(oc.monto_total||0)>=0?'#00854d':'#e2445c'}">${f(oc.monto_total)}</b></div>
+        <div style="border-bottom:2px solid #1a1a2e"><span><b>Monto resultante</b></span><b>${f(montoContrato + (oc.estado==='aprobada'?0:(oc.monto_total||0)))}</b></div>
+      </div>
+      <div class="firmas">
+        <div class="firma-box"><div class="linea-firma"></div><div class="firma-rol">Fiscalización</div><div class="firma-nombre">${e(perfMap[oc.creado_por]||'')}</div></div>
+        <div class="firma-box"><div class="linea-firma"></div><div class="firma-rol">Contratista</div><div class="firma-nombre">${e(proy?.contratista||'')}</div></div>
+        <div class="firma-box"><div class="linea-firma"></div><div class="firma-rol">Contratante</div><div class="firma-nombre">${e(proy?.contratante||'')}</div></div>
+      </div>
+    </body></html>
+  `);
+  ventana.document.close();
+  setTimeout(()=>{ ventana.print(); }, 400);
 }
 
 // ── APROBACIÓN DEL LIBRO DE OBRA ──
