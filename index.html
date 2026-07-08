@@ -460,6 +460,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         Planillas de Pago
         <span id="planillasBadge" style="display:none;background:#ff9f00;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
+      <div class="nav-item" onclick="navTo('contrato',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Contrato
+        <span id="garantiasBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
+      </div>
       <div class="nav-item" onclick="navTo('equipos',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         Equipos
@@ -675,6 +680,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- PLANILLAS -->
       <div class="page" id="page-planillas">
         <div id="planillasContent"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Selecciona un proyecto</div></div></div>
+      </div>
+
+      <!-- CONTRATO: ANTICIPO Y GARANTÍAS -->
+      <div class="page" id="page-contrato">
+        <div id="contratoContent"><div class="empty-state"><div class="empty-icon">🛡️</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- SOLICITUDES -->
@@ -1232,6 +1242,52 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalGarantia">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header"><h3 id="garTituloModal">Nueva garantía</h3>
+      <button class="modal-close" onclick="document.getElementById('modalGarantia').classList.remove('show')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Tipo *</label>
+        <select class="form-control" id="garTipo">
+          <option value="buen_uso_anticipo">Buen uso del anticipo</option>
+          <option value="fiel_cumplimiento">Fiel cumplimiento</option>
+          <option value="todo_riesgo">Todo riesgo</option>
+          <option value="otra">Otra</option>
+        </select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">Aseguradora</label>
+          <input type="text" class="form-control" id="garAseguradora"/></div>
+        <div class="form-group"><label class="form-label">N° de póliza</label>
+          <input type="text" class="form-control" id="garNumero"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">Monto asegurado</label>
+          <input type="number" step="0.01" min="0" class="form-control" id="garMonto"/></div>
+        <div class="form-group"><label class="form-label">Vigencia desde</label>
+          <input type="date" class="form-control" id="garDesde"/></div>
+        <div class="form-group"><label class="form-label">Vigencia hasta *</label>
+          <input type="date" class="form-control" id="garHasta"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">Estado</label>
+          <select class="form-control" id="garEstado">
+            <option value="vigente">Vigente</option>
+            <option value="renovada">Renovada</option>
+            <option value="devuelta">Devuelta</option>
+            <option value="ejecutada">Ejecutada</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Póliza (PDF/imagen)</label>
+          <input type="file" class="form-control" id="garArchivo" accept=".pdf,image/*"/></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notas</label>
+        <textarea class="form-control" id="garNotas" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="document.getElementById('modalGarantia').classList.remove('show')">Cancelar</button>
+      <button class="btn primary" id="btnGuardarGarantia" onclick="guardarGarantia()">Guardar</button>
+    </div>
+  </div>
+</div>
 <div id="lightboxVisor" onclick="if(event.target===this)cerrarLightbox()">
   <button class="lightbox-btn" id="lightboxCerrar" onclick="cerrarLightbox()">✕</button>
   <button class="lightbox-btn" id="lightboxPrev" onclick="navegarLightbox(-1)">‹</button>
@@ -2018,6 +2074,18 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
               <td colspan="6" style="text-align:right;font-weight:700;color:#fff;padding:10px 8px">TOTAL PLANILLA</td>
               <td style="text-align:right;font-weight:800;color:#00c2ff;padding:10px 8px;font-size:16px" id="planTotal">$0.00</td>
             </tr>
+            <tr id="filaAmort" style="display:none">
+              <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(−) Amortización del anticipo <span id="amortModoLabel" style="font-size:10px"></span></td>
+              <td style="text-align:right;padding:4px 8px"><input type="number" step="0.01" min="0" id="planAmort" class="form-control" style="width:130px;text-align:right;display:inline-block;padding:4px 8px;font-size:13px" oninput="recalcularLiquidoPlanilla(true)"/></td>
+            </tr>
+            <tr id="filaRet" style="display:none">
+              <td colspan="6" style="text-align:right;color:#676879;padding:6px 8px;font-size:12px">(−) Retención de garantía (<span id="retPctLabel">0</span>%)</td>
+              <td style="text-align:right;color:#7b68ee;font-weight:600;padding:6px 8px" id="planRetencion">$0.00</td>
+            </tr>
+            <tr id="filaLiquido" style="display:none;background:#0e3a2f">
+              <td colspan="6" style="text-align:right;font-weight:700;color:#fff;padding:10px 8px">LÍQUIDO A PAGAR</td>
+              <td style="text-align:right;font-weight:800;color:#2ecc8f;padding:10px 8px;font-size:16px" id="planLiquido">$0.00</td>
+            </tr>
           </tfoot>
         </table>
       </div>
@@ -2713,6 +2781,14 @@ async function cargarNotificacionesGlobales(){
       dmsPendientes.sort((a,b)=>b.n-a.n);
     }
 
+    // Garantías por vencer (≤5 días) o vencidas — para roles de gestión
+    if(idsSolRespondedor.length){
+      const limite = new Date(Date.now() + 5*86400000).toISOString().split('T')[0];
+      const { data: garsVenc } = await sb.from('garantias').select('id,proyecto_id')
+        .eq('estado','vigente').lte('vigencia_hasta', limite).in('proyecto_id', idsSolRespondedor);
+      (garsVenc||[]).forEach(g=>{ asegura(g.proyecto_id).gar = (asegura(g.proyecto_id).gar||0)+1; });
+    }
+
     // Observaciones abiertas
     if(idsObs.length){
       const { data: obs } = await sb.from('observaciones').select('id,proyecto_id')
@@ -2743,7 +2819,7 @@ function totalNotificaciones(){
   if(!notiDatos) return 0;
   let t = notiDatos.dmsPendientes.reduce((s,d)=>s+d.n, 0);
   Object.values(notiDatos.porProyecto).forEach(p=>{
-    t += p.obs + p.sol + p.canales.reduce((s,c)=>s+c.n, 0);
+    t += p.obs + p.sol + (p.gar||0) + p.canales.reduce((s,c)=>s+c.n, 0);
   });
   return t;
 }
@@ -2779,7 +2855,7 @@ function renderPanelNotificaciones(){
     return u.length>3 ? `${u.slice(0,3).join(', ')} +${u.length-3}` : u.join(', ');
   };
   const pids = Object.keys(porProyecto)
-    .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol; })
+    .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol||p.gar; })
     .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
 
   if(!pids.length && !dmsPendientes.length){
@@ -2803,6 +2879,7 @@ function renderPanelNotificaciones(){
     });
     if(p.obs)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','fiscalizacion')">📋 Observaciones abiertas<span class="noti-count">${p.obs}</span></div>`;
     if(p.sol)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','solicitudes')">📨 Solicitudes por atender<span class="noti-count">${p.sol}</span></div>`;
+    if(p.gar)  html += `<div class="noti-item" onclick="irANotificacion('${pid}','contrato')">🛡️ Garantías por vencer<span class="noti-count">${p.gar}</span></div>`;
   });
   panel.innerHTML = html;
 }
@@ -2983,7 +3060,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -2993,7 +3070,7 @@ function navTo(page, btn){
   if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -3008,6 +3085,7 @@ function navTo(page, btn){
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
+  if(page==='contrato'&&currentProyecto) cargarContrato();
   if(page==='equipos'&&currentProyecto) cargarEquipos();
   if(page==='materiales'&&currentProyecto) cargarMateriales();
   if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
@@ -7796,6 +7874,182 @@ const ESTADOS_PLANILLA = {
   rechazada:   { label:'Rechazada',         color:'#e2445c', bg:'#fce4ec', emoji:'❌' }
 };
 
+// ── CONTRATO: ANTICIPO Y GARANTÍAS ──
+const TIPOS_GARANTIA = {
+  buen_uso_anticipo: 'Buen uso del anticipo',
+  fiel_cumplimiento: 'Fiel cumplimiento',
+  todo_riesgo: 'Todo riesgo',
+  otra: 'Otra'
+};
+
+function semaforoGarantia(g){
+  if(g.estado !== 'vigente') return { color:'#676879', bg:'#f5f6f8', label:{renovada:'Renovada',devuelta:'Devuelta',ejecutada:'Ejecutada'}[g.estado]||g.estado };
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hasta = new Date(g.vigencia_hasta + 'T00:00:00');
+  const dias = Math.round((hasta - hoy) / 86400000);
+  if(dias < 0)  return { color:'#e2445c', bg:'#fdecef', label:`Vencida hace ${-dias} día(s)` };
+  if(dias <= 5) return { color:'#b8860b', bg:'#fdf6e3', label:`Vence en ${dias} día(s)` };
+  return { color:'#00854d', bg:'#e6f4ee', label:`Vigente · ${dias} días` };
+}
+
+async function obtenerMontoContratoProyecto(){
+  const { data } = await sb.from('rubros').select('monto_contrato').eq('proyecto_id', currentProyecto);
+  return (data||[]).reduce((s,r)=>s+(r.monto_contrato||0), 0);
+}
+
+async function cargarContrato(){
+  const cont = document.getElementById('contratoContent');
+  cont.innerHTML = '<div style="padding:30px;text-align:center;color:#676879">Cargando...</div>';
+
+  const [{ data: ant }, { data: gars }, montoContrato, { data: plans }] = await Promise.all([
+    sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle(),
+    sb.from('garantias').select('*').eq('proyecto_id', currentProyecto).order('vigencia_hasta'),
+    obtenerMontoContratoProyecto(),
+    sb.from('planillas_pago').select('amortizacion_anticipo,retencion_garantia,estado').eq('proyecto_id', currentProyecto)
+  ]);
+
+  const plansValidas = (plans||[]).filter(p=>p.estado!=='rechazada');
+  const amortizado = plansValidas.reduce((s,p)=>s+(p.amortizacion_anticipo||0), 0);
+  const retenido   = plansValidas.reduce((s,p)=>s+(p.retencion_garantia||0), 0);
+  const montoAnt   = ant?.monto || 0;
+  const saldoAnt   = Math.max(0, montoAnt - amortizado);
+  const pctAnt     = montoContrato > 0 && montoAnt > 0 ? (montoAnt/montoContrato*100) : 0;
+  const puedeEditar = ['admin','fiscalizador'].includes(currentPerfil?.rol);
+  const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  cont.innerHTML = `
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:16px">💰 Anticipo del contrato</h3>
+      <span style="font-size:12px;color:#676879">Monto contratado: <b>${fmt(montoContrato)}</b></span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+      <div class="form-group" style="margin:0"><label class="form-label">Monto del anticipo</label>
+        <input type="number" step="0.01" min="0" class="form-control" id="antMonto" value="${ant?.monto||''}" ${puedeEditar?'':'disabled'}/></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Fecha de entrega</label>
+        <input type="date" class="form-control" id="antFecha" value="${ant?.fecha_entrega||''}" ${puedeEditar?'':'disabled'}/></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Amortización</label>
+        <select class="form-control" id="antModo" ${puedeEditar?'':'disabled'}>
+          <option value="proporcional" ${(!ant||ant.modo_amortizacion==='proporcional')?'selected':''}>Proporcional automática</option>
+          <option value="manual" ${ant?.modo_amortizacion==='manual'?'selected':''}>Manual por planilla</option>
+        </select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Retención por planilla (%)</label>
+        <input type="number" step="0.1" min="0" max="100" class="form-control" id="antRetPct" value="${ant?.retencion_pct||''}" ${puedeEditar?'':'disabled'}/></div>
+    </div>
+    ${puedeEditar?'<button class="btn primary" onclick="guardarAnticipo()">Guardar configuración</button>':''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:18px">
+      <div style="background:#f0f7ff;border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">% DEL CONTRATO</div><div style="font-size:18px;font-weight:700;color:#0073ea">${pctAnt.toFixed(1)}%</div></div>
+      <div style="background:#f0f7ff;border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">AMORTIZADO</div><div style="font-size:18px;font-weight:700;color:#0073ea">${fmt(amortizado)}</div></div>
+      <div style="background:${saldoAnt>0?'#fdf6e3':'#e6f4ee'};border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">SALDO POR AMORTIZAR</div><div style="font-size:18px;font-weight:700;color:${saldoAnt>0?'#b8860b':'#00854d'}">${fmt(saldoAnt)}</div></div>
+      <div style="background:#f5f0ff;border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">RETENCIÓN ACUMULADA</div><div style="font-size:18px;font-weight:700;color:#7b68ee">${fmt(retenido)}</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:16px">🛡️ Garantías y pólizas</h3>
+      ${puedeEditar?'<button class="btn primary" onclick="abrirModalGarantia()">+ Nueva garantía</button>':''}
+    </div>
+    <div id="garantiasLista">${
+      (gars&&gars.length) ? `<div style="overflow-x:auto"><table class="tabla" style="width:100%"><thead><tr>
+        <th>Tipo</th><th>Aseguradora</th><th>N°</th><th style="text-align:right">Monto</th><th>Vigencia</th><th>Estado</th><th></th>
+      </tr></thead><tbody>` + gars.map(g=>{
+        const s = semaforoGarantia(g);
+        return `<tr>
+          <td style="font-weight:600">${TIPOS_GARANTIA[g.tipo]||escAttr(g.tipo)}</td>
+          <td>${escAttr(g.aseguradora||'—')}</td>
+          <td>${escAttr(g.numero||'—')}</td>
+          <td style="text-align:right;white-space:nowrap">${g.monto?fmt(g.monto):'—'}</td>
+          <td style="white-space:nowrap;font-size:12px">${g.vigencia_desde||'?'} → ${g.vigencia_hasta}</td>
+          <td><span style="background:${s.bg};color:${s.color};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">${s.label}</span></td>
+          <td style="white-space:nowrap">
+            ${g.archivo_url?`<a href="${g.archivo_url}" target="_blank" title="Ver póliza" style="text-decoration:none">📎</a>`:''}
+            ${puedeEditar?`<button class="btn" style="padding:2px 8px;font-size:12px" onclick='abrirModalGarantia(${JSON.stringify(g).replace(/"/g,'&quot;')})'>✏️</button>
+            <button class="btn" style="padding:2px 8px;font-size:12px" onclick="eliminarGarantia('${g.id}')">🗑</button>`:''}
+          </td></tr>`;
+      }).join('') + '</tbody></table></div>'
+      : '<div style="text-align:center;color:#676879;padding:24px">Sin garantías registradas</div>'
+    }</div>
+  </div>`;
+}
+
+async function guardarAnticipo(){
+  const payload = {
+    proyecto_id: currentProyecto,
+    monto: parseFloat(document.getElementById('antMonto').value)||0,
+    fecha_entrega: document.getElementById('antFecha').value||null,
+    modo_amortizacion: document.getElementById('antModo').value,
+    retencion_pct: parseFloat(document.getElementById('antRetPct').value)||0
+  };
+  const { error } = await sb.from('contrato_anticipo').upsert(payload, {onConflict:'proyecto_id'});
+  if(error){ toast('Error al guardar: '+error.message,'error'); return; }
+  toast('Configuración del anticipo guardada ✓','success');
+  cargarContrato();
+}
+
+function abrirModalGarantia(g=null){
+  window._editandoGarantiaId = g?.id||null;
+  document.getElementById('garTipo').value = g?.tipo||'buen_uso_anticipo';
+  document.getElementById('garAseguradora').value = g?.aseguradora||'';
+  document.getElementById('garNumero').value = g?.numero||'';
+  document.getElementById('garMonto').value = g?.monto||'';
+  document.getElementById('garDesde').value = g?.vigencia_desde||'';
+  document.getElementById('garHasta').value = g?.vigencia_hasta||'';
+  document.getElementById('garEstado').value = g?.estado||'vigente';
+  document.getElementById('garNotas').value = g?.notas||'';
+  document.getElementById('garArchivo').value = '';
+  document.getElementById('garTituloModal').textContent = g ? 'Editar garantía' : 'Nueva garantía';
+  document.getElementById('modalGarantia').classList.add('show');
+}
+
+async function guardarGarantia(){
+  const hasta = document.getElementById('garHasta').value;
+  if(!hasta){ toast('La fecha de vigencia hasta es obligatoria','error'); return; }
+  const btn = document.getElementById('btnGuardarGarantia');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  let archivoUrl = null;
+  const file = document.getElementById('garArchivo').files[0];
+  if(file){
+    const path = `garantias/${currentProyecto}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
+    if(!upErr){
+      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+      archivoUrl = urlData.publicUrl;
+    }
+  }
+
+  const payload = {
+    proyecto_id: currentProyecto,
+    tipo: document.getElementById('garTipo').value,
+    aseguradora: document.getElementById('garAseguradora').value||null,
+    numero: document.getElementById('garNumero').value||null,
+    monto: parseFloat(document.getElementById('garMonto').value)||null,
+    vigencia_desde: document.getElementById('garDesde').value||null,
+    vigencia_hasta: hasta,
+    estado: document.getElementById('garEstado').value,
+    notas: document.getElementById('garNotas').value||null
+  };
+  if(archivoUrl) payload.archivo_url = archivoUrl;
+
+  const q = window._editandoGarantiaId
+    ? sb.from('garantias').update(payload).eq('id', window._editandoGarantiaId)
+    : sb.from('garantias').insert(payload);
+  const { error } = await q;
+  btn.disabled = false; btn.textContent = 'Guardar';
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  document.getElementById('modalGarantia').classList.remove('show');
+  toast('Garantía guardada ✓','success');
+  cargarContrato();
+}
+
+async function eliminarGarantia(id){
+  if(!confirm('¿Eliminar esta garantía?')) return;
+  await sb.from('garantias').delete().eq('id', id);
+  toast('Garantía eliminada','success');
+  cargarContrato();
+}
+
 async function cargarPlanillas(){
   if(!currentProyecto){
     document.getElementById('planillasContent').innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Selecciona un proyecto</div></div>';
@@ -7877,10 +8131,57 @@ async function abrirModalNuevaPlanilla(){
   document.getElementById('modalNuevaPlanilla').classList.add('show');
 }
 
+async function cargarConfigAnticipo(){
+  const [{ data: ant }, montoContrato, { data: plans }] = await Promise.all([
+    sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle(),
+    obtenerMontoContratoProyecto(),
+    sb.from('planillas_pago').select('id,amortizacion_anticipo,estado').eq('proyecto_id', currentProyecto)
+  ]);
+  const amortOtras = (plans||[])
+    .filter(p=>p.estado!=='rechazada' && p.id!==window._editandoPlanillaId)
+    .reduce((s,p)=>s+(p.amortizacion_anticipo||0), 0);
+  window._antCfg = {
+    monto: ant?.monto||0,
+    modo: ant?.modo_amortizacion||'proporcional',
+    retPct: ant?.retencion_pct||0,
+    pct: (montoContrato>0 && ant?.monto>0) ? ant.monto/montoContrato : 0,
+    saldo: Math.max(0, (ant?.monto||0) - amortOtras)
+  };
+}
+
+function recalcularLiquidoPlanilla(desdeManual=false){
+  const cfg = window._antCfg;
+  if(!cfg) return;
+  const total = calcularTotalPlanilla();
+  const hayAnticipo = cfg.monto > 0;
+  const hayRet = cfg.retPct > 0;
+  document.getElementById('filaAmort').style.display = hayAnticipo ? '' : 'none';
+  document.getElementById('filaRet').style.display = hayRet ? '' : 'none';
+  document.getElementById('filaLiquido').style.display = (hayAnticipo||hayRet) ? '' : 'none';
+
+  const inp = document.getElementById('planAmort');
+  let amort = 0;
+  if(hayAnticipo){
+    if(cfg.modo === 'proporcional' && !desdeManual){
+      amort = Math.min(total * cfg.pct, cfg.saldo);
+      inp.value = amort.toFixed(2);
+    } else {
+      amort = Math.min(parseFloat(inp.value)||0, cfg.saldo);
+      if((parseFloat(inp.value)||0) > cfg.saldo) inp.value = cfg.saldo.toFixed(2);
+    }
+    document.getElementById('amortModoLabel').textContent = cfg.modo==='proporcional' ? `· ${(cfg.pct*100).toFixed(1)}% auto, saldo ${cfg.saldo.toLocaleString('es-EC',{minimumFractionDigits:2})}` : '· manual';
+  }
+  const ret = hayRet ? total * cfg.retPct/100 : 0;
+  document.getElementById('retPctLabel').textContent = cfg.retPct;
+  document.getElementById('planRetencion').textContent = '$'+ret.toLocaleString('es-EC',{minimumFractionDigits:2});
+  document.getElementById('planLiquido').textContent = '$'+(total-amort-ret).toLocaleString('es-EC',{minimumFractionDigits:2});
+}
+
 async function cargarRubrosPlanilla(){
   const fechaInicio = document.getElementById('planFechaInicio').value;
   const fechaFin = document.getElementById('planFechaFin').value;
   if(!fechaInicio||!fechaFin){ toast('Selecciona el período','error'); return; }
+  await cargarConfigAnticipo();
 
   const btn = document.getElementById('btnCargarRubros');
   btn.disabled=true; btn.textContent='Cargando...';
@@ -7951,6 +8252,7 @@ function recalcularFilaPlanilla(input, rubroId, precio){
   document.getElementById('monto-'+rubroId).textContent = '$'+monto.toLocaleString('es-EC',{minimumFractionDigits:2});
   // Recalcular total SIEMPRE desde los datos (cantidad × precio), nunca desde texto formateado
   document.getElementById('planTotal').textContent = '$'+calcularTotalPlanilla().toLocaleString('es-EC',{minimumFractionDigits:2});
+  recalcularLiquidoPlanilla();
 }
 
 function calcularTotalPlanilla(){
@@ -7986,6 +8288,11 @@ async function editarPlanilla(id){
     const input = document.querySelector(`#planRubrosTabla tr[data-rubro-id="${r.rubro_id}"] input`);
     if(input){ input.value = r.cantidad_periodo; recalcularFilaPlanilla(input, r.rubro_id, r.precio_unitario); }
   });
+  // Restaurar amortización guardada si el modo es manual
+  if(window._antCfg?.modo === 'manual' && p.amortizacion_anticipo > 0){
+    document.getElementById('planAmort').value = p.amortizacion_anticipo.toFixed(2);
+    recalcularLiquidoPlanilla(true);
+  }
 }
 
 async function guardarPlanilla(estado){
@@ -8002,12 +8309,17 @@ async function guardarPlanilla(estado){
   // Número de planilla — desde variable o DOM
   const numero = window._planillaNumero || parseInt(document.getElementById('planNumero')?.textContent||'0');
   const totalMonto = calcularTotalPlanilla();
+  const cfgAnt = window._antCfg||{monto:0,retPct:0,saldo:0};
+  const amortAnt = cfgAnt.monto>0 ? Math.min(parseFloat(document.getElementById('planAmort')?.value)||0, cfgAnt.saldo) : 0;
+  const retGar = cfgAnt.retPct>0 ? totalMonto * cfgAnt.retPct/100 : 0;
+  const totalLiquido = totalMonto - amortAnt - retGar;
 
   // Si es edición, actualizar en lugar de crear
   if(window._editandoPlanillaId){
     const { error: updErr } = await sb.from('planillas_pago').update({
       fecha_inicio: fechaInicio, fecha_fin: fechaFin,
       estado, total_monto: totalMonto,
+      amortizacion_anticipo: amortAnt, retencion_garantia: retGar, total_liquido: totalLiquido,
       observaciones: document.getElementById('planObservaciones').value||null,
       updated_at: new Date().toISOString()
     }).eq('id', window._editandoPlanillaId);
@@ -8037,6 +8349,7 @@ async function guardarPlanilla(estado){
     proyecto_id: currentProyecto,
     numero, fecha_inicio: fechaInicio, fecha_fin: fechaFin,
     estado, total_monto: totalMonto,
+    amortizacion_anticipo: amortAnt, retencion_garantia: retGar, total_liquido: totalLiquido,
     observaciones: document.getElementById('planObservaciones').value||null,
     creado_por: currentUser?.id
   }).select().single();
@@ -8101,7 +8414,10 @@ async function verPlanilla(id){
   document.getElementById('planDetalleNumero').textContent = `Planilla N° ${p.numero}`;
   document.getElementById('planDetalleEstado').innerHTML = `<span style="background:${est.bg};color:${est.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">${est.emoji} ${est.label}</span>`;
   document.getElementById('planDetallePeriodo').textContent = `${new Date(p.fecha_inicio+'T00:00:00').toLocaleDateString('es-EC')} → ${new Date(p.fecha_fin+'T00:00:00').toLocaleDateString('es-EC')}`;
-  document.getElementById('planDetalleTotal').textContent = '$'+Number(p.total_monto||0).toLocaleString('es-EC',{minimumFractionDigits:2});
+  const fmtEc = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2});
+  document.getElementById('planDetalleTotal').innerHTML = (p.amortizacion_anticipo>0 || p.retencion_garantia>0)
+    ? `${fmtEc(p.total_monto)} <span style="font-size:11px;color:#676879;font-weight:400;display:block">− anticipo ${fmtEc(p.amortizacion_anticipo)} − retención ${fmtEc(p.retencion_garantia)} · <b style="color:#00854d">líquido ${fmtEc(p.total_liquido ?? (p.total_monto-(p.amortizacion_anticipo||0)-(p.retencion_garantia||0)))}</b></span>`
+    : fmtEc(p.total_monto);
 
   // Tabla rubros
   document.getElementById('planDetalleRubros').innerHTML = (rubros||[]).map(r=>`
