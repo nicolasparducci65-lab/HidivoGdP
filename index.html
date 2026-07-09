@@ -1245,6 +1245,30 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalActa">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header"><h3 id="actaTituloModal">Acta de recepción</h3>
+      <button class="modal-close" onclick="document.getElementById('modalActa').classList.remove('show')">✕</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">Fecha *</label>
+          <input type="date" class="form-control" id="actaFecha"/></div>
+        <div class="form-group"><label class="form-label">Lugar</label>
+          <input type="text" class="form-control" id="actaLugar" placeholder="Guayaquil"/></div>
+      </div>
+      <div class="form-group"><label class="form-label">Asistentes (uno por línea)</label>
+        <textarea class="form-control" id="actaAsistentes" rows="3" placeholder="Ing. ... — Fiscalización&#10;Sr. ... — Contratista"></textarea></div>
+      <div class="form-group" id="actaObsGrupo"><label class="form-label">Observaciones por subsanar</label>
+        <textarea class="form-control" id="actaObservaciones" rows="3"></textarea></div>
+      <div class="form-group"><label class="form-label">Acta firmada (PDF/imagen, opcional — puedes adjuntarla después)</label>
+        <input type="file" class="form-control" id="actaArchivo" accept=".pdf,image/*"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="document.getElementById('modalActa').classList.remove('show')">Cancelar</button>
+      <button class="btn primary" id="btnGuardarActa" onclick="guardarActa()">Guardar</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalOC">
   <div class="modal" style="max-width:840px">
     <div class="modal-header"><h3 id="ocTituloModal">Órdenes de cambio</h3>
@@ -3501,6 +3525,8 @@ async function cambiarProyecto(id){
     const idx = proyectos.findIndex(p=>p.id===id);
     if(idx>=0) proyectos[idx]=proy; else proyectos.push(proy);
     aplicarModulosProyecto(proy.modulos);
+    window._proyectoCerrado = proy.estado_cierre === 'liquidado';
+    if(window._proyectoCerrado) toast('🏁 Proyecto LIQUIDADO — solo lectura','info');
   }
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
@@ -3914,6 +3940,7 @@ function toggleCampoOC(){
 }
 
 async function guardarRubro(){
+  if(bloquearSiCerrado()) return;
   const id = document.getElementById('rubroId').value;
   const descripcion = document.getElementById('rubroDescripcion').value.trim();
   const unidad = document.getElementById('rubroUnidad').value.trim();
@@ -4166,6 +4193,7 @@ function renderItemsOC(soloLectura){
 }
 
 async function guardarOC(estado){
+  if(bloquearSiCerrado()) return;
   const titulo = document.getElementById('ocTitulo').value.trim();
   if(!titulo){ toast('El título es obligatorio','error'); return; }
   if(estado==='solicitada' && !_ocItems.length){ toast('Agrega al menos un ítem antes de solicitar','error'); return; }
@@ -4386,6 +4414,14 @@ const ESTADOS_LIBRO = {
 function badgeAprobacionLibro(r){
   const e = ESTADOS_LIBRO[r.estado_aprobacion]||ESTADOS_LIBRO.pendiente;
   return `<span title="${escAttr(r.observacion_aprobacion||'')}" style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${e.emoji} ${e.label}</span>`;
+}
+
+function bloquearSiCerrado(){
+  if(window._proyectoCerrado){
+    toast('🏁 Este proyecto está liquidado y cerrado: solo lectura','error');
+    return true;
+  }
+  return false;
 }
 
 function esAprobadorLibro(){
@@ -4742,6 +4778,7 @@ async function guardarRegistroLibro(){
     resoluciones: document.getElementById('lResoluciones').value.trim()||null,
     created_by: currentUser?.id
   };
+  if(bloquearSiCerrado()){ btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro'; return; }
   // Estado de aprobación según rol: fiscalizador/admin nace aprobado; residente queda pendiente
   if(esAprobadorLibro()){
     payload.estado_aprobacion = 'aprobado';
@@ -6017,6 +6054,7 @@ async function comprimirImagenObs(file){
 }
 
 async function guardarObservacionNueva(){
+  if(bloquearSiCerrado()) return;
   const titulo = document.getElementById('obsNuevaTitulo').value.trim();
   if(!titulo){ toast('El título es obligatorio','error'); return; }
   const desc = document.getElementById('obsNuevaDesc').value.trim();
@@ -8186,6 +8224,7 @@ async function abrirModalEquipo(equipo=null){
 }
 
 async function eliminarTodosRubros(){
+  if(bloquearSiCerrado()) return;
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
 
   // ── GUARDA: bloquear si existen cantidades trabajadas o planillas vinculadas ──
@@ -8493,6 +8532,217 @@ async function cargarContrato(){
   </div>`;
   window._reajusteTerminos = [];
   cargarTerminosReajuste(puedeEditar);
+  cargarCierreProyecto(puedeEditar);
+}
+
+// ── CIERRE DE PROYECTO ──
+const ESTADOS_CIERRE = {
+  en_ejecucion:          { label:'En ejecución',          idx:0 },
+  recepcion_provisional: { label:'Recepción provisional', idx:1 },
+  recepcion_definitiva:  { label:'Recepción definitiva',  idx:2 },
+  liquidado:             { label:'Liquidado',             idx:3 }
+};
+
+async function cargarCierreProyecto(puedeEditar){
+  const contPadre = document.getElementById('contratoContent');
+  let card = document.getElementById('cardCierre');
+  if(!card){
+    card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'cardCierre';
+    card.style.marginTop = '20px';
+    contPadre.appendChild(card);
+  }
+  const [{ data: proy }, { data: actas }, { data: liq }] = await Promise.all([
+    sb.from('proyectos').select('estado_cierre,nombre,contratante,contratista').eq('id', currentProyecto).single(),
+    sb.from('actas_recepcion').select('*').eq('proyecto_id', currentProyecto),
+    sb.from('liquidaciones').select('*').eq('proyecto_id', currentProyecto).maybeSingle()
+  ]);
+  const estado = proy?.estado_cierre || 'en_ejecucion';
+  const idxActual = ESTADOS_CIERRE[estado]?.idx ?? 0;
+  const actaProv = (actas||[]).find(a=>a.tipo==='provisional');
+  const actaDef  = (actas||[]).find(a=>a.tipo==='definitiva');
+  const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const paso = (i, label) => `<div style="flex:1;text-align:center">
+    <div style="width:26px;height:26px;border-radius:50%;margin:0 auto 4px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;${i<=idxActual?'background:#00854d;color:#fff':'background:#e6e9ef;color:#676879'}">${i<idxActual?'✓':i+1}</div>
+    <div style="font-size:11px;color:${i<=idxActual?'#00854d':'#676879'};font-weight:${i===idxActual?'700':'400'}">${label}</div>
+  </div>`;
+
+  const filaActa = (tipo, acta, habilitada) => {
+    if(acta) return `<div style="display:flex;justify-content:space-between;align-items:center;background:#e6f4ee;border-radius:8px;padding:10px 14px;margin-top:8px;flex-wrap:wrap;gap:6px">
+      <span style="font-size:13px">✅ <b>Acta de recepción ${tipo}</b> — ${acta.fecha}${acta.archivo_url?` · <a href="${acta.archivo_url}" target="_blank">📎 firmada</a>`:''}</span>
+      <button class="btn" style="padding:3px 10px;font-size:12px" onclick="imprimirActa('${acta.id}')">🖨️ PDF</button>
+    </div>`;
+    if(!habilitada || !puedeEditar) return '';
+    return `<div style="margin-top:8px"><button class="btn primary" onclick="abrirModalActa('${tipo}')">📝 Registrar recepción ${tipo}</button></div>`;
+  };
+
+  card.innerHTML = `
+    <h3 style="margin:0 0 14px;font-size:16px">🏁 Cierre de proyecto</h3>
+    <div style="display:flex;gap:4px;align-items:flex-start;margin-bottom:16px">
+      ${paso(0,'En ejecución')}<div style="flex:.5;border-top:2px solid ${idxActual>=1?'#00854d':'#e6e9ef'};margin-top:13px"></div>
+      ${paso(1,'R. provisional')}<div style="flex:.5;border-top:2px solid ${idxActual>=2?'#00854d':'#e6e9ef'};margin-top:13px"></div>
+      ${paso(2,'R. definitiva')}<div style="flex:.5;border-top:2px solid ${idxActual>=3?'#00854d':'#e6e9ef'};margin-top:13px"></div>
+      ${paso(3,'Liquidado')}
+    </div>
+    ${filaActa('provisional', actaProv, estado==='en_ejecucion')}
+    ${filaActa('definitiva', actaDef, estado==='recepcion_provisional')}
+    ${liq ? `<div style="display:flex;justify-content:space-between;align-items:center;background:#e6f4ee;border-radius:8px;padding:10px 14px;margin-top:8px;flex-wrap:wrap;gap:6px">
+        <span style="font-size:13px">✅ <b>Liquidación final</b> — ${liq.fecha} · Saldo a favor del contratista: <b>${fmt(liq.datos?.saldo_final)}</b></span>
+        <button class="btn" style="padding:3px 10px;font-size:12px" onclick="imprimirLiquidacion()">🖨️ PDF</button>
+      </div>`
+      : (estado==='recepcion_definitiva' && puedeEditar ? `<div style="margin-top:8px"><button class="btn primary" style="background:#00854d" onclick="generarLiquidacion()">🧮 Generar liquidación y cerrar proyecto</button></div>` : '')}
+    ${estado==='liquidado' ? '<div style="margin-top:12px;font-size:12px;color:#676879">El proyecto está cerrado en solo lectura. Los datos siguen consultables y en los respaldos.</div>':''}`;
+}
+
+function abrirModalActa(tipo){
+  window._actaTipo = tipo;
+  document.getElementById('actaTituloModal').textContent = `Acta de recepción ${tipo}`;
+  document.getElementById('actaFecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('actaLugar').value = '';
+  document.getElementById('actaAsistentes').value = '';
+  document.getElementById('actaObservaciones').value = '';
+  document.getElementById('actaArchivo').value = '';
+  document.getElementById('actaObsGrupo').style.display = tipo==='provisional' ? '' : 'none';
+  document.getElementById('modalActa').classList.add('show');
+}
+
+async function guardarActa(){
+  const fecha = document.getElementById('actaFecha').value;
+  if(!fecha){ toast('La fecha es obligatoria','error'); return; }
+  const btn = document.getElementById('btnGuardarActa');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  let archivoUrl = null;
+  const file = document.getElementById('actaArchivo').files[0];
+  if(file){
+    const path = `actas/${currentProyecto}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
+    if(!upErr) archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
+  }
+
+  const { error } = await sb.from('actas_recepcion').insert({
+    proyecto_id: currentProyecto, tipo: window._actaTipo, fecha,
+    lugar: document.getElementById('actaLugar').value||null,
+    asistentes: document.getElementById('actaAsistentes').value||null,
+    observaciones: document.getElementById('actaObservaciones').value||null,
+    archivo_url: archivoUrl, creado_por: currentUser?.id
+  });
+  btn.disabled = false; btn.textContent = 'Guardar';
+  if(error){ toast('Error: '+error.message,'error'); return; }
+
+  const nuevoEstado = window._actaTipo==='provisional' ? 'recepcion_provisional' : 'recepcion_definitiva';
+  await sb.from('proyectos').update({estado_cierre: nuevoEstado}).eq('id', currentProyecto);
+  document.getElementById('modalActa').classList.remove('show');
+  toast(`Recepción ${window._actaTipo} registrada ✓`,'success');
+  cargarCierreProyecto(true);
+}
+
+async function generarLiquidacion(){
+  const btnOk = confirm('Se calculará la liquidación final con todos los datos del proyecto y el proyecto quedará CERRADO en solo lectura.\n\n¿Continuar?');
+  if(!btnOk) return;
+
+  const [{ data: rubros }, { data: plans }, { data: ocs }, { data: ant }] = await Promise.all([
+    sb.from('rubros').select('monto_contrato,total_produccion,es_orden_cambio').eq('proyecto_id', currentProyecto),
+    sb.from('planillas_pago').select('total_monto,reajuste_monto,amortizacion_anticipo,retencion_garantia,multa_monto,total_liquido,estado').eq('proyecto_id', currentProyecto),
+    sb.from('ordenes_cambio').select('monto_total').eq('proyecto_id', currentProyecto).eq('estado','aprobada'),
+    sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle()
+  ]);
+
+  const pv = (plans||[]).filter(p=>['aprobada','pagada'].includes(p.estado));
+  const montoOCs = (ocs||[]).reduce((s,o)=>s+(o.monto_total||0),0);
+  const montoVigente = (rubros||[]).reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const datos = {
+    monto_contrato_original: montoVigente - montoOCs,
+    monto_ocs_aprobadas: montoOCs,
+    monto_contrato_vigente: montoVigente,
+    total_ejecutado: (rubros||[]).reduce((s,r)=>s+(r.total_produccion||0),0),
+    total_planillado: pv.reduce((s,p)=>s+(p.total_monto||0),0),
+    total_reajustes: pv.reduce((s,p)=>s+(p.reajuste_monto||0),0),
+    anticipo_entregado: ant?.monto||0,
+    anticipo_amortizado: pv.reduce((s,p)=>s+(p.amortizacion_anticipo||0),0),
+    retenciones_acumuladas: pv.reduce((s,p)=>s+(p.retencion_garantia||0),0),
+    multas: pv.reduce((s,p)=>s+(p.multa_monto||0),0),
+    liquido_pagado: pv.reduce((s,p)=>s+(p.total_liquido??p.total_monto??0),0)
+  };
+  datos.anticipo_por_amortizar = Math.max(0, datos.anticipo_entregado - datos.anticipo_amortizado);
+  // Saldo final a favor del contratista: retenciones que se devuelven, menos anticipo no amortizado
+  datos.saldo_final = datos.retenciones_acumuladas - datos.anticipo_por_amortizar;
+
+  const { error } = await sb.from('liquidaciones').insert({
+    proyecto_id: currentProyecto, datos, creado_por: currentUser?.id
+  });
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  await sb.from('proyectos').update({estado_cierre:'liquidado'}).eq('id', currentProyecto);
+  window._proyectoCerrado = true;
+  toast('Liquidación generada y proyecto cerrado 🏁','success');
+  cargarCierreProyecto(true);
+  imprimirLiquidacion();
+}
+
+async function imprimirActa(actaId){
+  const [{ data: a }, { data: proy }] = await Promise.all([
+    sb.from('actas_recepcion').select('*').eq('id', actaId).single(),
+    sb.from('proyectos').select('*').eq('id', currentProyecto).single()
+  ]);
+  if(!a) return;
+  const e = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  abrirVentanaDocCierre(`ACTA DE RECEPCIÓN ${a.tipo.toUpperCase()}`, proy, `
+    <p style="font-size:13px;line-height:1.7">En ${e(a.lugar||'________')}, a los ${new Date(a.fecha+'T00:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'long',year:'numeric'})}, se reúnen las partes para la recepción ${a.tipo} de la obra <b>${e(proy?.nombre||'')}</b>, contratada por <b>${e(proy?.contratante||'________')}</b> y ejecutada por <b>${e(proy?.contratista||'________')}</b>.</p>
+    ${a.asistentes?`<p style="font-size:13px"><b>Asistentes:</b><br>${e(a.asistentes).replace(/\n/g,'<br>')}</p>`:''}
+    ${a.observaciones?`<p style="font-size:13px"><b>Observaciones por subsanar:</b><br>${e(a.observaciones).replace(/\n/g,'<br>')}</p>`:''}
+    <p style="font-size:13px;line-height:1.7">Las partes suscriben la presente acta en señal de conformidad.</p>`,
+    [['Fiscalización',''],['Contratista',proy?.contratista||''],['Contratante',proy?.contratante||'']]);
+}
+
+async function imprimirLiquidacion(){
+  const [{ data: liq }, { data: proy }] = await Promise.all([
+    sb.from('liquidaciones').select('*').eq('proyecto_id', currentProyecto).maybeSingle(),
+    sb.from('proyectos').select('*').eq('id', currentProyecto).single()
+  ]);
+  if(!liq) return;
+  const d = liq.datos||{};
+  const f = v => (v<0?'−$':'$') + Math.abs(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fila = (k,v,b) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e6e9ef;font-size:13px${b?';font-weight:700':''}"><span>${k}</span><span>${f(v)}</span></div>`;
+  abrirVentanaDocCierre('LIQUIDACIÓN FINAL DE OBRA', proy, `
+    <div style="max-width:460px;margin:0 auto">
+      ${fila('Monto contractual original', d.monto_contrato_original)}
+      ${fila('Órdenes de cambio aprobadas', d.monto_ocs_aprobadas)}
+      ${fila('Monto contractual vigente', d.monto_contrato_vigente, true)}
+      ${fila('Total planillado (bruto)', d.total_planillado)}
+      ${fila('Reajustes de precios', d.total_reajustes)}
+      ${fila('Anticipo entregado', d.anticipo_entregado)}
+      ${fila('Anticipo amortizado', d.anticipo_amortizado)}
+      ${fila('Anticipo por amortizar', d.anticipo_por_amortizar)}
+      ${fila('Retenciones acumuladas (por devolver)', d.retenciones_acumuladas)}
+      ${fila('Multas aplicadas', d.multas)}
+      ${fila('Líquido pagado en planillas', d.liquido_pagado)}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:3px double #1a1a2e;font-size:15px;font-weight:800;margin-top:6px"><span>SALDO FINAL A FAVOR DEL CONTRATISTA</span><span>${f(d.saldo_final)}</span></div>
+    </div>
+    <p style="font-size:12px;color:#676879;margin-top:14px">Saldo final = retenciones por devolver − anticipo no amortizado. Fecha de liquidación: ${liq.fecha}.</p>`,
+    [['Fiscalización',''],['Contratista',proy?.contratista||''],['Contratante',proy?.contratante||'']]);
+}
+
+function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas){
+  const e = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ventana = window.open('', '_blank');
+  ventana.document.write(`<html><head><title>${e(titulo)} — ${e(proy?.nombre||'')}</title>
+    <style>body{font-family:Arial,sans-serif;color:#323338;padding:28px;max-width:800px;margin:0 auto}
+    .enc{display:flex;align-items:center;gap:16px;border-bottom:3px solid #0073ea;padding-bottom:12px;margin-bottom:18px}
+    .enc img{height:52px}h1{font-size:17px;color:#0073ea;margin:0}
+    .firmas{display:flex;justify-content:space-between;gap:16px;margin-top:80px;page-break-inside:avoid}
+    .fb{flex:1;text-align:center}.lf{border-top:1px solid #323338;margin-bottom:6px}
+    .nota-edicion{background:#fdf6e3;color:#b8860b;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:14px}
+    @media print{.nota-edicion{display:none}body{padding:0}}</style></head>
+    <body contenteditable="true">
+    <div class="enc"><img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png"/>
+      <div><h1>${e(titulo)}</h1><div style="font-size:11px;color:#676879">${e(proy?.nombre||'')} — ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div></div></div>
+    <div class="nota-edicion">✏️ Este borrador es editable: haz clic sobre cualquier texto para ajustarlo antes de imprimir (Ctrl+P). Esta nota no sale en el PDF.</div>
+    ${cuerpoHtml}
+    <div class="firmas">${firmas.map(fi=>`<div class="fb"><div class="lf"></div><div style="font-size:12px;font-weight:700">${e(fi[0])}</div><div style="font-size:11px;color:#676879">${e(fi[1])}</div></div>`).join('')}</div>
+    </body></html>`);
+  ventana.document.close();
 }
 
 async function cargarTerminosReajuste(puedeEditar){
@@ -8954,6 +9204,7 @@ async function editarPlanilla(id){
 }
 
 async function guardarPlanilla(estado){
+  if(bloquearSiCerrado()) return;
   const fechaInicio = document.getElementById('planFechaInicio').value;
   const fechaFin = document.getElementById('planFechaFin').value;
   if(!fechaInicio||!fechaFin){ toast('Selecciona el período','error'); return; }
