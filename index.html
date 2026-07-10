@@ -4538,7 +4538,7 @@ async function cargarCartera(){
       d.garPorVencer ? `🛡️${d.garPorVencer}` : '', d.garVencidas ? `<b style="color:#e2445c">🛡️!${d.garVencidas}</b>` : ''
     ].filter(Boolean).join(' ');
     const estadoTxt = {en_ejecucion:'En ejecución', recepcion_provisional:'R. provisional', recepcion_definitiva:'R. definitiva'}[p.estado_cierre]||'En ejecución';
-    return `<tr style="cursor:pointer" onclick="irANotificacion('${p.id}','dashboard')" title="Ir al proyecto">
+    return `<tr style="cursor:pointer" onclick="irANotificacion('${p.id}','curvaS')" title="Ir a la Curva S del proyecto">
       <td style="font-size:16px">${emoji}</td>
       <td style="font-weight:600">${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${estadoTxt} · ${escAttr(p.contratante||'')}</div></td>
       <td style="white-space:nowrap"><div style="font-size:13px;font-weight:600">${real.toFixed(1)}% <span style="color:#676879;font-weight:400">/ ${d.plan.toFixed(1)}%</span></div>
