@@ -1256,6 +1256,14 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalLineasBase">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header"><h3>📐 Líneas base del cronograma</h3>
+      <button class="modal-close" onclick="document.getElementById('modalLineasBase').classList.remove('show')">✕</button></div>
+    <div class="modal-body" id="lbModalBody"></div>
+    <div class="modal-footer"><button class="btn" onclick="document.getElementById('modalLineasBase').classList.remove('show')">Cerrar</button></div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalActa">
   <div class="modal" style="max-width:520px">
     <div class="modal-header"><h3 id="actaTituloModal">Acta de recepción</h3>
@@ -3298,9 +3306,12 @@ async function calcularEstadosProyectos(lista){
       avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
       montosReales[p.id] = total;
 
-      // Cargar cronograma para SPI
-      const { data: cron } = await sb.from('cronograma_rubros')
+      // Cargar cronograma para SPI (solo la línea base activa)
+      const { data: lbAct } = await sb.from('lineas_base').select('id').eq('proyecto_id',p.id).eq('activa',true).limit(1);
+      let qCronDash = sb.from('cronograma_rubros')
         .select('rubro_id,fecha_inicio,fecha_fin,peso_pct').eq('proyecto_id',p.id);
+      if(lbAct&&lbAct.length) qCronDash = qCronDash.eq('linea_base_id', lbAct[0].id);
+      const { data: cron } = await qCronDash;
 
       if(cron&&cron.length){
         const cronMap = {};
@@ -3913,8 +3924,9 @@ async function importarRubrosExcel(input){
         }));
 
       if(cronPayload.length){
-        await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto);
-        await sb.from('cronograma_rubros').insert(cronPayload);
+        const lb = await asegurarLineaBaseActiva();
+        await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto).eq('linea_base_id', lb.id);
+        await sb.from('cronograma_rubros').insert(cronPayload.map(c=>({...c, linea_base_id: lb.id})));
       }
 
       toast(`✅ ${payload.length} rubros importados correctamente`,'success');
@@ -4471,7 +4483,7 @@ async function cargarCartera(){
   // Consultas en lote para toda la cartera
   const [rubR, cronR, planR, antR, garR, libR, obsR, solR] = await Promise.all([
     sb.from('rubros').select('proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
-    sb.from('cronograma_rubros').select('proyecto_id,fecha_inicio,fecha_fin,peso_pct').in('proyecto_id', ids),
+    sb.from('cronograma_rubros').select('proyecto_id,fecha_inicio,fecha_fin,peso_pct,linea_base_id').in('proyecto_id', ids),
     sb.from('planillas_pago').select('proyecto_id,total_monto,total_liquido,amortizacion_anticipo,estado').in('proyecto_id', ids),
     sb.from('contrato_anticipo').select('proyecto_id,monto').in('proyecto_id', ids),
     sb.from('garantias').select('proyecto_id,vigencia_hasta').eq('estado','vigente').in('proyecto_id', ids),
@@ -4479,6 +4491,11 @@ async function cargarCartera(){
     sb.from('observaciones').select('proyecto_id').eq('estado','abierta').in('proyecto_id', ids),
     sb.from('solicitudes').select('proyecto_id').in('estado',['pendiente','en_revision']).in('proyecto_id', ids)
   ]);
+
+  // Filtrar cronograma a las líneas base activas
+  const { data: lbsActivas } = await sb.from('lineas_base').select('id').eq('activa',true).in('proyecto_id', ids);
+  const setLBs = new Set((lbsActivas||[]).map(l=>l.id));
+  if(cronR.data) cronR.data = cronR.data.filter(c=>!c.linea_base_id || setLBs.has(c.linea_base_id));
 
   const porP = {};
   ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
@@ -5277,8 +5294,25 @@ async function cargarCurvaS(){
     cronogramaData = [];
     return;
   }
-  // Cargar cronograma guardado
-  const { data: cron } = await sb.from('cronograma_rubros').select('*').eq('proyecto_id', currentProyecto);
+  // Líneas base: historial y activa
+  const { data: lbs } = await sb.from('lineas_base').select('*').eq('proyecto_id', currentProyecto).order('numero');
+  window._lineasBase = lbs||[];
+  window._lbActiva = (lbs||[]).find(l=>l.activa)||null;
+  // Filas de la línea base anterior (para la curva fantasma)
+  window._curvaGhostRows = null;
+  if(window._lbActiva && window._lbActiva.numero > 1){
+    const previas = (lbs||[]).filter(l=>l.numero < window._lbActiva.numero);
+    if(previas.length){
+      const lbPrev = previas[previas.length-1];
+      const { data: prevRows } = await sb.from('cronograma_rubros').select('fecha_inicio,fecha_fin,peso_pct')
+        .eq('proyecto_id', currentProyecto).eq('linea_base_id', lbPrev.id);
+      if(prevRows&&prevRows.length){ window._curvaGhostRows = prevRows; window._curvaGhostNum = lbPrev.numero; }
+    }
+  }
+  // Cargar cronograma guardado (solo la línea base activa)
+  let qCron = sb.from('cronograma_rubros').select('*').eq('proyecto_id', currentProyecto);
+  if(window._lbActiva) qCron = qCron.eq('linea_base_id', window._lbActiva.id);
+  const { data: cron } = await qCron;
   const cronMap = {};
   (cron||[]).forEach(c => cronMap[c.rubro_id] = c);
 
@@ -5347,6 +5381,7 @@ function renderCurvaS(proy){
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Ingresar cronograma
     </button>
+    <button class="btn" id="btnLineaBase" onclick="abrirModalLineasBase()" style="gap:6px">📐 Línea base${window._lbActiva?` LB-${window._lbActiva.numero}`:''}</button>
     <label id="btnImportarCronograma" class="btn" style="gap:6px;cursor:pointer">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Importar Excel
@@ -5596,6 +5631,82 @@ function calcularIndicadoresPuro(rubros, proy){
 
 // Calcula los datos puros del gráfico de Curva S (labels, plan, real), sin tocar ningún canvas.
 // Reutilizable tanto en pantalla como para generar la imagen del gráfico en el reporte PDF.
+// ── LÍNEAS BASE ──
+async function asegurarLineaBaseActiva(){
+  if(window._lbActiva) return window._lbActiva;
+  const { data: lbs } = await sb.from('lineas_base').select('*').eq('proyecto_id', currentProyecto).order('numero');
+  window._lineasBase = lbs||[];
+  const activa = (lbs||[]).find(l=>l.activa);
+  if(activa){ window._lbActiva = activa; return activa; }
+  const numero = (lbs&&lbs.length) ? Math.max(...lbs.map(l=>l.numero))+1 : 1;
+  const { data: nueva } = await sb.from('lineas_base').insert({
+    proyecto_id: currentProyecto, numero,
+    motivo: 'Línea base original del contrato', activa: true, creado_por: currentUser?.id
+  }).select().single();
+  window._lbActiva = nueva;
+  window._lineasBase = [...(window._lineasBase||[]), nueva];
+  return nueva;
+}
+
+function abrirModalLineasBase(){
+  const lbs = window._lineasBase||[];
+  const esAdmin = currentPerfil?.rol==='admin';
+  const puede = ['admin','fiscalizador'].includes(currentPerfil?.rol);
+  const cuerpo = lbs.length ? lbs.map(l=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid #e6e9ef;border-radius:8px;padding:10px 14px;margin-bottom:8px;${l.activa?'background:#e6f4ee':''}">
+      <div>
+        <b>LB-${l.numero}</b> ${l.activa?'<span style="background:#00854d;color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px">ACTIVA</span>':''}
+        <div style="font-size:12px;color:#676879">${escAttr(l.motivo||'')}${l.referencia?' · Ref: '+escAttr(l.referencia):''} · ${new Date(l.created_at).toLocaleDateString('es-EC')}</div>
+      </div>
+      ${!l.activa && esAdmin ? `<button class="btn" style="padding:3px 10px;font-size:12px" onclick="activarLineaBase('${l.id}')">Activar</button>`:''}
+    </div>`).join('') : '<div style="text-align:center;color:#676879;padding:18px">Sin líneas base (se creará la LB-1 al guardar o importar el cronograma)</div>';
+  document.getElementById('lbModalBody').innerHTML = cuerpo +
+    (puede && window._lbActiva ? '<button class="btn primary" style="margin-top:6px" onclick="crearNuevaLineaBase()">+ Nueva línea base (reprogramación)</button>' : '');
+  document.getElementById('modalLineasBase').classList.add('show');
+}
+
+async function crearNuevaLineaBase(){
+  const motivo = prompt('Motivo de la reprogramación:\n(ej.: "Ampliación de plazo por OC-02", "Suspensión por invierno")');
+  if(motivo===null) return;
+  if(!motivo.trim()){ toast('El motivo es obligatorio','error'); return; }
+  const referencia = prompt('Referencia (oficio, OC, contrato modificatorio) — opcional:')||'';
+
+  const lbActual = window._lbActiva;
+  const { data: filasActuales } = await sb.from('cronograma_rubros').select('rubro_id,fecha_inicio,fecha_fin,peso_pct')
+    .eq('proyecto_id', currentProyecto).eq('linea_base_id', lbActual.id);
+  const numero = Math.max(...(window._lineasBase||[]).map(l=>l.numero))+1;
+
+  const { data: nueva, error } = await sb.from('lineas_base').insert({
+    proyecto_id: currentProyecto, numero, motivo: motivo.trim(),
+    referencia: referencia.trim()||null, activa: false, creado_por: currentUser?.id
+  }).select().single();
+  if(error){ toast('Error: '+error.message,'error'); return; }
+
+  if(filasActuales&&filasActuales.length){
+    const { error: errCopia } = await sb.from('cronograma_rubros').insert(filasActuales.map(f=>({
+      proyecto_id: currentProyecto, rubro_id: f.rubro_id,
+      fecha_inicio: f.fecha_inicio, fecha_fin: f.fecha_fin, peso_pct: f.peso_pct,
+      linea_base_id: nueva.id
+    })));
+    if(errCopia){ toast('Error copiando cronograma: '+errCopia.message,'error'); await sb.from('lineas_base').delete().eq('id',nueva.id); return; }
+  }
+  await sb.from('lineas_base').update({activa:false}).eq('proyecto_id', currentProyecto);
+  await sb.from('lineas_base').update({activa:true}).eq('id', nueva.id);
+  document.getElementById('modalLineasBase').classList.remove('show');
+  toast(`LB-${numero} creada como copia de LB-${lbActual.numero} y activada. Ajusta las fechas o re-importa el Excel.`,'success');
+  cargarCurvaS();
+}
+
+async function activarLineaBase(id){
+  if(currentPerfil?.rol!=='admin') return;
+  if(!confirm('¿Activar esta línea base?\n\nLa curva planificada, el SPI y el panel Cartera se calcularán contra ella.')) return;
+  await sb.from('lineas_base').update({activa:false}).eq('proyecto_id', currentProyecto);
+  await sb.from('lineas_base').update({activa:true}).eq('id', id);
+  document.getElementById('modalLineasBase').classList.remove('show');
+  toast('Línea base activada ✓','success');
+  cargarCurvaS();
+}
+
 function calcularDatosGraficoCurvaS(rubros, modo){
   const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
 
@@ -5628,11 +5739,12 @@ function calcularDatosGraficoCurvaS(rubros, modo){
     return p.toLocaleDateString('es-EC',{month:'short',year:'2-digit'});
   });
 
-  const planArr=[], realArr=[];
+  const planArr=[], realArr=[], finPeriodos=[];
   periodos.forEach(p=>{
     const finPeriodo = modo==='semanas'
       ? new Date(p.getTime()+6*86400000)
       : new Date(p.getFullYear(),p.getMonth()+1,0);
+    finPeriodos.push(finPeriodo);
 
     let acumPlan=0, acumReal=0;
     conFechas.forEach(r=>{
@@ -5650,7 +5762,21 @@ function calcularDatosGraficoCurvaS(rubros, modo){
     realArr.push(finPeriodo<=hoy ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
   });
 
-  return { labels, planArr, realArr, sinCronograma:false };
+  return { labels, planArr, realArr, sinCronograma:false, finPeriodos };
+}
+
+// Plan % acumulado de un conjunto de filas de cronograma en una fecha dada (para la línea fantasma)
+function planLBEnFecha(filas, fecha){
+  let acum = 0;
+  filas.forEach(c=>{
+    if(!c.fecha_inicio||!c.fecha_fin) return;
+    const ini = new Date(c.fecha_inicio+'T00:00:00');
+    const fin = new Date(c.fecha_fin+'T00:00:00');
+    const dur = (fin-ini)||1;
+    const t = Math.min(Math.max(fecha-ini,0),dur);
+    acum += Math.min(t/dur,1)*(c.peso_pct||0);
+  });
+  return parseFloat(Math.min(acum,100).toFixed(2));
 }
 
 function dibujarGraficoCurvaS(rubros, proy){
@@ -5658,7 +5784,8 @@ function dibujarGraficoCurvaS(rubros, proy){
   if(!canvasEl) return; // El canvas no está en el DOM (ej. se llamó desde otra pantalla, como el reporte PDF de Libro de Obra)
   if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
 
-  const { labels, planArr, realArr, sinCronograma } = calcularDatosGraficoCurvaS(rubros, curvaSModo);
+  const { labels, planArr, realArr, sinCronograma, finPeriodos } = calcularDatosGraficoCurvaS(rubros, curvaSModo);
+  const ghostArr = (window._curvaGhostRows && finPeriodos) ? finPeriodos.map(f=>planLBEnFecha(window._curvaGhostRows, f)) : null;
 
   if(sinCronograma){
     curvaSGrafico = new Chart(canvasEl,{
@@ -5675,7 +5802,8 @@ function dibujarGraficoCurvaS(rubros, proy){
     data:{
       labels,
       datasets:[
-        {label:'Planificado (%)',data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:3,borderDash:[6,3]},
+        ...(ghostArr ? [{label:`Plan LB-${window._curvaGhostNum} (anterior)`,data:ghostArr,borderColor:'#9aa0b5',fill:false,tension:.4,pointRadius:0,borderDash:[3,3],borderWidth:1.5}] : []),
+        {label:`Planificado (%)${window._lbActiva&&window._lbActiva.numero>1?' · LB-'+window._lbActiva.numero:''}`,data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:3,borderDash:[6,3]},
         {label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:4,spanGaps:false}
       ]
     },
@@ -5772,15 +5900,17 @@ function abrirModalCronograma(){
 async function guardarCronograma(){
   const btn = document.getElementById('btnGuardarCronograma');
   btn.disabled=true; btn.textContent='Guardando...';
-  // Upsert por rubro_id
+  // Upsert por rubro y línea base activa
+  const lb = await asegurarLineaBaseActiva();
   for(const r of cronogramaData){
     await sb.from('cronograma_rubros').upsert({
       rubro_id: r.rubro_id,
       proyecto_id: currentProyecto,
       peso_pct: r.peso,
       fecha_inicio: r.fecha_inicio||null,
-      fecha_fin: r.fecha_fin||null
-    },{onConflict:'rubro_id'});
+      fecha_fin: r.fecha_fin||null,
+      linea_base_id: lb.id
+    },{onConflict:'rubro_id,linea_base_id'});
   }
   toast('Cronograma guardado ✓','success');
   btn.disabled=false; btn.textContent='Guardar cronograma';
@@ -11864,6 +11994,9 @@ async function generarReportePDF(){
     }));
     curvaSDatos = calcularIndicadoresPuro(rubrosConPesoReporte, proy);
     curvaSDatos.imagenGrafico = await generarImagenGraficoCurvaS(rubrosConPesoReporte, curvaSModo);
+    curvaSDatos.notaLineaBase = (window._lbActiva && window._lbActiva.numero > 1)
+      ? `Cronograma según Línea Base ${window._lbActiva.numero} — ${window._lbActiva.motivo||''} (${new Date(window._lbActiva.created_at).toLocaleDateString('es-EC')})`
+      : null;
   }
 
   // Generar HTML del reporte (formato A4)
@@ -11955,6 +12088,7 @@ ${incCurvaS && curvaSDatos ? `
   ${curvaSDatos.imagenGrafico ? `
   <div style="text-align:center;margin-top:12px">
     <img src="${curvaSDatos.imagenGrafico}" style="max-width:100%;height:auto"/>
+    ${curvaSDatos.notaLineaBase ? `<div style="font-size:10px;color:#676879;margin-top:4px;font-style:italic">📐 ${curvaSDatos.notaLineaBase}</div>` : ''}
   </div>` : ''}
   ${curvaSDatos.proyeccion ? `
   <table style="margin-top:10px">
