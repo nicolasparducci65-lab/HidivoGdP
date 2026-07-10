@@ -527,6 +527,8 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       </button>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       <div class="topbar-actions">
+        <div id="offlineIndicador" onclick="sincronizarRegistrosOffline()" title="Registros de campo pendientes de sincronizar — toca para reintentar"
+          style="display:none;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:14px;padding:5px 12px;cursor:pointer;white-space:nowrap"></div>
         <div id="notiCentro" style="position:relative">
           <button class="btn" id="btnNotificaciones" onclick="togglePanelNotificaciones()" title="Pendientes en tus proyectos" style="position:relative;padding:8px 10px">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="16" height="16"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -2747,9 +2749,11 @@ async function mostrarApp(){
     actualizarBadgeChat();
     suscribirseGlobalChat();
     cargarNotificacionesGlobales();
+    sincronizarRegistrosOffline();
     // Actualizar badges periódicamente
     setInterval(actualizarBadgeChat, 30000);
     setInterval(cargarNotificacionesGlobales, 60000);
+    setInterval(sincronizarRegistrosOffline, 180000);
   }, 500);
 }
 
@@ -4416,6 +4420,142 @@ function badgeAprobacionLibro(r){
   return `<span title="${escAttr(r.observacion_aprobacion||'')}" style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${e.emoji} ${e.label}</span>`;
 }
 
+// ── MODO OFFLINE: registros del libro de obra sin señal ──
+function idbAbrir(){
+  return new Promise((res, rej)=>{
+    const r = indexedDB.open('hidivo-offline', 1);
+    r.onupgradeneeded = () => {
+      if(!r.result.objectStoreNames.contains('pendientes')){
+        r.result.createObjectStore('pendientes', {keyPath:'idLocal'});
+      }
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function idbOp(modo, fn){
+  return idbAbrir().then(db => new Promise((res, rej)=>{
+    const tx = db.transaction('pendientes', modo);
+    const pedido = fn(tx.objectStore('pendientes'));
+    pedido.onsuccess = () => res(pedido.result);
+    pedido.onerror = () => rej(pedido.error);
+  }));
+}
+const idbGuardar  = item => idbOp('readwrite', s => s.put(item));
+const idbTodos    = ()   => idbOp('readonly',  s => s.getAll());
+const idbBorrar   = id   => idbOp('readwrite', s => s.delete(id));
+
+function esErrorDeRed(e){
+  return /fetch|network|load failed|networkerror/i.test(String(e?.message||e||''));
+}
+
+async function guardarRegistroOffline(payload){
+  const item = {
+    idLocal: (crypto.randomUUID ? crypto.randomUUID() : 'off-'+Date.now()+'-'+Math.random()),
+    creadoOffline: new Date().toISOString(),
+    proyecto_id: currentProyecto,
+    payload,
+    rubros: libroRubrosSeleccionados.filter(r=>r.cantidad>0).map(r=>({id:r.id, cantidad:r.cantidad})),
+    items: [...libroEquiposSeleccionados, ...libroMaterialesSeleccionados],
+    fotos: libroFotosSeleccionadas.map(f=>({blob:f.file, nombre:f.file?.name||'foto.jpg', tipo:f.file?.type||'image/jpeg', descripcion:f.descripcion||null})),
+    esAprobador: esAprobadorLibro(),
+    autorId: currentUser?.id
+  };
+  await idbGuardar(item);
+  cerrarModal('modalLibro');
+  toast('📴 Sin señal: registro guardado en este dispositivo. Se sincronizará solo al volver la conexión.','info');
+  actualizarIndicadorOffline();
+}
+
+let _sincronizandoOffline = false;
+
+async function sincronizarRegistrosOffline(){
+  if(_sincronizandoOffline || !navigator.onLine) return;
+  let pendientes = [];
+  try{ pendientes = await idbTodos(); }catch(e){ return; }
+  if(!pendientes.length){ actualizarIndicadorOffline(); return; }
+  _sincronizandoOffline = true;
+  actualizarIndicadorOffline('Sincronizando...');
+  let ok = 0, fallos = 0;
+  pendientes.sort((a,b)=>a.creadoOffline.localeCompare(b.creadoOffline));
+  for(const item of pendientes){
+    try{
+      // Número definitivo asignado al sincronizar (evita choques)
+      const { data: maxN } = await sb.from('libro_obra').select('numero_registro')
+        .eq('proyecto_id', item.proyecto_id).order('numero_registro',{ascending:false}).limit(1);
+      const payload = {...item.payload, numero_registro: (maxN?.[0]?.numero_registro||0)+1};
+      const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
+      if(error) throw error;
+      await sb.from('libro_obra_aprobaciones').insert({registro_id:registro.id, accion:item.esAprobador?'aprobado':'enviado', autor_id:item.autorId});
+      if(item.items?.length){
+        await sb.from('libro_obra_items').insert(item.items.map(i=>({
+          registro_id: registro.id, item_id: i.item_id||null,
+          nombre_libre: i.item_id?null:i.nombre, tipo: i.tipo, cantidad: i.cantidad
+        })));
+      }
+      if(item.rubros?.length){
+        await sb.from('libro_obra_rubros').insert(item.rubros.map(r=>({
+          registro_id: registro.id, rubro_id: r.id, cantidad_dia: r.cantidad
+        })));
+        for(const r of item.rubros){
+          const { data: rub } = await sb.from('rubros').select('cantidad_ejecutada').eq('id',r.id).single();
+          await sb.from('rubros').update({cantidad_ejecutada:(rub?.cantidad_ejecutada||0)+r.cantidad}).eq('id',r.id);
+        }
+      }
+      for(let i=0; i<(item.fotos||[]).length; i++){
+        const f = item.fotos[i];
+        try{
+          const file = new File([f.blob], f.nombre, {type:f.tipo});
+          const url = await subirFotoSupabase(file, registro.id, i+1);
+          if(url) await sb.from('libro_obra_fotos').insert({registro_id:registro.id, url, descripcion:f.descripcion, orden:i+1});
+        }catch(e){ console.warn('Foto offline:', e); }
+      }
+      if(!item.esAprobador){
+        notificarFiscalizadorViaDM(`📖 Registro N°${payload.numero_registro} del libro de obra por aprobar`, `Fecha: ${payload.fecha} (registrado sin señal)`);
+      }
+      await idbBorrar(item.idLocal);
+      ok++;
+    }catch(e){
+      console.warn('Sincronización offline:', e);
+      fallos++;
+      if(esErrorDeRed(e)) break; // se fue la señal otra vez: reintentar después
+    }
+  }
+  _sincronizandoOffline = false;
+  actualizarIndicadorOffline();
+  if(ok){
+    toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
+    try{ if(currentPage==='libro') cargarLibroObra(); cargarNotificacionesGlobales(); }catch(e){}
+  }
+}
+
+async function actualizarIndicadorOffline(textoForzado){
+  const el = document.getElementById('offlineIndicador');
+  if(!el) return;
+  let n = 0;
+  try{ n = (await idbTodos()).length; }catch(e){}
+  if(textoForzado){
+    el.style.display = 'flex';
+    el.textContent = '🔄 ' + textoForzado;
+    el.style.background = '#f0f7ff'; el.style.color = '#0073ea';
+    return;
+  }
+  if(n > 0){
+    el.style.display = 'flex';
+    el.textContent = `📴 ${n} por sincronizar`;
+    el.style.background = '#fdf6e3'; el.style.color = '#b8860b';
+  } else if(!navigator.onLine){
+    el.style.display = 'flex';
+    el.textContent = '📴 Sin señal';
+    el.style.background = '#fdecef'; el.style.color = '#e2445c';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+window.addEventListener('online',  ()=>{ actualizarIndicadorOffline(); sincronizarRegistrosOffline(); });
+window.addEventListener('offline', ()=>actualizarIndicadorOffline());
+
 function bloquearSiCerrado(){
   if(window._proyectoCerrado){
     toast('🏁 Este proyecto está liquidado y cerrado: solo lectura','error');
@@ -4794,8 +4934,24 @@ async function guardarRegistroLibro(){
     payload.estado_aprobacion = 'pendiente';
   }
 
-  const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
-  if(error){ toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro'; return; }
+  // Sin señal: guardar en el dispositivo y sincronizar después
+  if(!navigator.onLine){
+    await guardarRegistroOffline(payload);
+    btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro';
+    return;
+  }
+  let registro, error;
+  try{
+    ({ data: registro, error } = await sb.from('libro_obra').insert(payload).select().single());
+  }catch(e){ error = e; }
+  if(error){
+    if(esErrorDeRed(error)){
+      await guardarRegistroOffline(payload);
+      btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro';
+      return;
+    }
+    toast('Error: '+error.message,'error'); btnGuardar.disabled=false; btnGuardar.innerHTML='Guardar registro'; return;
+  }
   await sb.from('libro_obra_aprobaciones').insert({registro_id:registro.id, accion: esAprobadorLibro()?'aprobado':'enviado', autor_id:currentUser?.id});
   if(!esAprobadorLibro()){
     notificarFiscalizadorViaDM(`📖 Registro N°${registro.numero_registro||''} del libro de obra por aprobar`, `Fecha: ${payload.fecha}`);
