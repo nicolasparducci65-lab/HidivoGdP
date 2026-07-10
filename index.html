@@ -4453,6 +4453,7 @@ async function guardarRegistroOffline(payload){
   const item = {
     idLocal: (crypto.randomUUID ? crypto.randomUUID() : 'off-'+Date.now()+'-'+Math.random()),
     creadoOffline: new Date().toISOString(),
+    tipo: 'libro',
     proyecto_id: currentProyecto,
     payload,
     rubros: libroRubrosSeleccionados.filter(r=>r.cantidad>0).map(r=>({id:r.id, cantidad:r.cantidad})),
@@ -4464,6 +4465,43 @@ async function guardarRegistroOffline(payload){
   await idbGuardar(item);
   cerrarModal('modalLibro');
   toast('📴 Sin señal: registro guardado en este dispositivo. Se sincronizará solo al volver la conexión.','info');
+  actualizarIndicadorOffline();
+}
+
+async function guardarObservacionOffline(titulo, descripcion){
+  const item = {
+    idLocal: (crypto.randomUUID ? crypto.randomUUID() : 'off-'+Date.now()+'-'+Math.random()),
+    creadoOffline: new Date().toISOString(),
+    tipo: 'observacion',
+    proyecto_id: currentProyecto,
+    titulo, descripcion,
+    plano_id: window._obsNuevaPlano||null,
+    pin_x: window._obsNuevaPin?.x||null,
+    pin_y: window._obsNuevaPin?.y||null,
+    fotos: obsFotosPendientes.map(f=>({blob:f, nombre:f.name||'foto.jpg', tipoMime:f.type||'image/jpeg'})),
+    autorId: currentUser?.id
+  };
+  await idbGuardar(item);
+  obsFotosPendientes = [];
+  cerrarModal('modalObsNueva');
+  toast('📴 Sin señal: observación guardada en este dispositivo. El pin aparecerá en el plano al sincronizar.','info');
+  actualizarIndicadorOffline();
+}
+
+async function guardarSolicitudOffline(titulo, tipoSol, descripcion){
+  const files = [...document.getElementById('solNuevaArchivos').files];
+  const item = {
+    idLocal: (crypto.randomUUID ? crypto.randomUUID() : 'off-'+Date.now()+'-'+Math.random()),
+    creadoOffline: new Date().toISOString(),
+    tipo: 'solicitud',
+    proyecto_id: currentProyecto,
+    titulo, descripcion, tipoSol,
+    archivos: files.map(f=>({blob:f, nombre:f.name, tipoMime:f.type})),
+    autorId: currentUser?.id
+  };
+  await idbGuardar(item);
+  cerrarModal('modalNuevaSolicitud');
+  toast('📴 Sin señal: solicitud guardada en este dispositivo. Se enviará al volver la conexión.','info');
   actualizarIndicadorOffline();
 }
 
@@ -4480,6 +4518,9 @@ async function sincronizarRegistrosOffline(){
   pendientes.sort((a,b)=>a.creadoOffline.localeCompare(b.creadoOffline));
   for(const item of pendientes){
     try{
+      const tipoItem = item.tipo || 'libro';
+      if(tipoItem === 'observacion'){ await subirObservacionOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
+      if(tipoItem === 'solicitud'){ await subirSolicitudOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
       // Número definitivo asignado al sincronizar (evita choques)
       const { data: maxN } = await sb.from('libro_obra').select('numero_registro')
         .eq('proyecto_id', item.proyecto_id).order('numero_registro',{ascending:false}).limit(1);
@@ -4525,8 +4566,66 @@ async function sincronizarRegistrosOffline(){
   actualizarIndicadorOffline();
   if(ok){
     toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
-    try{ if(currentPage==='libro') cargarLibroObra(); cargarNotificacionesGlobales(); }catch(e){}
+    try{
+      if(currentPage==='libro') cargarLibroObra();
+      if(currentPage==='fiscalizacion') cargarObservaciones();
+      if(currentPage==='solicitudes') cargarSolicitudes();
+      cargarNotificacionesGlobales();
+    }catch(e){}
   }
+}
+
+async function subirObservacionOffline(item){
+  const { data: ultima } = await sb.from('observaciones').select('numero')
+    .eq('proyecto_id', item.proyecto_id).order('numero',{ascending:false}).limit(1);
+  const numero = (ultima?.[0]?.numero||0) + 1;
+  const { data: obs, error } = await sb.from('observaciones').insert({
+    proyecto_id: item.proyecto_id, plano_id: item.plano_id, numero,
+    titulo: item.titulo, descripcion: item.descripcion||null, estado: 'abierta',
+    pin_x: item.pin_x, pin_y: item.pin_y, creado_por: item.autorId
+  }).select().single();
+  if(error) throw error;
+  for(const f of (item.fotos||[])){
+    try{
+      const file = new File([f.blob], f.nombre, {type:f.tipoMime});
+      const comprimida = await comprimirImagenObs(file);
+      const path = `observaciones/${obs.id}/${Date.now()}_${comprimida.name}`;
+      const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, comprimida, {contentType:comprimida.type, upsert:true});
+      if(!upErr){
+        const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+        await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
+      }
+    }catch(e){ console.warn('Foto obs offline:', e); }
+  }
+  notificarResidenteViaDM('observacion', item.titulo, item.descripcion);
+  notificarPorEmail('observacion', item.titulo, item.descripcion, numero);
+  notificarPorPush('observacion', `Nueva observación: ${item.titulo}`, item.descripcion||'');
+}
+
+async function subirSolicitudOffline(item){
+  const { data: ultima } = await sb.from('solicitudes').select('numero')
+    .eq('proyecto_id', item.proyecto_id).order('numero',{ascending:false}).limit(1);
+  const numero = (ultima?.[0]?.numero||0) + 1;
+  const { data: sol, error } = await sb.from('solicitudes').insert({
+    proyecto_id: item.proyecto_id, numero, tipo: item.tipoSol,
+    titulo: item.titulo, descripcion: item.descripcion||null,
+    estado: 'pendiente', creado_por: item.autorId
+  }).select().single();
+  if(error) throw error;
+  for(const f of (item.archivos||[])){
+    try{
+      const file = new File([f.blob], f.nombre, {type:f.tipoMime});
+      const path = `solicitudes/${sol.id}/${Date.now()}_${f.nombre}`;
+      const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {upsert:true});
+      if(!upErr){
+        const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+        await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.nombre});
+      }
+    }catch(e){ console.warn('Archivo sol offline:', e); }
+  }
+  notificarResidenteViaDM('solicitud', item.titulo, item.descripcion);
+  notificarPorEmail('solicitud', item.titulo, item.descripcion, numero);
+  notificarPorPush('solicitud', `Nueva solicitud: ${item.titulo}`, item.descripcion||'');
 }
 
 async function actualizarIndicadorOffline(textoForzado){
@@ -6223,24 +6322,38 @@ async function guardarObservacionNueva(){
   const btn = document.getElementById('btnGuardarObsNueva');
   btn.disabled=true; btn.textContent='Guardando...';
 
-  // Calcular siguiente número consecutivo para este proyecto
-  const { data: ultima } = await sb.from('observaciones')
-    .select('numero').eq('proyecto_id', currentProyecto)
-    .order('numero', {ascending:false}).limit(1);
-  const siguienteNumero = (ultima?.[0]?.numero||0) + 1;
-
-  const { data: obs, error } = await sb.from('observaciones').insert({
-    proyecto_id: currentProyecto,
-    plano_id: window._obsNuevaPlano||null,
-    numero: siguienteNumero,
-    titulo,
-    descripcion: desc||null,
-    estado: 'abierta',
-    pin_x: window._obsNuevaPin?.x||null,
-    pin_y: window._obsNuevaPin?.y||null,
-    creado_por: currentUser?.id||null
-  }).select().single();
-  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  // Sin señal: guardar en el dispositivo y sincronizar después
+  if(!navigator.onLine){
+    await guardarObservacionOffline(titulo, desc);
+    btn.disabled=false; btn.textContent='Guardar';
+    return;
+  }
+  let siguienteNumero, obs, error;
+  try{
+    const { data: ultima } = await sb.from('observaciones')
+      .select('numero').eq('proyecto_id', currentProyecto)
+      .order('numero', {ascending:false}).limit(1);
+    siguienteNumero = (ultima?.[0]?.numero||0) + 1;
+    ({ data: obs, error } = await sb.from('observaciones').insert({
+      proyecto_id: currentProyecto,
+      plano_id: window._obsNuevaPlano||null,
+      numero: siguienteNumero,
+      titulo,
+      descripcion: desc||null,
+      estado: 'abierta',
+      pin_x: window._obsNuevaPin?.x||null,
+      pin_y: window._obsNuevaPin?.y||null,
+      creado_por: currentUser?.id||null
+    }).select().single());
+  }catch(e){ error = e; }
+  if(error){
+    if(esErrorDeRed(error)){
+      await guardarObservacionOffline(titulo, desc);
+      btn.disabled=false; btn.textContent='Guardar';
+      return;
+    }
+    toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return;
+  }
   // Subir fotos (comprimidas) desde el acumulador cámara + galería
   for(let i=0;i<obsFotosPendientes.length;i++){
     btn.textContent = `Subiendo foto ${i+1}/${obsFotosPendientes.length}...`;
@@ -10499,22 +10612,35 @@ async function guardarNuevaSolicitud(){
   const btn = document.getElementById('btnGuardarSolicitud');
   btn.disabled=true; btn.textContent='Guardando...';
 
-  // Calcular siguiente número consecutivo para este proyecto
-  const { data: ultima } = await sb.from('solicitudes')
-    .select('numero').eq('proyecto_id', currentProyecto)
-    .order('numero', {ascending:false}).limit(1);
-  const siguienteNumero = (ultima?.[0]?.numero||0) + 1;
-
-  const { data: sol, error } = await sb.from('solicitudes').insert({
-    proyecto_id: currentProyecto,
-    numero: siguienteNumero,
-    tipo, titulo,
-    descripcion: desc||null,
-    estado: 'pendiente',
-    creado_por: currentUser?.id
-  }).select().single();
-
-  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar solicitud'; return; }
+  // Sin señal: guardar en el dispositivo y sincronizar después
+  if(!navigator.onLine){
+    await guardarSolicitudOffline(titulo, tipo, desc);
+    btn.disabled=false; btn.textContent='Enviar solicitud';
+    return;
+  }
+  let siguienteNumero, sol, error;
+  try{
+    const { data: ultima } = await sb.from('solicitudes')
+      .select('numero').eq('proyecto_id', currentProyecto)
+      .order('numero', {ascending:false}).limit(1);
+    siguienteNumero = (ultima?.[0]?.numero||0) + 1;
+    ({ data: sol, error } = await sb.from('solicitudes').insert({
+      proyecto_id: currentProyecto,
+      numero: siguienteNumero,
+      tipo, titulo,
+      descripcion: desc||null,
+      estado: 'pendiente',
+      creado_por: currentUser?.id
+    }).select().single());
+  }catch(e){ error = e; }
+  if(error){
+    if(esErrorDeRed(error)){
+      await guardarSolicitudOffline(titulo, tipo, desc);
+      btn.disabled=false; btn.textContent='Enviar solicitud';
+      return;
+    }
+    toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar solicitud'; return;
+  }
 
   // Subir archivos
   const files = document.getElementById('solNuevaArchivos').files;
