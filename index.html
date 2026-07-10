@@ -469,6 +469,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         Contrato
         <span id="garantiasBadge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:auto">0</span>
       </div>
+      <div class="nav-item" onclick="navTo('ensayos',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 3h6v5l4.5 8.5a2 2 0 0 1-1.8 2.9H6.3a2 2 0 0 1-1.8-2.9L9 8V3z"/><line x1="9" y1="3" x2="15" y2="3"/><line x1="7" y1="14" x2="17" y2="14"/></svg>
+        Ensayos
+      </div>
       <div class="nav-item" onclick="navTo('equipos',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         Equipos
@@ -689,6 +693,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- PLANILLAS -->
       <div class="page" id="page-planillas">
         <div id="planillasContent"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Selecciona un proyecto</div></div></div>
+      </div>
+
+      <!-- ENSAYOS DE LABORATORIO -->
+      <div class="page" id="page-ensayos">
+        <div id="ensayosContent"><div class="empty-state"><div class="empty-icon">🧪</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- CARTERA: PANEL MULTI-PROYECTO -->
@@ -1256,6 +1265,45 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 </div>
 
 <!-- MODAL NUEVA OBSERVACIÓN -->
+<div class="modal-overlay" id="modalEspecs">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header"><h3>⚙️ Especificaciones del proyecto</h3>
+      <button class="modal-close" onclick="document.getElementById('modalEspecs').classList.remove('show')">✕</button></div>
+    <div class="modal-body" id="especsModalBody" style="max-height:65vh;overflow-y:auto"></div>
+    <div class="modal-footer"><button class="btn" onclick="document.getElementById('modalEspecs').classList.remove('show')">Cerrar</button></div>
+  </div>
+</div>
+<div class="modal-overlay" id="modalEnsayo">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header"><h3 id="ensTituloModal">Registrar ensayo</h3>
+      <button class="modal-close" onclick="document.getElementById('modalEnsayo').classList.remove('show')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Especificación *</label>
+        <select class="form-control" id="ensEspec" onchange="previsualizarVeredicto()"></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">Fecha *</label>
+          <input type="date" class="form-control" id="ensFecha"/></div>
+        <div class="form-group"><label class="form-label">Laboratorio</label>
+          <input type="text" class="form-control" id="ensLab"/></div>
+      </div>
+      <div class="form-group"><label class="form-label">Ubicación (abscisa, capa, elemento)</label>
+        <input type="text" class="form-control" id="ensUbicacion" placeholder="Km 2+340, sub-base"/></div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end">
+        <div class="form-group"><label class="form-label">Valor obtenido *</label>
+          <input type="number" step="0.01" class="form-control" id="ensValor" oninput="previsualizarVeredicto()"/></div>
+        <div class="form-group" style="padding-bottom:6px" id="ensVeredictoPreview"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Detalle (valores secundarios: LL/LP/IP, curva, etc.)</label>
+        <textarea class="form-control" id="ensDetalle" rows="2"></textarea></div>
+      <div class="form-group"><label class="form-label">Informe del laboratorio (PDF)</label>
+        <input type="file" class="form-control" id="ensArchivo" accept=".pdf,image/*"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="document.getElementById('modalEnsayo').classList.remove('show')">Cancelar</button>
+      <button class="btn primary" id="btnGuardarEnsayo" onclick="guardarEnsayo()">Guardar</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalLineasBase">
   <div class="modal" style="max-width:560px">
     <div class="modal-header"><h3>📐 Líneas base del cronograma</h3>
@@ -3147,7 +3195,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -3159,7 +3207,7 @@ function navTo(page, btn){
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const btnOC = document.getElementById('btnOrdenesCambio');
   if(btnOC) btnOC.style.display = (page==='rubros' && currentProyecto && ['admin','fiscalizador'].includes(currentPerfil?.rol)) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','ensayos','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -3176,6 +3224,7 @@ function navTo(page, btn){
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
   if(page==='contrato'&&currentProyecto) cargarContrato();
   if(page==='cartera') cargarCartera();
+  if(page==='ensayos'&&currentProyecto) cargarEnsayos();
   if(page==='equipos'&&currentProyecto) cargarEquipos();
   if(page==='materiales'&&currentProyecto) cargarMateriales();
   if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
@@ -4441,6 +4490,268 @@ const ESTADOS_LIBRO = {
 function badgeAprobacionLibro(r){
   const e = ESTADOS_LIBRO[r.estado_aprobacion]||ESTADOS_LIBRO.pendiente;
   return `<span title="${escAttr(r.observacion_aprobacion||'')}" style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${e.emoji} ${e.label}</span>`;
+}
+
+// ── ENSAYOS DE LABORATORIO ──
+let _ensayoTipos = [], _ensayoEspecs = [], _ensayosFiltro = {estado:'todos', espec:''};
+
+function textoEspec(e){
+  const t = _ensayoTipos.find(x=>x.id===e.tipo_id)||{};
+  const u = t.unidad||'';
+  if(t.criterio==='menor_igual') return `≤ ${e.valor_max} ${u}`;
+  if(t.criterio==='rango') return `${e.valor_min} – ${e.valor_max} ${u}`;
+  return `≥ ${e.valor_min} ${u}`;
+}
+function nombreEspec(e){
+  const t = _ensayoTipos.find(x=>x.id===e.tipo_id)||{};
+  return `${t.nombre||'?'}${e.etiqueta?' — '+e.etiqueta:''}`;
+}
+function evaluarEnsayo(espec, valor){
+  const t = _ensayoTipos.find(x=>x.id===espec.tipo_id)||{};
+  if(t.criterio==='menor_igual') return valor <= (espec.valor_max??Infinity);
+  if(t.criterio==='rango') return valor >= (espec.valor_min??-Infinity) && valor <= (espec.valor_max??Infinity);
+  return valor >= (espec.valor_min??-Infinity);
+}
+
+async function cargarEnsayos(){
+  const cont = document.getElementById('ensayosContent');
+  cont.innerHTML = '<div style="padding:30px;text-align:center;color:#676879">Cargando...</div>';
+  const [{ data: tipos }, { data: especs }, { data: ensayos }] = await Promise.all([
+    sb.from('ensayo_tipos').select('*').order('nombre'),
+    sb.from('ensayo_especificaciones').select('*').eq('proyecto_id', currentProyecto).order('created_at'),
+    sb.from('ensayos').select('*').eq('proyecto_id', currentProyecto).order('numero',{ascending:false})
+  ]);
+  _ensayoTipos = tipos||[]; _ensayoEspecs = especs||[];
+  const puede = ['admin','fiscalizador'].includes(currentPerfil?.rol);
+  const lista = ensayos||[];
+  const total = lista.length;
+  const cumplen = lista.filter(e=>e.cumple).length;
+  const fallidosAbiertos = lista.filter(e=>!e.cumple && !e.resuelto).length;
+  const numeroMap = {}; lista.forEach(e=>numeroMap[e.id]=e.numero);
+
+  let filtradas = lista;
+  if(_ensayosFiltro.estado==='cumple') filtradas = filtradas.filter(e=>e.cumple);
+  if(_ensayosFiltro.estado==='no_cumple') filtradas = filtradas.filter(e=>!e.cumple);
+  if(_ensayosFiltro.estado==='no_resueltos') filtradas = filtradas.filter(e=>!e.cumple && !e.resuelto);
+  if(_ensayosFiltro.espec) filtradas = filtradas.filter(e=>e.especificacion_id===_ensayosFiltro.espec);
+
+  cont.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:11px;color:#676879">ENSAYOS</div><div style="font-size:20px;font-weight:800">${total}</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:11px;color:#676879">CUMPLIMIENTO</div><div style="font-size:20px;font-weight:800;color:${total&&cumplen/total>=0.9?'#00854d':total?'#b8860b':'#676879'}">${total?(cumplen/total*100).toFixed(1)+'%':'—'}</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:11px;color:#676879">FALLIDOS SIN RESOLVER</div><div style="font-size:20px;font-weight:800;color:${fallidosAbiertos?'#e2445c':'#00854d'}">${fallidosAbiertos}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="form-control" style="width:auto;padding:6px 10px;font-size:13px" onchange="_ensayosFiltro.estado=this.value;cargarEnsayos()">
+          <option value="todos" ${_ensayosFiltro.estado==='todos'?'selected':''}>Todos</option>
+          <option value="cumple" ${_ensayosFiltro.estado==='cumple'?'selected':''}>✅ Cumplen</option>
+          <option value="no_cumple" ${_ensayosFiltro.estado==='no_cumple'?'selected':''}>❌ No cumplen</option>
+          <option value="no_resueltos" ${_ensayosFiltro.estado==='no_resueltos'?'selected':''}>⚠️ Sin resolver</option>
+        </select>
+        <select class="form-control" style="width:auto;padding:6px 10px;font-size:13px;max-width:280px" onchange="_ensayosFiltro.espec=this.value;cargarEnsayos()">
+          <option value="">Todas las especificaciones</option>
+          ${_ensayoEspecs.map(e=>`<option value="${e.id}" ${_ensayosFiltro.espec===e.id?'selected':''}>${escAttr(nombreEspec(e))}</option>`).join('')}
+        </select>
+      </div>
+      ${puede?`<div style="display:flex;gap:8px">
+        <button class="btn" onclick="abrirModalEspecs()">⚙️ Especificaciones</button>
+        <button class="btn primary" onclick="abrirModalEnsayo()">+ Registrar ensayo</button>
+      </div>`:''}
+    </div>
+    ${filtradas.length ? `<div style="overflow-x:auto"><table style="width:100%"><thead><tr>
+      <th>N°</th><th>Fecha</th><th>Ensayo</th><th>Ubicación</th><th style="text-align:right">Valor / Espec.</th><th>Veredicto</th><th></th>
+    </tr></thead><tbody>
+    ${filtradas.map(e=>{
+      const esp = _ensayoEspecs.find(x=>x.id===e.especificacion_id);
+      const t = esp ? (_ensayoTipos.find(x=>x.id===esp.tipo_id)||{}) : {};
+      return `<tr>
+        <td style="font-weight:700;color:#0073ea;white-space:nowrap">E-${String(e.numero).padStart(3,'0')}${e.reensayo_de?`<div style="font-size:10px;color:#676879">re-ensayo de E-${String(numeroMap[e.reensayo_de]||'?').padStart(3,'0')}</div>`:''}</td>
+        <td style="white-space:nowrap">${e.fecha}</td>
+        <td>${esp?escAttr(nombreEspec(esp)):'—'}<div style="font-size:11px;color:#676879">${escAttr(t.norma||'')}${e.laboratorio?' · '+escAttr(e.laboratorio):''}</div></td>
+        <td style="font-size:13px">${escAttr(e.ubicacion||'—')}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${e.valor}</b> ${escAttr(t.unidad||'')}<div style="font-size:11px;color:#676879">${esp?textoEspec(esp):''}</div></td>
+        <td>${e.cumple
+          ? '<span style="background:#e6f4ee;color:#00854d;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">✅ CUMPLE</span>'
+          : e.resuelto
+            ? '<span style="background:#f5f6f8;color:#676879;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">❌ Resuelto</span>'
+            : '<span style="background:#fdecef;color:#e2445c;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">❌ NO CUMPLE</span>'}</td>
+        <td style="white-space:nowrap">
+          ${e.archivo_url?`<a href="${e.archivo_url}" target="_blank" title="Informe">📎</a>`:''}
+          ${puede && !e.cumple && !e.resuelto ? `<button class="btn" style="padding:3px 8px;font-size:11px" title="Registrar re-ensayo" onclick="abrirModalEnsayo('${e.id}')">🔁</button>`:''}
+          ${puede && !e.cumple && !e.observacion_id ? `<button class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c" title="Crear observación al residente" onclick="crearObsDesdeEnsayo('${e.id}')">📌</button>`:''}
+          ${currentPerfil?.rol==='admin' ? `<button class="btn" style="padding:3px 8px;font-size:11px" title="Eliminar" onclick="eliminarEnsayo('${e.id}')">🗑</button>`:''}
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`
+    : '<div style="text-align:center;color:#676879;padding:24px">Sin ensayos registrados' + (puede&&!_ensayoEspecs.length?'. Configura primero las especificaciones del proyecto (⚙️)':'') + '</div>'}
+  </div>`;
+}
+
+function abrirModalEspecs(){
+  renderModalEspecs();
+  document.getElementById('modalEspecs').classList.add('show');
+}
+
+function renderModalEspecs(){
+  const body = document.getElementById('especsModalBody');
+  body.innerHTML = (_ensayoEspecs.length ? _ensayoEspecs.map(e=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid #e6e9ef;border-radius:8px;padding:8px 12px;margin-bottom:6px">
+      <span style="font-size:13px"><b>${escAttr(nombreEspec(e))}</b> · ${textoEspec(e)}</span>
+      <button class="btn" style="padding:2px 8px;color:#e2445c" onclick="eliminarEspec('${e.id}')">✕</button>
+    </div>`).join('') : '<div style="text-align:center;color:#676879;padding:12px">Sin especificaciones</div>') + `
+  <div style="background:#f5f6f8;border-radius:8px;padding:12px;margin-top:10px">
+    <b style="font-size:13px">Agregar especificación</b>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <select class="form-control" id="especTipo" onchange="ajustarCamposEspec()">
+        ${_ensayoTipos.map(t=>`<option value="${t.id}">${escAttr(t.nombre)} (${t.criterio==='mayor_igual'?'≥':t.criterio==='menor_igual'?'≤':'rango'})</option>`).join('')}
+      </select>
+      <input class="form-control" id="especEtiqueta" placeholder="Etiqueta (Sub-base, Relleno...)"/>
+      <input class="form-control" type="number" step="0.01" id="especMin" placeholder="Valor mínimo"/>
+      <input class="form-control" type="number" step="0.01" id="especMax" placeholder="Valor máximo"/>
+    </div>
+    <button class="btn primary" style="margin-top:8px" onclick="guardarEspec()">Agregar</button>
+  </div>`;
+  ajustarCamposEspec();
+}
+
+function ajustarCamposEspec(){
+  const t = _ensayoTipos.find(x=>x.id===document.getElementById('especTipo')?.value);
+  if(!t) return;
+  document.getElementById('especMin').style.display = t.criterio==='menor_igual' ? 'none' : '';
+  document.getElementById('especMax').style.display = t.criterio==='mayor_igual' ? 'none' : '';
+}
+
+async function guardarEspec(){
+  const tipoId = document.getElementById('especTipo').value;
+  const t = _ensayoTipos.find(x=>x.id===tipoId);
+  const vmin = parseFloat(document.getElementById('especMin').value);
+  const vmax = parseFloat(document.getElementById('especMax').value);
+  if(t.criterio!=='menor_igual' && isNaN(vmin)){ toast('Indica el valor mínimo','error'); return; }
+  if(t.criterio!=='mayor_igual' && isNaN(vmax)){ toast('Indica el valor máximo','error'); return; }
+  const { error } = await sb.from('ensayo_especificaciones').insert({
+    proyecto_id: currentProyecto, tipo_id: tipoId,
+    etiqueta: document.getElementById('especEtiqueta').value.trim()||null,
+    valor_min: isNaN(vmin)?null:vmin, valor_max: isNaN(vmax)?null:vmax
+  });
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  const { data } = await sb.from('ensayo_especificaciones').select('*').eq('proyecto_id', currentProyecto).order('created_at');
+  _ensayoEspecs = data||[];
+  renderModalEspecs();
+  toast('Especificación agregada ✓','success');
+}
+
+async function eliminarEspec(id){
+  const { error } = await sb.from('ensayo_especificaciones').delete().eq('id', id);
+  if(error){ toast('No se puede eliminar: tiene ensayos registrados','error'); return; }
+  _ensayoEspecs = _ensayoEspecs.filter(e=>e.id!==id);
+  renderModalEspecs();
+}
+
+async function abrirModalEnsayo(reensayoDeId=null){
+  window._reensayoDe = null;
+  document.getElementById('ensFecha').value = hoyEcuador();
+  document.getElementById('ensUbicacion').value = '';
+  document.getElementById('ensLab').value = '';
+  document.getElementById('ensValor').value = '';
+  document.getElementById('ensDetalle').value = '';
+  document.getElementById('ensArchivo').value = '';
+  const sel = document.getElementById('ensEspec');
+  sel.innerHTML = _ensayoEspecs.map(e=>`<option value="${e.id}">${escAttr(nombreEspec(e))} · ${textoEspec(e)}</option>`).join('');
+  sel.disabled = false;
+  document.getElementById('ensTituloModal').textContent = 'Registrar ensayo';
+  if(reensayoDeId){
+    const { data: orig } = await sb.from('ensayos').select('*').eq('id', reensayoDeId).single();
+    if(orig){
+      window._reensayoDe = orig;
+      sel.value = orig.especificacion_id; sel.disabled = true;
+      document.getElementById('ensUbicacion').value = orig.ubicacion||'';
+      document.getElementById('ensTituloModal').textContent = `Re-ensayo de E-${String(orig.numero).padStart(3,'0')}`;
+    }
+  }
+  previsualizarVeredicto();
+  document.getElementById('modalEnsayo').classList.add('show');
+}
+
+function previsualizarVeredicto(){
+  const esp = _ensayoEspecs.find(e=>e.id===document.getElementById('ensEspec')?.value);
+  const v = parseFloat(document.getElementById('ensValor')?.value);
+  const el = document.getElementById('ensVeredictoPreview');
+  if(!esp || isNaN(v)){ el.innerHTML=''; return; }
+  const ok = evaluarEnsayo(esp, v);
+  el.innerHTML = ok
+    ? '<span style="background:#e6f4ee;color:#00854d;border-radius:10px;padding:4px 14px;font-weight:800">✅ CUMPLE</span>'
+    : '<span style="background:#fdecef;color:#e2445c;border-radius:10px;padding:4px 14px;font-weight:800">❌ NO CUMPLE</span>';
+}
+
+async function guardarEnsayo(){
+  const especId = document.getElementById('ensEspec').value;
+  const esp = _ensayoEspecs.find(e=>e.id===especId);
+  const valor = parseFloat(document.getElementById('ensValor').value);
+  const fecha = document.getElementById('ensFecha').value;
+  if(!esp || isNaN(valor) || !fecha){ toast('Especificación, fecha y valor son obligatorios','error'); return; }
+  const btn = document.getElementById('btnGuardarEnsayo');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  let archivoUrl = null;
+  const file = document.getElementById('ensArchivo').files[0];
+  if(file){
+    const path = `ensayos/${currentProyecto}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {upsert:true});
+    if(!upErr) archivoUrl = sb.storage.from('hidivo-archivos').getPublicUrl(path).data.publicUrl;
+  }
+
+  const { data: maxN } = await sb.from('ensayos').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
+  const cumple = evaluarEnsayo(esp, valor);
+  const { error } = await sb.from('ensayos').insert({
+    proyecto_id: currentProyecto, especificacion_id: especId,
+    numero: (maxN?.[0]?.numero||0)+1, fecha,
+    ubicacion: document.getElementById('ensUbicacion').value.trim()||null,
+    laboratorio: document.getElementById('ensLab').value.trim()||null,
+    valor, detalle: document.getElementById('ensDetalle').value.trim()||null,
+    cumple, archivo_url: archivoUrl,
+    reensayo_de: window._reensayoDe?.id||null,
+    creado_por: currentUser?.id
+  });
+  btn.disabled = false; btn.textContent = 'Guardar';
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  // Re-ensayo que cumple: cerrar el fallido original
+  if(window._reensayoDe && cumple){
+    await sb.from('ensayos').update({resuelto:true}).eq('id', window._reensayoDe.id);
+  }
+  document.getElementById('modalEnsayo').classList.remove('show');
+  toast(cumple ? 'Ensayo registrado: ✅ CUMPLE' : 'Ensayo registrado: ❌ NO CUMPLE', cumple?'success':'error');
+  cargarEnsayos();
+}
+
+async function crearObsDesdeEnsayo(id){
+  const { data: e } = await sb.from('ensayos').select('*').eq('id', id).single();
+  if(!e) return;
+  const esp = _ensayoEspecs.find(x=>x.id===e.especificacion_id);
+  const titulo = `Ensayo E-${String(e.numero).padStart(3,'0')} NO CUMPLE — ${esp?nombreEspec(esp):''}`;
+  const descripcion = `Ubicación: ${e.ubicacion||'—'}\nResultado: ${e.valor} vs especificación ${esp?textoEspec(esp):''}\n${e.laboratorio?'Laboratorio: '+e.laboratorio+'\n':''}Se requiere corrección y re-ensayo.`;
+  if(!confirm(`¿Crear observación al residente?\n\n"${titulo}"`)) return;
+  const { data: ultima } = await sb.from('observaciones').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
+  const numero = (ultima?.[0]?.numero||0)+1;
+  const { data: obs, error } = await sb.from('observaciones').insert({
+    proyecto_id: currentProyecto, numero, titulo, descripcion,
+    estado:'abierta', creado_por: currentUser?.id
+  }).select().single();
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  await sb.from('ensayos').update({observacion_id: obs.id}).eq('id', id);
+  notificarResidenteViaDM('observacion', titulo, descripcion);
+  notificarPorEmail('observacion', titulo, descripcion, numero);
+  notificarPorPush('observacion', `Nueva observación: ${titulo}`, '');
+  toast(`Observación #${numero} creada y notificada ✓`,'success');
+  cargarEnsayos();
+}
+
+async function eliminarEnsayo(id){
+  if(!confirm('¿Eliminar este ensayo?')) return;
+  await sb.from('ensayos').delete().eq('id', id);
+  cargarEnsayos();
 }
 
 // ── CARTERA: PANEL MULTI-PROYECTO ──
@@ -11994,6 +12305,20 @@ async function generarReportePDF(){
     }));
     curvaSDatos = calcularIndicadoresPuro(rubrosConPesoReporte, proy);
     curvaSDatos.imagenGrafico = await generarImagenGraficoCurvaS(rubrosConPesoReporte, curvaSModo);
+    // Ensayos del período para el reporte
+    try{
+      const [{ data: ensR }, { data: espR }, { data: tipR }] = await Promise.all([
+        sb.from('ensayos').select('*').eq('proyecto_id', currentProyecto).gte('fecha', fechaInicio).lte('fecha', fechaFin).order('numero'),
+        sb.from('ensayo_especificaciones').select('*').eq('proyecto_id', currentProyecto),
+        sb.from('ensayo_tipos').select('*')
+      ]);
+      curvaSDatos.ensayos = (ensR||[]).map(e=>{
+        const esp = (espR||[]).find(x=>x.id===e.especificacion_id)||{};
+        const t = (tipR||[]).find(x=>x.id===esp.tipo_id)||{};
+        const espTxt = t.criterio==='menor_igual' ? `≤ ${esp.valor_max}` : t.criterio==='rango' ? `${esp.valor_min}–${esp.valor_max}` : `≥ ${esp.valor_min}`;
+        return {...e, nombreTipo: `${t.nombre||''}${esp.etiqueta?' — '+esp.etiqueta:''}`, espTxt, unidad: t.unidad||''};
+      });
+    }catch(e){ curvaSDatos.ensayos = []; }
     curvaSDatos.notaLineaBase = (window._lbActiva && window._lbActiva.numero > 1)
       ? `Cronograma según Línea Base ${window._lbActiva.numero} — ${window._lbActiva.motivo||''} (${new Date(window._lbActiva.created_at).toLocaleDateString('es-EC')})`
       : null;
@@ -12090,6 +12415,23 @@ ${incCurvaS && curvaSDatos ? `
     <img src="${curvaSDatos.imagenGrafico}" style="max-width:100%;height:auto"/>
     ${curvaSDatos.notaLineaBase ? `<div style="font-size:10px;color:#676879;margin-top:4px;font-style:italic">📐 ${curvaSDatos.notaLineaBase}</div>` : ''}
   </div>` : ''}
+  ${curvaSDatos.ensayos && curvaSDatos.ensayos.length ? `
+  <h2 style="font-size:14px;color:#0073ea;margin-top:20px">Control de Calidad — Ensayos del Período</h2>
+  <div style="font-size:11px;margin-bottom:6px">Total: <b>${curvaSDatos.ensayos.length}</b> · Cumplen: <b style="color:#00854d">${curvaSDatos.ensayos.filter(e=>e.cumple).length}</b> · No cumplen: <b style="color:#e2445c">${curvaSDatos.ensayos.filter(e=>!e.cumple).length}</b> (${curvaSDatos.ensayos.filter(e=>!e.cumple&&!e.resuelto).length} sin resolver) · Cumplimiento: <b>${(curvaSDatos.ensayos.filter(e=>e.cumple).length/curvaSDatos.ensayos.length*100).toFixed(1)}%</b></div>
+  <table style="margin-top:4px">
+    <thead><tr><th>N°</th><th>Fecha</th><th>Ensayo</th><th>Ubicación</th><th style="text-align:right">Valor</th><th style="text-align:right">Espec.</th><th>Veredicto</th></tr></thead>
+    <tbody>
+    ${curvaSDatos.ensayos.map(e=>`<tr>
+      <td style="font-size:10px">E-${String(e.numero).padStart(3,'0')}${e.reensayo_de?' (R)':''}</td>
+      <td style="font-size:10px;white-space:nowrap">${e.fecha}</td>
+      <td style="font-size:10px">${e.nombreTipo}</td>
+      <td style="font-size:10px">${(e.ubicacion||'—').replace(/</g,'&lt;')}</td>
+      <td style="font-size:10px;text-align:right"><b>${e.valor}</b> ${e.unidad}</td>
+      <td style="font-size:10px;text-align:right">${e.espTxt}</td>
+      <td style="font-size:10px;font-weight:700;color:${e.cumple?'#00854d':'#e2445c'}">${e.cumple?'✓ CUMPLE':(e.resuelto?'✗ Resuelto':'✗ NO CUMPLE')}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>` : ''}
   ${curvaSDatos.proyeccion ? `
   <table style="margin-top:10px">
     <thead><tr><th>Fecha fin planificada</th><th>Fecha fin estimada</th><th>Estado</th></tr></thead>
