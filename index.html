@@ -2846,7 +2846,7 @@ async function cargarNotificacionesGlobales(){
 
     // Garantías por vencer (≤5 días) o vencidas — para roles de gestión
     if(idsSolRespondedor.length){
-      const limite = new Date(Date.now() + 5*86400000).toISOString().split('T')[0];
+      const limite = hoyEcuador(5);
       const { data: garsVenc } = await sb.from('garantias').select('id,proyecto_id')
         .eq('estado','vigente').lte('vigencia_hasta', limite).in('proyecto_id', idsSolRespondedor);
       (garsVenc||[]).forEach(g=>{ asegura(g.proyecto_id).gar = (asegura(g.proyecto_id).gar||0)+1; });
@@ -4650,7 +4650,7 @@ async function abrirModalLibro(){
   // Número de registro
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
   document.getElementById('lNumRegistro').value = (count||0)+1;
-  document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('lFecha').value = hoyEcuador();
   document.getElementById('lClimaDiurno').value = 'Soleado'; document.getElementById('lClimaNocturno').value = 'Parcialmente nublado';
   if(document.getElementById('lTempMin')) document.getElementById('lTempMin').value = '';
   if(document.getElementById('lTempMax')) document.getElementById('lTempMax').value = '';
@@ -4678,6 +4678,12 @@ function escaparParaAtributo(texto){
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
     .replace(/"/g, '&quot;');
+}
+
+// Fecha de hoy (YYYY-MM-DD) en zona horaria de Ecuador, con desplazamiento opcional en días
+function hoyEcuador(desplazamientoDias=0){
+  const d = new Date(Date.now() + desplazamientoDias*86400000);
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(d);
 }
 
 // Escapa texto para insertarlo de forma segura en HTML (atributos y nodos de texto)
@@ -8000,7 +8006,7 @@ async function abrirModalMovimiento(tipo){
   document.getElementById('movTipoLabel').textContent=tipo==='ingreso'?'⬇️ Ingreso a bodega':'⬆️ Salida a obra';
   document.getElementById('movTipoLabel').style.color=tipo==='ingreso'?'#2e7d32':'#c62828';
   document.getElementById('movMaterialSelect').innerHTML=stock.map(s=>`<option value="${s.id}" data-unidad="${s.unidad||''}" data-stock="${s.stock_actual}">${s.nombre} (Stock: ${Number(s.stock_actual).toFixed(2)} ${s.unidad||''})</option>`).join('');
-  document.getElementById('movFecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('movFecha').value=hoyEcuador();
   document.getElementById('movCantidad').value='';
   document.getElementById('movProveedor').value='';
   document.getElementById('movFactura').value='';
@@ -8353,7 +8359,7 @@ async function eliminarEquipo(id){
 async function abrirModalRegistroHoras(){
   const {data:equipos}=await sb.from('equipos_proyecto').select('id,nombre,tipo').eq('proyecto_id',currentProyecto).eq('estado','activo').order('nombre');
   document.getElementById('horasEquipoSelect').innerHTML=equipos?.map(e=>`<option value="${e.id}">${e.nombre}${e.tipo?' ('+e.tipo+')':''}</option>`).join('')||'<option>Sin equipos activos</option>';
-  document.getElementById('horasFecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('horasFecha').value=hoyEcuador();
   document.getElementById('horasCantidad').value='';
   document.getElementById('horasOperador').value='';
   document.getElementById('horasObservacion').value='';
@@ -8599,7 +8605,7 @@ async function cargarCierreProyecto(puedeEditar){
 function abrirModalActa(tipo){
   window._actaTipo = tipo;
   document.getElementById('actaTituloModal').textContent = `Acta de recepción ${tipo}`;
-  document.getElementById('actaFecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('actaFecha').value = hoyEcuador();
   document.getElementById('actaLugar').value = '';
   document.getElementById('actaAsistentes').value = '';
   document.getElementById('actaObservaciones').value = '';
@@ -8958,11 +8964,10 @@ async function abrirModalNuevaPlanilla(){
   window._planillaNumero = numero;
   const spanNumero = document.getElementById('planNumero');
   if(spanNumero) spanNumero.textContent = numero;
-  // Fechas por defecto: mes actual
-  const hoy = new Date();
-  const primerDia = new Date(hoy.getFullYear(),hoy.getMonth(),1).toISOString().split('T')[0];
-  document.getElementById('planFechaInicio').value = primerDia;
-  document.getElementById('planFechaFin').value = hoy.toISOString().split('T')[0];
+  // Fechas por defecto: mes actual (zona horaria Ecuador)
+  const hoyEc = hoyEcuador();
+  document.getElementById('planFechaInicio').value = hoyEc.substring(0,8)+'01';
+  document.getElementById('planFechaFin').value = hoyEc;
   document.getElementById('planObservaciones').value='';
   document.getElementById('planArchivos').value='';
   document.getElementById('planRubrosTabla').innerHTML='<tr><td colspan="8" style="text-align:center;color:#676879;padding:20px">Selecciona las fechas y haz click en "Cargar rubros"</td></tr>';
@@ -9411,7 +9416,7 @@ async function confirmarAccionPlanilla(){
     estado: nuevoEstado,
     updated_at: new Date().toISOString(),
     ...(nuevoEstado==='aprobada'?{revisado_por:currentUser?.id}:{}),
-    ...(nuevoEstado==='pagada'?{aprobado_por:currentUser?.id, fecha_pago:new Date().toISOString().split('T')[0]}:{})
+    ...(nuevoEstado==='pagada'?{aprobado_por:currentUser?.id, fecha_pago:hoyEcuador()}:{})
   }).eq('id', window._planillaActiva.id);
 
   await sb.from('planilla_historial').insert({
@@ -11144,10 +11149,9 @@ function seleccionarTipoReporte(tipo){
 
 function abrirModalReporte(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
-  const hoy = new Date();
-  const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
-  document.getElementById('reporteFechaInicio').value = primerDia;
-  document.getElementById('reporteFechaFin').value = hoy.toISOString().split('T')[0];
+  const hoyEc = hoyEcuador();
+  document.getElementById('reporteFechaInicio').value = hoyEc.substring(0,8)+'01';
+  document.getElementById('reporteFechaFin').value = hoyEc;
   document.getElementById('rptNovedadesPeriodo').value = '';
   document.getElementById('rptActividadesSiguiente').value = '';
   seleccionarTipoReporte('cliente');

@@ -327,7 +327,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('proyectoFecha').textContent = hoy;
 
   // Fecha de hoy
-  document.getElementById('lFecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('lFecha').value = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(new Date());
 
   // Número de registro
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id', proyectoId);
