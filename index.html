@@ -3366,11 +3366,7 @@ async function calcularEstadosProyectos(lista){
         const cronMap = {};
         cron.forEach(c=>cronMap[c.rubro_id]=c);
 
-        // Replicar EXACTAMENTE renderCurvaS: pesoAuto = 100 / total rubros
-        const pesosDefinidos = rubros.filter(r=>cronMap[r.id]?.peso_pct!=null);
-        const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+(cronMap[r.id]?.peso_pct||0),0);
-        const sinPeso = rubros.filter(r=>cronMap[r.id]?.peso_pct==null);
-        const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/rubros.length) : 0;
+        // Ponderación por costo: peso = monto del rubro / monto total del proyecto
 
         let BCWP=0, BCWS=0, hayFechas=false;
         const hoy2 = new Date(); hoy2.setHours(0,0,0,0);
@@ -3378,7 +3374,7 @@ async function calcularEstadosProyectos(lista){
           const c = cronMap[r.id];
           if(!c||!c.fecha_inicio||!c.fecha_fin) return;
           hayFechas=true;
-          const pesoEfectivo = c.peso_pct!=null ? c.peso_pct : pesoAuto;
+          const pesoEfectivo = total>0 ? ((r.monto_contrato||0)/total*100) : 0;
           const avReal = r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0);
           const inicio = new Date(c.fecha_inicio+'T00:00:00');
           const fin = new Date(c.fecha_fin+'T00:00:00');
@@ -4793,8 +4789,8 @@ async function cargarCartera(){
 
   // Consultas en lote para toda la cartera
   const [rubR, cronR, planR, antR, garR, libR, obsR, solR] = await Promise.all([
-    sb.from('rubros').select('proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
-    sb.from('cronograma_rubros').select('proyecto_id,fecha_inicio,fecha_fin,peso_pct,linea_base_id').in('proyecto_id', ids),
+    sb.from('rubros').select('id,proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
+    sb.from('cronograma_rubros').select('proyecto_id,rubro_id,fecha_inicio,fecha_fin,linea_base_id').in('proyecto_id', ids),
     sb.from('planillas_pago').select('proyecto_id,total_monto,total_liquido,amortizacion_anticipo,estado').in('proyecto_id', ids),
     sb.from('contrato_anticipo').select('proyecto_id,monto').in('proyecto_id', ids),
     sb.from('garantias').select('proyecto_id,vigencia_hasta').eq('estado','vigente').in('proyecto_id', ids),
@@ -4810,12 +4806,15 @@ async function cargarCartera(){
 
   const porP = {};
   ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
-  (rubR.data||[]).forEach(r=>{ const p=porP[r.proyecto_id]; if(p){ p.vigente+=(r.monto_contrato||0); p.ejecutado+=(r.total_produccion||0); } });
+  const montoRubro = {};
+  (rubR.data||[]).forEach(r=>{ const p=porP[r.proyecto_id]; if(p){ p.vigente+=(r.monto_contrato||0); p.ejecutado+=(r.total_produccion||0); montoRubro[r.id]=(r.monto_contrato||0); } });
   (cronR.data||[]).forEach(c=>{
     const p = porP[c.proyecto_id]; if(!p||!c.fecha_inicio||!c.fecha_fin) return;
     const ini = new Date(c.fecha_inicio+'T00:00:00').getTime(), fin = new Date(c.fecha_fin+'T00:00:00').getTime();
     const frac = fin<=ini ? (hoyMs>=fin?1:0) : Math.max(0, Math.min(1, (hoyMs-ini)/(fin-ini)));
-    p.plan += (c.peso_pct||0) * frac;
+    // Ponderación por costo del rubro vs. monto vigente del proyecto
+    const peso = p.vigente>0 ? ((montoRubro[c.rubro_id]||0)/p.vigente*100) : 0;
+    p.plan += peso * frac;
   });
   (planR.data||[]).forEach(pl=>{
     const p = porP[pl.proyecto_id]; if(!p) return;
@@ -5666,15 +5665,10 @@ function renderCurvaS(proy){
 
   const totalMonto = cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
 
-  // Calcular pesos automáticos para los que no tienen definido
-  const pesosDefinidos = cronogramaData.filter(r=>r.peso!==null);
-  const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+r.peso,0);
-  const sinPeso = cronogramaData.filter(r=>r.peso===null);
-  const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
-
+  // Ponderación por costo: el peso de cada rubro es su monto vs. el total del proyecto
   const rubrosConPeso = cronogramaData.map(r=>({
     ...r,
-    pesoEfectivo: r.peso!==null ? r.peso : pesoAuto
+    pesoEfectivo: (r.monto_contrato||0)/totalMonto*100
   }));
 
   // Verificar si hay cronograma ingresado
@@ -12293,15 +12287,11 @@ async function generarReportePDF(){
   let curvaSDatos = null;
   if(incCurvaS){
     await cargarCurvaS();
-    // Replicar el cálculo de pesoEfectivo que normalmente hace renderCurvaS (pantalla),
-    // ya que aquí no se renderiza esa pantalla y por tanto cronogramaData no trae ese campo.
-    const pesosDefinidos = cronogramaData.filter(r=>r.peso!==null);
-    const sumaPesosDefinidos = pesosDefinidos.reduce((s,r)=>s+r.peso,0);
-    const sinPeso = cronogramaData.filter(r=>r.peso===null);
-    const pesoAuto = sinPeso.length>0 ? Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length) : 0;
+    // Ponderación por costo, igual que en pantalla
+    const totalMontoRep = cronogramaData.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
     const rubrosConPesoReporte = cronogramaData.map(r=>({
       ...r,
-      pesoEfectivo: r.peso!==null ? r.peso : pesoAuto
+      pesoEfectivo: (r.monto_contrato||0)/totalMontoRep*100
     }));
     curvaSDatos = calcularIndicadoresPuro(rubrosConPesoReporte, proy);
     curvaSDatos.imagenGrafico = await generarImagenGraficoCurvaS(rubrosConPesoReporte, curvaSModo);
