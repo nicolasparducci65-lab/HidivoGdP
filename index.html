@@ -490,6 +490,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         Formatos de Calidad
       </div>
+      <div class="nav-item" onclick="navTo('sso',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        SST / SSO
+      </div>
       <div class="nav-item" onclick="navTo('archivos',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Archivos
@@ -678,6 +682,11 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
       <!-- FORMATOS DE CALIDAD -->
       <div class="page" id="page-formatosCalidad">
         <div id="formatosCalidadContent"><div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Selecciona un proyecto</div></div></div>
+      </div>
+
+      <!-- SST / SSO -->
+      <div class="page" id="page-sso">
+        <div id="ssoContent"><div class="empty-state"><div class="empty-icon">🦺</div><div class="empty-title">Selecciona un proyecto</div></div></div>
       </div>
 
       <!-- MATERIALES -->
@@ -913,6 +922,9 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modFormatosCalidad" checked style="width:15px;height:15px;accent-color:#0073ea"/> ✅ Formatos de Calidad
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modSST" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🦺 SST / SSO
           </label>
         </div>
       </div>
@@ -3107,11 +3119,11 @@ async function actualizarRolEfectivo(proyectoId){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
+    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
 
@@ -3148,6 +3160,7 @@ function aplicarAccesosPorRol(rol){
     archivos:       document.querySelector('.nav-item[onclick*="archivos"]'),
     subcontratistas:document.querySelector('.nav-item[onclick*="subcontratistas"]'),
     formatosCalidad:document.querySelector('.nav-item[onclick*="formatosCalidad"]'),
+    sso:            document.querySelector('.nav-item[onclick*="sso"]'),
     chat:           document.querySelector('.nav-item[onclick*="chat"]'),
     usuarios:       document.getElementById('navUsuarios'),
     reportesGlobales: document.getElementById('navReportesGlobales')
@@ -3195,7 +3208,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -3207,7 +3220,7 @@ function navTo(page, btn){
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const btnOC = document.getElementById('btnOrdenesCambio');
   if(btnOC) btnOC.style.display = (page==='rubros' && currentProyecto && ['admin','fiscalizador'].includes(currentPerfil?.rol)) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','ensayos','equipos','materiales','archivos','subcontratistas','formatosCalidad'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','ensayos','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -3230,6 +3243,7 @@ function navTo(page, btn){
   if(page==='archivos'&&currentProyecto) cargarArchivosGlobal();
   if(page==='subcontratistas'&&currentProyecto) cargarSubcontratistas();
   if(page==='formatosCalidad'&&currentProyecto) cargarFormatosCalidad();
+  if(page==='sso'&&currentProyecto) cargarSST();
   if(page==='chat') { 
     cargarChat(); 
     setTimeout(cargarDMsChat, 300);
@@ -3615,11 +3629,11 @@ async function cambiarProyecto(id){
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','chat'],
+    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
   const permitidos = accesos[rol]||['dashboard'];
@@ -3635,6 +3649,7 @@ function aplicarModulosProyecto(modulos){
     materiales:       modulos?.materiales !== false,
     subcontratistas:  modulos?.subcontratistas !== false,
     formatosCalidad:  modulos?.formatosCalidad !== false,
+    sso:              modulos?.sst !== false,
   };
 
   const navItems = {
@@ -3647,6 +3662,7 @@ function aplicarModulosProyecto(modulos){
     materiales:      document.querySelector('.nav-item[onclick*="materiales"]'),
     subcontratistas: document.querySelector('.nav-item[onclick*="subcontratistas"]'),
     formatosCalidad: document.querySelector('.nav-item[onclick*="formatosCalidad"]'),
+    sso:             document.querySelector('.nav-item[onclick*="sso"]'),
   };
 
   Object.entries(navItems).forEach(([page, el])=>{
@@ -3700,6 +3716,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modSubcontratistas').checked = mods.subcontratistas !== false;
   document.getElementById('modFormatosCalidad').checked = mods.formatosCalidad !== false;
+  document.getElementById('modSST').checked = mods.sst !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
 
@@ -3737,6 +3754,7 @@ async function guardarProyecto(){
     materiales: document.getElementById('modMateriales').checked,
     subcontratistas: document.getElementById('modSubcontratistas').checked,
     formatosCalidad: document.getElementById('modFormatosCalidad').checked,
+    sst: document.getElementById('modSST').checked,
   };
   const data = {
     nombre: document.getElementById('pNombre').value.trim(),
@@ -12927,6 +12945,1007 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
 if(isIOS && !isStandalone){
   window.addEventListener('load', () => setTimeout(()=>mostrarBannerInstalar('ios'), 2000));
+}
+
+// ============================================================================
+// MÓDULO SST — Seguridad y Salud en el Trabajo (SSO)
+// Basado en: Decreto Ejecutivo 255/2024, Acuerdo Ministerial MDT-2024-196
+// (+ Anexo 1 Lista de Verificación, Anexo 3 Norma Técnica), Acuerdo
+// Ministerial MDT-2025-122, C.D. 513 y C.D. 677 del IESS.
+// ============================================================================
+
+// ── Estado del módulo ──
+let sstTab = 'config';
+let sstEppSubtab = 'matriz';
+let sstConfigActual = null;
+let sstChecklistModo = 'autoevaluacion'; // 'autoevaluacion' | 'auditoria'
+let sstChecklistRespuestasCache = {}; // { [itemCodigo]: {respuesta, observacion} }
+let sstCache = { riesgos:[], eppMatriz:[], eppEntregas:[], capacitaciones:[], incidentes:[] };
+
+// ── Helpers generales del módulo ──
+
+function modalSST(id, titulo, bodyHtml, footerHtml, anchoMax){
+  let modal = document.getElementById(id);
+  if(modal) modal.remove();
+  modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = id;
+  modal.innerHTML = `<div class="modal" style="${anchoMax?`max-width:${anchoMax}px;width:${anchoMax}px`:''}">
+    <div class="modal-header">
+      <div class="modal-title">${titulo}</div>
+      <button class="btn" onclick="cerrarModal('${id}')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">${bodyHtml}</div>
+    <div class="modal-footer">${footerHtml}</div>
+  </div>`;
+  document.body.appendChild(modal);
+  requestAnimationFrame(()=>modal.classList.add('show'));
+  return modal;
+}
+
+function sstPuedeGestionar(){
+  return ['admin','fiscalizador','residente'].includes(currentPerfil?.rol);
+}
+function sstPuedeEliminar(){
+  return ['admin','fiscalizador'].includes(currentPerfil?.rol);
+}
+
+// Suma N días hábiles (lun-vie) a una fecha (string 'YYYY-MM-DD' o Date) — usado
+// para el plazo legal de aviso de accidente/enfermedad presuntiva al IESS (10
+// días hábiles, C.D. 513 Art. 44-45).
+function sumarDiasHabiles(fechaBase, dias){
+  const d = new Date(fechaBase);
+  let restantes = dias;
+  while(restantes > 0){
+    d.setDate(d.getDate()+1);
+    const dow = d.getDay();
+    if(dow!==0 && dow!==6) restantes--;
+  }
+  return d;
+}
+
+function sstNivelRiesgo(probabilidad, consecuencia){
+  const pMap = {baja:1, media:2, alta:3};
+  const cMap = {leve:1, grave:2, muy_grave:3};
+  const p = pMap[probabilidad]||1, c = cMap[consecuencia]||1;
+  const score = p*c;
+  if(score>=6) return {label:'Intolerable', color:'#e2445c'};
+  if(score>=4) return {label:'Importante', color:'#ff9f00'};
+  if(score>=2) return {label:'Moderado', color:'#fdab3d'};
+  return {label:'Tolerable', color:'#00c875'};
+}
+
+function sstBadgePlazo(fechaLimite, cumplido){
+  if(cumplido) return `<span style="background:#00c87520;color:#00c875;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">✅ Reportado</span>`;
+  if(!fechaLimite) return '';
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const lim = new Date(fechaLimite+'T00:00:00');
+  const diasRestantes = Math.round((lim-hoy)/86400000);
+  if(diasRestantes < 0) return `<span style="background:#e2445c20;color:#e2445c;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">⛔ Plazo IESS vencido</span>`;
+  if(diasRestantes <= 2) return `<span style="background:#ff9f0020;color:#ff9f00;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">⚠️ Vence en ${diasRestantes}d</span>`;
+  return `<span style="background:#0073ea20;color:#0073ea;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">Plazo: ${formatFecha(fechaLimite)}</span>`;
+}
+
+async function subirFotoSST(file, subtipo, registroId){
+  if(!file) return null;
+  const ext = file.name.split('.').pop();
+  const path = `sst/${subtipo}/${registroId}/${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type});
+  if(error){ toast('Error al subir foto: '+error.message,'error'); return null; }
+  const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+  return urlData.publicUrl;
+}
+
+// ── Entrada del módulo (llamada desde navTo cuando page==='sso') ──
+async function cargarSST(){
+  const { data: config } = await sb.from('sst_config').select('*').eq('proyecto_id',currentProyecto).maybeSingle();
+  sstConfigActual = config||null;
+  renderSSTShell();
+}
+
+function renderSSTShell(){
+  const cont = document.getElementById('ssoContent');
+  if(!cont) return;
+  const tabs = [
+    ['config','⚙️ Configuración'],
+    ['matriz','⚠️ Matriz de riesgos'],
+    ['epp','🦺 EPP'],
+    ['capacitaciones','🎓 Capacitaciones'],
+    ['incidentes','🚑 Accidentes/Incidentes'],
+    ['checklist','📋 Checklist Anexo 1'],
+    ['dashboard','📊 Cumplimiento'],
+  ];
+  cont.innerHTML = `
+  <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap;margin-bottom:16px">
+    ${tabs.map(([id,label])=>`<button onclick="switchSSTTab('${id}')" class="btn ${sstTab===id?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">${label}</button>`).join('')}
+  </div>
+  <div id="sstBody"></div>`;
+  renderSSTTabBody();
+}
+
+function switchSSTTab(tab){
+  sstTab = tab;
+  renderSSTShell();
+}
+
+function renderSSTTabBody(){
+  if(!sstConfigActual && sstTab!=='config'){
+    document.getElementById('sstBody').innerHTML = `<div class="empty-state"><div class="empty-icon">⚙️</div><div class="empty-title">Configura primero el proyecto</div><div class="empty-sub">Antes de usar los demás módulos SST, define el nº de trabajadores y el tipo de gestión en la pestaña Configuración.</div><button class="btn primary" onclick="switchSSTTab('config')">Ir a Configuración</button></div>`;
+    return;
+  }
+  if(sstTab==='config') renderSSTConfig();
+  else if(sstTab==='matriz') cargarMatrizRiesgos();
+  else if(sstTab==='epp') renderSSTEppShell();
+  else if(sstTab==='capacitaciones') cargarCapacitaciones();
+  else if(sstTab==='incidentes') cargarIncidentes();
+  else if(sstTab==='checklist') cargarChecklist();
+  else if(sstTab==='dashboard') cargarSSTDashboard();
+}
+
+// ============================================================================
+// CONFIGURACIÓN SST DEL PROYECTO
+// ============================================================================
+
+function sstCalcularSugerencia(numTrab){
+  if(!numTrab || numTrab<1) return null;
+  const representacion = numTrab>=50 ? 'comite' : numTrab>=10 ? 'delegado' : 'participacion_directa';
+  const representacionLabel = {comite:'Comité paritario de SST (3 titulares + 3 suplentes por bando)', delegado:'Delegado de SST', participacion_directa:'Participación directa de los trabajadores'}[representacion];
+  return { representacion, representacionLabel };
+}
+
+function renderSSTConfig(){
+  const c = sstConfigActual||{};
+  const sugerencia = sstCalcularSugerencia(c.num_trabajadores);
+  const puedeEditar = sstPuedeGestionar();
+  const grupos = c.grupos_atencion_prioritaria||[];
+  const gruposDef = [
+    ['embarazadas','Mujeres embarazadas'],['lactancia','Mujeres en período de lactancia'],
+    ['adultos_mayores','Adultos mayores'],['discapacidad','Personas con discapacidad'],
+    ['enfermedades_catastroficas','Enfermedades catastróficas/alta complejidad'],['adolescentes','Adolescentes (15-17 años)']
+  ];
+  document.getElementById('sstBody').innerHTML = `
+  <div class="card">
+    <div class="card-header"><div><div class="card-title">Configuración SST del proyecto</div><div class="card-subtitle">Determina qué exige la ley según el tamaño de la obra y quién es responsable de gestionarlo</div></div></div>
+    <div style="padding:20px">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tipo de gestión de este proyecto</label>
+          <select class="form-control" id="sstTipoGestion" ${puedeEditar?'':'disabled'}>
+            <option value="propia" ${c.tipo_gestion!=='fiscalizacion'?'selected':''}>Obra propia (HIDIVO/el contratista gestiona todo el ciclo SST)</option>
+            <option value="fiscalizacion" ${c.tipo_gestion==='fiscalizacion'?'selected':''}>Solo fiscalización (un constructor externo carga sus registros; nosotros verificamos)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">N° de trabajadores en el centro de obra</label>
+          <input type="number" class="form-control" id="sstNumTrabajadores" min="1" value="${c.num_trabajadores||''}" ${puedeEditar?'':'disabled'} onchange="renderSSTConfigSugerencia()"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Hombres</label><input type="number" class="form-control" id="sstNumHombres" min="0" value="${c.num_hombres||0}" ${puedeEditar?'':'disabled'}/></div>
+        <div class="form-group"><label class="form-label">Mujeres</label><input type="number" class="form-control" id="sstNumMujeres" min="0" value="${c.num_mujeres||0}" ${puedeEditar?'':'disabled'}/></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Grupos de atención prioritaria presentes en obra</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          ${gruposDef.map(([id,label])=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" class="sstGrupoPrioritario" value="${id}" ${grupos.includes(id)?'checked':''} ${puedeEditar?'':'disabled'} style="width:15px;height:15px;accent-color:#0073ea"/> ${label}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Responsable de SST designado</label>
+          <select class="form-control" id="sstResponsableTipo" ${puedeEditar?'':'disabled'}>
+            <option value="">Sin designar</option>
+            <option value="monitor" ${c.responsable_sst_tipo==='monitor'?'selected':''}>Monitor de Seguridad e Higiene</option>
+            <option value="tecnico" ${c.responsable_sst_tipo==='tecnico'?'selected':''}>Técnico de Seguridad e Higiene</option>
+            <option value="servicio_externo" ${c.responsable_sst_tipo==='servicio_externo'?'selected':''}>Servicio externo de SST</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre del responsable</label>
+          <input type="text" class="form-control" id="sstResponsableNombre" value="${escAttr(c.responsable_sst_nombre||'')}" ${puedeEditar?'':'disabled'}/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Médico ocupacional (si aplica)</label>
+          <input type="text" class="form-control" id="sstMedicoNombre" value="${escAttr(c.medico_ocupacional_nombre||'')}" ${puedeEditar?'':'disabled'}/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Representación de trabajadores implementada</label>
+          <select class="form-control" id="sstRepresentacion" ${puedeEditar?'':'disabled'}>
+            <option value="">Sin definir</option>
+            <option value="participacion_directa" ${c.representacion_tipo==='participacion_directa'?'selected':''}>Participación directa</option>
+            <option value="delegado" ${c.representacion_tipo==='delegado'?'selected':''}>Delegado de SST</option>
+            <option value="comite" ${c.representacion_tipo==='comite'?'selected':''}>Comité paritario</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:16px">
+        <input type="checkbox" id="sstRegistradoSut" ${c.registrado_sut?'checked':''} ${puedeEditar?'':'disabled'} style="width:15px;height:15px;accent-color:#0073ea"/> Ya registrado en la plataforma SUT del Ministerio del Trabajo
+      </label>
+      <div id="sstSugerenciaBox"></div>
+      ${puedeEditar?`<button class="btn primary" onclick="guardarSSTConfig()">💾 Guardar configuración</button>`:''}
+    </div>
+  </div>`;
+  renderSSTConfigSugerencia();
+}
+
+function renderSSTConfigSugerencia(){
+  const box = document.getElementById('sstSugerenciaBox');
+  if(!box) return;
+  const num = parseInt(document.getElementById('sstNumTrabajadores')?.value)||0;
+  const sug = sstCalcularSugerencia(num);
+  if(!sug){ box.innerHTML=''; return; }
+  box.innerHTML = `<div style="background:#f0f7ff;border:1px solid #b3d7ff;border-radius:8px;padding:14px;margin-bottom:16px;font-size:12.5px;color:#323338">
+    <div style="font-weight:700;margin-bottom:6px">📖 Sugerencia según normativa (referencial — verifica el detalle exacto en Decreto 255 Art. 18-39 y Acuerdo 122 Art. 22-24)</div>
+    <div>• Representación de trabajadores sugerida para ${num} trabajador(es): <b>${sug.representacionLabel}</b>.</div>
+    <div>• Construcción es actividad de alto riesgo: normalmente se exige <b>Técnico de Seguridad e Higiene</b> (no solo monitor), independientemente del tamaño de la obra.</div>
+    <div style="margin-top:6px;color:#676879">Esto es una guía interna, no un cálculo oficial certificado — confirma las horas mínimas de gestión y la obligatoriedad exacta con la tabla vigente del MDT antes de registrar en la plataforma SUT.</div>
+  </div>`;
+}
+
+async function guardarSSTConfig(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const grupos = Array.from(document.querySelectorAll('.sstGrupoPrioritario:checked')).map(el=>el.value);
+  const payload = {
+    proyecto_id: currentProyecto,
+    tipo_gestion: document.getElementById('sstTipoGestion').value,
+    num_trabajadores: parseInt(document.getElementById('sstNumTrabajadores').value)||null,
+    num_hombres: parseInt(document.getElementById('sstNumHombres').value)||0,
+    num_mujeres: parseInt(document.getElementById('sstNumMujeres').value)||0,
+    grupos_atencion_prioritaria: grupos,
+    responsable_sst_tipo: document.getElementById('sstResponsableTipo').value||null,
+    responsable_sst_nombre: document.getElementById('sstResponsableNombre').value.trim()||null,
+    medico_ocupacional_nombre: document.getElementById('sstMedicoNombre').value.trim()||null,
+    representacion_tipo: document.getElementById('sstRepresentacion').value||null,
+    registrado_sut: document.getElementById('sstRegistradoSut').checked,
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await sb.from('sst_config').upsert(payload, {onConflict:'proyecto_id'});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Configuración SST guardada ✓','success');
+  await cargarSST();
+}
+
+// ============================================================================
+// MATRIZ DE RIESGOS POR PUESTO DE TRABAJO
+// ============================================================================
+
+async function cargarMatrizRiesgos(){
+  const { data } = await sb.from('sst_matriz_riesgos').select('*').eq('proyecto_id',currentProyecto).order('created_at',{ascending:false});
+  sstCache.riesgos = data||[];
+  renderMatrizRiesgos();
+}
+
+function renderMatrizRiesgos(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar();
+  const puedeBorrar = sstPuedeEliminar();
+  const lista = sstCache.riesgos;
+  el.innerHTML = `
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    ${puedeEditar?`<button class="btn primary" onclick="abrirModalRiesgo()">➕ Nuevo riesgo</button>`:''}
+  </div>
+  ${!lista.length?`<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Sin riesgos registrados</div><div class="empty-sub">Identifica los peligros por puesto de trabajo (Decreto 255 Art. 27-28)</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr><th>Puesto</th><th>Peligro</th><th>Tipo</th><th>Nivel de riesgo</th><th>Control (jerarquía)</th><th>Riesgo residual</th><th></th></tr></thead>
+    <tbody>${lista.map(r=>{
+      const nivel = sstNivelRiesgo(r.probabilidad, r.consecuencia);
+      return `<tr>
+        <td style="font-weight:600">${escapeHtml(r.puesto)}<div style="font-size:11px;color:#676879;font-weight:400">${r.num_expuestos||1} expuesto(s)</div></td>
+        <td>${escapeHtml(r.peligro||'')}</td>
+        <td style="text-transform:capitalize">${r.tipo_riesgo||'—'}</td>
+        <td><span style="background:${nivel.color}20;color:${nivel.color};padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">${nivel.label}</span></td>
+        <td style="text-transform:capitalize;font-size:12px">${(r.jerarquia_control||'').replace('_',' ')||'—'}</td>
+        <td style="font-size:12px">${r.riesgo_residual||'—'}</td>
+        <td style="white-space:nowrap">
+          ${puedeEditar?`<button onclick='abrirModalRiesgo(${JSON.stringify(r).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+          ${puedeBorrar?`<button onclick="eliminarRiesgo('${r.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div></div>`}`;
+}
+
+function abrirModalRiesgo(r){
+  r = r||{};
+  const body = `
+    <input type="hidden" id="rId" value="${r.id||''}"/>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Puesto de trabajo *</label><input type="text" class="form-control" id="rPuesto" value="${escAttr(r.puesto||'')}"/></div>
+      <div class="form-group"><label class="form-label">N° trabajadores expuestos</label><input type="number" class="form-control" id="rNumExpuestos" min="1" value="${r.num_expuestos||1}"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">Actividades del puesto</label><textarea class="form-control" id="rActividades">${escapeHtml(r.actividades||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Tipo de riesgo</label>
+        <select class="form-control" id="rTipoRiesgo">
+          ${['fisico','quimico','biologico','ergonomico','psicosocial','mecanico','locativo','electrico'].map(t=>`<option value="${t}" ${r.tipo_riesgo===t?'selected':''}>${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Peligro identificado *</label><input type="text" class="form-control" id="rPeligro" value="${escAttr(r.peligro||'')}" placeholder="Ej: caída a distinto nivel, ruido, manipulación manual de cargas..."/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Probabilidad</label>
+        <select class="form-control" id="rProbabilidad">${['baja','media','alta'].map(p=>`<option value="${p}" ${r.probabilidad===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label class="form-label">Consecuencia</label>
+        <select class="form-control" id="rConsecuencia">${['leve','grave','muy_grave'].map(c=>`<option value="${c}" ${r.consecuencia===c?'selected':''}>${c.replace('_',' ')}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Jerarquía de control aplicada</label>
+      <select class="form-control" id="rJerarquia">
+        ${[['eliminacion','Eliminación'],['sustitucion','Sustitución'],['ing','Control de ingeniería'],['administrativo','Control administrativo'],['epp','EPP']].map(([v,l])=>`<option value="${v}" ${r.jerarquia_control===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Medidas de control / prevención</label><textarea class="form-control" id="rMedidas">${escapeHtml(r.medidas_control||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Riesgo residual</label><input type="text" class="form-control" id="rResidual" value="${escAttr(r.riesgo_residual||'')}"/></div>
+      <div class="form-group"><label class="form-label">Fecha de evaluación</label><input type="date" class="form-control" id="rFecha" value="${r.fecha_evaluacion||new Date().toISOString().split('T')[0]}"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">Evaluado por</label><input type="text" class="form-control" id="rEvaluador" value="${escAttr(r.evaluado_por||'')}"/></div>
+  `;
+  const footer = `<button class="btn" onclick="cerrarModal('modalRiesgo')">Cancelar</button><button class="btn primary" onclick="guardarRiesgo()">Guardar</button>`;
+  modalSST('modalRiesgo', r.id?'✏️ Editar riesgo':'➕ Nuevo riesgo', body, footer, 640);
+}
+
+async function guardarRiesgo(){
+  const id = document.getElementById('rId').value;
+  const puesto = document.getElementById('rPuesto').value.trim();
+  const peligro = document.getElementById('rPeligro').value.trim();
+  if(!puesto||!peligro){ toast('Puesto y peligro son obligatorios','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto,
+    puesto, peligro,
+    num_expuestos: parseInt(document.getElementById('rNumExpuestos').value)||1,
+    actividades: document.getElementById('rActividades').value.trim()||null,
+    tipo_riesgo: document.getElementById('rTipoRiesgo').value,
+    probabilidad: document.getElementById('rProbabilidad').value,
+    consecuencia: document.getElementById('rConsecuencia').value,
+    jerarquia_control: document.getElementById('rJerarquia').value,
+    medidas_control: document.getElementById('rMedidas').value.trim()||null,
+    riesgo_residual: document.getElementById('rResidual').value.trim()||null,
+    fecha_evaluacion: document.getElementById('rFecha').value||null,
+    evaluado_por: document.getElementById('rEvaluador').value.trim()||null,
+    updated_at: new Date().toISOString()
+  };
+  const {error} = id ? await sb.from('sst_matriz_riesgos').update(payload).eq('id',id)
+                      : await sb.from('sst_matriz_riesgos').insert({...payload, created_by:currentUser?.id});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Riesgo actualizado':'Riesgo registrado','success');
+  cerrarModal('modalRiesgo');
+  cargarMatrizRiesgos();
+}
+
+async function eliminarRiesgo(id){
+  if(!confirm('¿Eliminar este registro de la matriz de riesgos?')) return;
+  const {error} = await sb.from('sst_matriz_riesgos').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success');
+  cargarMatrizRiesgos();
+}
+
+// ============================================================================
+// EPP — MATRIZ + ENTREGA/RECEPCIÓN
+// ============================================================================
+
+function renderSSTEppShell(){
+  const el = document.getElementById('sstBody');
+  el.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="switchSSTEppTab('matriz')" class="btn ${sstEppSubtab==='matriz'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">Matriz de EPP</button>
+      <button onclick="switchSSTEppTab('entregas')" class="btn ${sstEppSubtab==='entregas'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">Entregas</button>
+    </div>
+  </div>
+  <div id="sstEppBody"></div>`;
+  if(sstEppSubtab==='matriz') cargarEPPMatriz();
+  else cargarEPPEntregas();
+}
+function switchSSTEppTab(tab){ sstEppSubtab=tab; renderSSTEppShell(); }
+
+async function cargarEPPMatriz(){
+  const { data } = await sb.from('sst_epp_matriz').select('*').eq('proyecto_id',currentProyecto).order('created_at',{ascending:false});
+  sstCache.eppMatriz = data||[];
+  const el = document.getElementById('sstEppBody');
+  if(!el) return; // el usuario cambió de pestaña antes de que terminara de cargar
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalEPPMatriz()">➕ Nuevo ítem</button>`:''}</div>
+  ${!sstCache.eppMatriz.length?`<div class="empty-state"><div class="empty-icon">🦺</div><div class="empty-title">Sin matriz de EPP</div><div class="empty-sub">Define qué EPP corresponde a cada puesto</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Puesto</th><th>Riesgo asociado</th><th>EPP requerido</th><th>Especificación</th><th>Reposición</th><th></th></tr></thead>
+  <tbody>${sstCache.eppMatriz.map(x=>`<tr>
+    <td style="font-weight:600">${escapeHtml(x.puesto)}</td><td>${escapeHtml(x.riesgo_asociado||'')}</td>
+    <td>${escapeHtml(x.epp_requerido)}</td><td style="font-size:12px">${escapeHtml(x.especificacion_tecnica||'')}</td>
+    <td style="font-size:12px">${escapeHtml(x.frecuencia_reposicion||'')}</td>
+    <td style="white-space:nowrap">
+      ${puedeEditar?`<button onclick='abrirModalEPPMatriz(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${puedeBorrar?`<button onclick="eliminarEPPMatriz('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+    </td></tr>`).join('')}</tbody></table></div></div>`}`;
+}
+
+function abrirModalEPPMatriz(x){
+  x=x||{};
+  const body = `<input type="hidden" id="emId" value="${x.id||''}"/>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Puesto *</label><input type="text" class="form-control" id="emPuesto" value="${escAttr(x.puesto||'')}"/></div>
+    <div class="form-group"><label class="form-label">Riesgo asociado</label><input type="text" class="form-control" id="emRiesgo" value="${escAttr(x.riesgo_asociado||'')}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">EPP requerido *</label><input type="text" class="form-control" id="emEpp" value="${escAttr(x.epp_requerido||'')}" placeholder="Ej: casco, arnés, gafas, guantes..."/></div>
+  <div class="form-group"><label class="form-label">Especificación técnica</label><textarea class="form-control" id="emEspec">${escapeHtml(x.especificacion_tecnica||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">Frecuencia de reposición</label><input type="text" class="form-control" id="emFrecuencia" value="${escAttr(x.frecuencia_reposicion||'')}" placeholder="Ej: cada 6 meses, según desgaste..."/></div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalEppMatriz')">Cancelar</button><button class="btn primary" onclick="guardarEPPMatriz()">Guardar</button>`;
+  modalSST('modalEppMatriz', x.id?'✏️ Editar ítem de EPP':'➕ Nuevo ítem de EPP', body, footer, 600);
+}
+
+async function guardarEPPMatriz(){
+  const id = document.getElementById('emId').value;
+  const puesto = document.getElementById('emPuesto').value.trim();
+  const epp = document.getElementById('emEpp').value.trim();
+  if(!puesto||!epp){ toast('Puesto y EPP requerido son obligatorios','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto, puesto, epp_requerido: epp,
+    riesgo_asociado: document.getElementById('emRiesgo').value.trim()||null,
+    especificacion_tecnica: document.getElementById('emEspec').value.trim()||null,
+    frecuencia_reposicion: document.getElementById('emFrecuencia').value.trim()||null
+  };
+  const {error} = id ? await sb.from('sst_epp_matriz').update(payload).eq('id',id) : await sb.from('sst_epp_matriz').insert(payload);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Guardado','success'); cerrarModal('modalEppMatriz'); cargarEPPMatriz();
+}
+async function eliminarEPPMatriz(id){
+  if(!confirm('¿Eliminar este ítem de la matriz de EPP?')) return;
+  const {error} = await sb.from('sst_epp_matriz').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarEPPMatriz();
+}
+
+async function cargarEPPEntregas(){
+  const { data } = await sb.from('sst_epp_entregas').select('*').eq('proyecto_id',currentProyecto).order('fecha_entrega',{ascending:false});
+  sstCache.eppEntregas = data||[];
+  const el = document.getElementById('sstEppBody');
+  if(!el) return; // el usuario cambió de pestaña antes de que terminara de cargar
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalEPPEntrega()">➕ Registrar entrega</button>`:''}</div>
+  ${!sstCache.eppEntregas.length?`<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin entregas registradas</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Puesto</th><th>EPP entregado</th><th>Confirmación</th><th>Evidencia</th><th></th></tr></thead>
+  <tbody>${sstCache.eppEntregas.map(x=>`<tr>
+    <td>${formatFecha(x.fecha_entrega)}</td>
+    <td style="font-weight:600">${escapeHtml(x.trabajador_nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${escapeHtml(x.trabajador_cedula||'')}</div></td>
+    <td>${escapeHtml(x.puesto||'')}</td><td>${escapeHtml(x.detalle_epp)}</td>
+    <td>${x.confirmado_trabajador?'<span style="color:#00c875;font-weight:600">✅ Confirmado</span>':'<span style="color:#ff9f00">Pendiente</span>'}</td>
+    <td>${x.foto_url?`<a href="${x.foto_url}" target="_blank">📷 ver</a>`:'—'}</td>
+    <td style="white-space:nowrap">${puedeBorrar?`<button onclick="eliminarEPPEntrega('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}</td>
+  </tr>`).join('')}</tbody></table></div></div>`}`;
+}
+
+function abrirModalEPPEntrega(){
+  const body = `
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Trabajador *</label><input type="text" class="form-control" id="eeNombre"/></div>
+    <div class="form-group"><label class="form-label">Cédula</label><input type="text" class="form-control" id="eeCedula"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Puesto</label><input type="text" class="form-control" id="eePuesto"/></div>
+    <div class="form-group"><label class="form-label">Fecha de entrega</label><input type="date" class="form-control" id="eeFecha" value="${new Date().toISOString().split('T')[0]}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Detalle del EPP entregado *</label><textarea class="form-control" id="eeDetalle" placeholder="Ej: casco, arnés, botas punta de acero..."></textarea></div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:14px"><input type="checkbox" id="eeConfirmado" style="width:15px;height:15px;accent-color:#0073ea"/> El trabajador confirma la recepción (firma electrónica de conformidad)</label>
+  <div class="form-group"><label class="form-label">Evidencia fotográfica</label><input type="file" accept="image/*" class="form-control" id="eeFoto"/></div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalEppEntrega')">Cancelar</button><button class="btn primary" onclick="guardarEPPEntrega()">Guardar</button>`;
+  modalSST('modalEppEntrega', '➕ Registrar entrega de EPP', body, footer, 600);
+}
+
+async function guardarEPPEntrega(){
+  const nombre = document.getElementById('eeNombre').value.trim();
+  const detalle = document.getElementById('eeDetalle').value.trim();
+  if(!nombre||!detalle){ toast('Trabajador y detalle de EPP son obligatorios','error'); return; }
+  const btn = document.querySelector('#modalEppEntrega .btn.primary'); btn.disabled=true; btn.textContent='Guardando...';
+  const payload = {
+    proyecto_id: currentProyecto, trabajador_nombre: nombre,
+    trabajador_cedula: document.getElementById('eeCedula').value.trim()||null,
+    puesto: document.getElementById('eePuesto').value.trim()||null,
+    fecha_entrega: document.getElementById('eeFecha').value||new Date().toISOString().split('T')[0],
+    detalle_epp: detalle,
+    confirmado_trabajador: document.getElementById('eeConfirmado').checked,
+    registrado_por: currentUser?.id
+  };
+  const { data:nuevo, error } = await sb.from('sst_epp_entregas').insert(payload).select().single();
+  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  const file = document.getElementById('eeFoto').files[0];
+  if(file){
+    const url = await subirFotoSST(file,'epp',nuevo.id);
+    if(url) await sb.from('sst_epp_entregas').update({foto_url:url}).eq('id',nuevo.id);
+  }
+  toast('Entrega registrada ✓','success');
+  cerrarModal('modalEppEntrega');
+  cargarEPPEntregas();
+}
+async function eliminarEPPEntrega(id){
+  if(!confirm('¿Eliminar este registro de entrega?')) return;
+  const {error} = await sb.from('sst_epp_entregas').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarEPPEntregas();
+}
+
+// ============================================================================
+// CAPACITACIONES E INDUCCIONES
+// ============================================================================
+
+async function cargarCapacitaciones(){
+  const { data } = await sb.from('sst_capacitaciones').select('*, asistentes:sst_capacitacion_asistentes(id)').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false});
+  sstCache.capacitaciones = data||[];
+  renderCapacitaciones();
+}
+
+function renderCapacitaciones(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  const tipoLabel = {induccion:'🆕 Inducción', reinduccion:'🔁 Re-inducción', capacitacion:'🎓 Capacitación', simulacro:'🚨 Simulacro'};
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalCapacitacion()">➕ Nueva capacitación</button>`:''}</div>
+  ${!sstCache.capacitaciones.length?`<div class="empty-state"><div class="empty-icon">🎓</div><div class="empty-title">Sin capacitaciones registradas</div></div>`:
+  `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+  ${sstCache.capacitaciones.map(c=>`<div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div><div style="font-weight:700;font-size:14px">${escapeHtml(c.tema)}</div><div style="font-size:11px;color:#676879">${formatFecha(c.fecha)} · ${c.duracion_horas||'—'}h</div></div>
+      <span style="font-size:11px;background:#f5f6f8;padding:3px 8px;border-radius:20px">${tipoLabel[c.tipo]||c.tipo}</span>
+    </div>
+    <div style="font-size:12px;color:#676879;margin-bottom:10px">👤 ${escapeHtml(c.responsable||'—')} · 👥 ${c.asistentes?.length||0} asistente(s)</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="abrirModalAsistentes('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px">👥 Asistentes</button>
+      ${puedeEditar?`<button onclick='abrirModalCapacitacion(${JSON.stringify(c).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${puedeBorrar?`<button onclick="eliminarCapacitacion('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+    </div>
+  </div>`).join('')}
+  </div>`}`;
+}
+
+function abrirModalCapacitacion(c){
+  c=c||{};
+  const body = `<input type="hidden" id="cpId" value="${c.id||''}"/>
+  <div class="form-group"><label class="form-label">Tema *</label><input type="text" class="form-control" id="cpTema" value="${escAttr(c.tema||'')}"/></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Tipo</label>
+      <select class="form-control" id="cpTipo">${[['induccion','Inducción'],['reinduccion','Re-inducción'],['capacitacion','Capacitación'],['simulacro','Simulacro']].map(([v,l])=>`<option value="${v}" ${c.tipo===v?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label class="form-label">Fecha</label><input type="date" class="form-control" id="cpFecha" value="${c.fecha||new Date().toISOString().split('T')[0]}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Duración (horas)</label><input type="number" step="0.5" class="form-control" id="cpDuracion" value="${c.duracion_horas||''}"/></div>
+    <div class="form-group"><label class="form-label">Responsable</label><input type="text" class="form-control" id="cpResponsable" value="${escAttr(c.responsable||'')}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Metodología</label><textarea class="form-control" id="cpMetodologia">${escapeHtml(c.metodologia||'')}</textarea></div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalCapacitacion')">Cancelar</button><button class="btn primary" onclick="guardarCapacitacion()">Guardar</button>`;
+  modalSST('modalCapacitacion', c.id?'✏️ Editar capacitación':'➕ Nueva capacitación', body, footer, 600);
+}
+
+async function guardarCapacitacion(){
+  const id = document.getElementById('cpId').value;
+  const tema = document.getElementById('cpTema').value.trim();
+  if(!tema){ toast('El tema es obligatorio','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto, tema,
+    tipo: document.getElementById('cpTipo').value,
+    fecha: document.getElementById('cpFecha').value,
+    duracion_horas: parseFloat(document.getElementById('cpDuracion').value)||null,
+    responsable: document.getElementById('cpResponsable').value.trim()||null,
+    metodologia: document.getElementById('cpMetodologia').value.trim()||null
+  };
+  const {error} = id ? await sb.from('sst_capacitaciones').update(payload).eq('id',id) : await sb.from('sst_capacitaciones').insert({...payload, created_by:currentUser?.id});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Actualizado':'Capacitación creada','success'); cerrarModal('modalCapacitacion'); cargarCapacitaciones();
+}
+async function eliminarCapacitacion(id){
+  if(!confirm('¿Eliminar esta capacitación y su lista de asistentes?')) return;
+  await sb.from('sst_capacitacion_asistentes').delete().eq('capacitacion_id',id);
+  const {error} = await sb.from('sst_capacitaciones').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarCapacitaciones();
+}
+
+async function abrirModalAsistentes(capacitacionId){
+  const { data: asistentes } = await sb.from('sst_capacitacion_asistentes').select('*').eq('capacitacion_id',capacitacionId).order('created_at');
+  const cap = sstCache.capacitaciones.find(c=>c.id===capacitacionId);
+  const body = `
+  <div id="asistentesLista">${renderFilasAsistentes(asistentes||[])}</div>
+  <button class="btn" style="margin-top:8px" onclick="agregarFilaAsistente()">➕ Agregar asistente</button>
+  <input type="hidden" id="asCapacitacionId" value="${capacitacionId}"/>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalAsistentes')">Cerrar</button><button class="btn primary" onclick="guardarAsistentes()">💾 Guardar lista</button>`;
+  modalSST('modalAsistentes', `👥 Asistentes — ${escapeHtml(cap?.tema||'')}`, body, footer, 640);
+}
+
+function renderFilasAsistentes(lista){
+  if(!lista.length) return '<div style="color:#676879;font-size:12px;margin-bottom:8px">Sin asistentes aún</div>';
+  return lista.map(a=>`<div class="filaAsistente" data-id="${a.id}" style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:6px;margin-bottom:6px;align-items:center">
+    <input type="text" class="form-control asNombre" placeholder="Nombre" value="${escAttr(a.nombre)}" style="padding:6px 8px;font-size:12px">
+    <input type="text" class="form-control asCedula" placeholder="Cédula" value="${escAttr(a.cedula||'')}" style="padding:6px 8px;font-size:12px">
+    <input type="text" class="form-control asPuesto" placeholder="Puesto" value="${escAttr(a.puesto||'')}" style="padding:6px 8px;font-size:12px">
+    <label style="font-size:11px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="asFirma" ${a.firma_confirmada?'checked':''}/> Firmó</label>
+    <button onclick="this.closest('.filaAsistente').remove()" style="background:none;border:none;color:#e2445c;cursor:pointer">🗑</button>
+  </div>`).join('');
+}
+
+function agregarFilaAsistente(){
+  const cont = document.getElementById('asistentesLista');
+  if(cont.querySelector('div[style*="color:#676879"]')) cont.innerHTML='';
+  cont.insertAdjacentHTML('beforeend', renderFilasAsistentes([{id:'',nombre:'',cedula:'',puesto:'',firma_confirmada:false}]));
+}
+
+async function guardarAsistentes(){
+  const capacitacionId = document.getElementById('asCapacitacionId').value;
+  const filas = document.querySelectorAll('#asistentesLista .filaAsistente');
+  await sb.from('sst_capacitacion_asistentes').delete().eq('capacitacion_id',capacitacionId);
+  const registros = Array.from(filas).map(f=>({
+    capacitacion_id: capacitacionId, proyecto_id: currentProyecto,
+    nombre: f.querySelector('.asNombre').value.trim(),
+    cedula: f.querySelector('.asCedula').value.trim()||null,
+    puesto: f.querySelector('.asPuesto').value.trim()||null,
+    firma_confirmada: f.querySelector('.asFirma').checked
+  })).filter(r=>r.nombre);
+  if(registros.length){
+    const {error} = await sb.from('sst_capacitacion_asistentes').insert(registros);
+    if(error){ toast('Error: '+error.message,'error'); return; }
+  }
+  toast('Lista de asistentes guardada ✓','success');
+  cerrarModal('modalAsistentes');
+  cargarCapacitaciones();
+}
+
+// ============================================================================
+// ACCIDENTES / INCIDENTES / ENFERMEDADES PROFESIONALES
+// ============================================================================
+
+async function cargarIncidentes(){
+  const { data } = await sb.from('sst_incidentes').select('*').eq('proyecto_id',currentProyecto).order('fecha_hora',{ascending:false});
+  sstCache.incidentes = data||[];
+  renderIncidentes();
+}
+
+function renderIncidentes(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  const tipoLabel = {incidente:'🔶 Incidente', accidente:'🚑 Accidente', enfermedad_profesional:'🩺 Enfermedad profesional'};
+  const gravColor = {leve:'#00c875',grave:'#ff9f00',mortal:'#e2445c'};
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalIncidente()">➕ Registrar</button>`:''}</div>
+  ${!sstCache.incidentes.length?`<div class="empty-state"><div class="empty-icon">🚑</div><div class="empty-title">Sin accidentes/incidentes registrados</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th>Gravedad</th><th>Estado</th><th>Plazo IESS (10 días hábiles)</th><th></th></tr></thead>
+  <tbody>${sstCache.incidentes.map(x=>`<tr>
+    <td>${new Date(x.fecha_hora).toLocaleDateString('es-EC')}</td>
+    <td>${tipoLabel[x.tipo]||x.tipo}</td>
+    <td style="font-weight:600">${escapeHtml(x.trabajador_nombre||'—')}</td>
+    <td><span style="color:${gravColor[x.gravedad]||'#676879'};font-weight:600">${x.gravedad||'—'}</span></td>
+    <td style="text-transform:capitalize">${x.estado||'abierto'}</td>
+    <td>${sstBadgePlazo(x.fecha_limite_reporte_iess, x.reportado_iess)}</td>
+    <td style="white-space:nowrap">
+      ${puedeEditar?`<button onclick='abrirModalIncidente(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${puedeBorrar?`<button onclick="eliminarIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+    </td>
+  </tr>`).join('')}</tbody></table></div></div>`}`;
+}
+
+function abrirModalIncidente(x){
+  x=x||{};
+  const fechaHora = x.fecha_hora ? new Date(x.fecha_hora).toISOString().slice(0,16) : new Date().toISOString().slice(0,16);
+  const body = `<input type="hidden" id="inId" value="${x.id||''}"/>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Tipo *</label>
+      <select class="form-control" id="inTipo">${[['incidente','Incidente'],['accidente','Accidente de trabajo'],['enfermedad_profesional','Enfermedad profesional (presunción)']].map(([v,l])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label class="form-label">Fecha y hora *</label><input type="datetime-local" class="form-control" id="inFechaHora" value="${fechaHora}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Trabajador</label><input type="text" class="form-control" id="inNombre" value="${escAttr(x.trabajador_nombre||'')}"/></div>
+    <div class="form-group"><label class="form-label">Cédula</label><input type="text" class="form-control" id="inCedula" value="${escAttr(x.trabajador_cedula||'')}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Puesto</label><input type="text" class="form-control" id="inPuesto" value="${escAttr(x.puesto||'')}"/></div>
+    <div class="form-group"><label class="form-label">Lugar</label><input type="text" class="form-control" id="inLugar" value="${escAttr(x.lugar||'')}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Descripción</label><textarea class="form-control" id="inDescripcion">${escapeHtml(x.descripcion||'')}</textarea></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Testigos</label><input type="text" class="form-control" id="inTestigos" value="${escAttr(x.testigos||'')}"/></div>
+    <div class="form-group"><label class="form-label">Gravedad</label>
+      <select class="form-control" id="inGravedad">${['leve','grave','mortal'].map(g=>`<option value="${g}" ${x.gravedad===g?'selected':''}>${g}</option>`).join('')}</select>
+    </div>
+  </div>
+  <div class="form-group"><label class="form-label">Causas</label><textarea class="form-control" id="inCausas">${escapeHtml(x.causas||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">Acciones inmediatas</label><textarea class="form-control" id="inAccionesInmediatas">${escapeHtml(x.acciones_inmediatas||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">Acciones correctivas</label><textarea class="form-control" id="inAccionesCorrectivas">${escapeHtml(x.acciones_correctivas||'')}</textarea></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Estado</label>
+      <select class="form-control" id="inEstado">${[['abierto','Abierto'],['investigando','Investigando'],['cerrado','Cerrado']].map(([v,l])=>`<option value="${v}" ${x.estado===v?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:6px;margin-top:22px"><input type="checkbox" id="inReportado" ${x.reportado_iess?'checked':''} style="width:15px;height:15px;accent-color:#0073ea"/> Ya reportado al IESS</label></div>
+  </div>
+  <div style="font-size:11px;color:#676879;margin-top:-8px;margin-bottom:12px">⏱ El aviso al IESS debe presentarse dentro de 10 días hábiles desde la fecha del evento (C.D. 513 Art. 44-45). El plazo se calcula automáticamente al guardar.</div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalIncidente')">Cancelar</button><button class="btn primary" onclick="guardarIncidente()">Guardar</button>`;
+  modalSST('modalIncidente', x.id?'✏️ Editar registro':'➕ Registrar accidente/incidente', body, footer, 680);
+}
+
+async function guardarIncidente(){
+  const id = document.getElementById('inId').value;
+  const fechaHora = document.getElementById('inFechaHora').value;
+  if(!fechaHora){ toast('La fecha y hora son obligatorias','error'); return; }
+  const fechaLimite = sumarDiasHabiles(fechaHora, 10).toISOString().split('T')[0];
+  const payload = {
+    proyecto_id: currentProyecto,
+    tipo: document.getElementById('inTipo').value,
+    fecha_hora: new Date(fechaHora).toISOString(),
+    trabajador_nombre: document.getElementById('inNombre').value.trim()||null,
+    trabajador_cedula: document.getElementById('inCedula').value.trim()||null,
+    puesto: document.getElementById('inPuesto').value.trim()||null,
+    lugar: document.getElementById('inLugar').value.trim()||null,
+    descripcion: document.getElementById('inDescripcion').value.trim()||null,
+    testigos: document.getElementById('inTestigos').value.trim()||null,
+    gravedad: document.getElementById('inGravedad').value,
+    causas: document.getElementById('inCausas').value.trim()||null,
+    acciones_inmediatas: document.getElementById('inAccionesInmediatas').value.trim()||null,
+    acciones_correctivas: document.getElementById('inAccionesCorrectivas').value.trim()||null,
+    estado: document.getElementById('inEstado').value,
+    reportado_iess: document.getElementById('inReportado').checked,
+    fecha_limite_reporte_iess: fechaLimite,
+    updated_at: new Date().toISOString()
+  };
+  if(payload.reportado_iess) payload.fecha_reporte_iess = new Date().toISOString().split('T')[0];
+  const {error} = id ? await sb.from('sst_incidentes').update(payload).eq('id',id) : await sb.from('sst_incidentes').insert({...payload, created_by:currentUser?.id});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Actualizado':'Registrado ✓','success');
+  cerrarModal('modalIncidente');
+  cargarIncidentes();
+}
+async function eliminarIncidente(id){
+  if(!confirm('¿Eliminar este registro? Recuerda que es un documento vinculante para posibles inspecciones — asegúrate de conservar respaldo externo si ya fue reportado.')) return;
+  const {error} = await sb.from('sst_incidentes').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarIncidentes();
+}
+
+// ============================================================================
+// CHECKLIST ANEXO 1 — LISTA DE VERIFICACIÓN SST (autoevaluación / auditoría)
+// ============================================================================
+
+const ANEXO1_CHECKLIST = [
+  { id:'I', nombre:'Gestión Administrativa', items:[
+    ['I.1','¿Cuenta con Plan de Prevención de Riesgos Laborales (1-10 trabajadores) aprobado y registrado en la plataforma SUT?'],
+    ['I.2','¿Cuenta con Reglamento de Higiene y Seguridad (+10 trabajadores) aprobado y registrado en la plataforma SUT?'],
+    ['I.3','¿Se ha socializado a todos los trabajadores la Política de SST?'],
+    ['I.4','¿Cuenta con registro del Monitor de Seguridad e Higiene en la plataforma SUT?'],
+    ['I.5','¿Cuenta con registro del Técnico de Seguridad e Higiene en la plataforma SUT?'],
+    ['I.6','¿Cuenta con registro del Servicio Externo de SST en la plataforma SUT?'],
+    ['I.7','¿Cuenta con informe de actividades del técnico/servicio externo (objetivo, estadísticas de AT/incidentes/EP, actividades con horas, conclusiones, registro fotográfico, firmas)?'],
+    ['I.8','¿Cuenta con registro del profesional médico en la plataforma SUT?'],
+    ['I.9','¿Cuenta con registro del Delegado de SST en la plataforma SUT?'],
+    ['I.10','¿Cuenta con registro del Comité de SST en la plataforma SUT?'],
+    ['I.11','¿Cuenta con informe de gestión del Organismo Paritario (objetivo, cronograma según Art. 39 Decreto 255, conclusiones, fotos, firmas)?'],
+    ['I.12','¿Se evidencia por escrito el procedimiento de deber de colaboración entre empleadores que realizan actividades simultáneas en un mismo lugar/centro (contratistas, subcontratistas)?'],
+  ]},
+  { id:'II', nombre:'Gestión Técnica', items:[
+    ['II.1','¿Cuenta con diagrama de flujo de procesos productivos/servicios?'],
+    ['II.2','¿Dispone de descriptivo por puesto de trabajo (n° trabajadores, actividades, horas/actividad, recursos/máquinas/químicos/biológicos)?'],
+    ['II.3','¿Cuenta con mapa de riesgos (señalización, EPP, dispositivos de parada de emergencia)?'],
+    ['II.4','¿Cuenta con matriz de identificación de peligros y evaluación de riesgos por puesto con metodología reconocida?'],
+    ['II.5','¿Cuenta con informe de medición de agentes físico/químico/biológico (fecha, puesto, n° expuestos, agente, metodología, resultados, comparación normativa, firmas, certificados de calibración, fotos)?'],
+    ['II.6','¿Cuenta con informe de evaluación de riesgos de seguridad/ergonómicos/psicosociales?'],
+    ['II.7','¿Cuenta con informe de medidas de prevención/protección por puesto (jerarquía eliminación→sustitución→ing.→admin.→EPP, con fechas, seguimiento, firmas, evidencia fotográfica)?'],
+    ['II.8','¿Cuenta con cálculo del riesgo residual en la matriz?'],
+    ['II.9','¿Se ha verificado in situ la implementación de medidas?'],
+    ['II.10','¿Limpieza/mantenimiento periódico de luminarias?'],
+    ['II.11','¿Mantenimiento periódico de sistemas de ventilación?'],
+    ['II.12','¿Se han clasificado agentes químicos según GHS (físicos, salud, ambiente)?'],
+    ['II.13','¿Recipientes de químicos con tapas/cubiertas adecuadas?'],
+    ['II.14','¿Se almacenan químicos por compatibilidad en áreas específicas?'],
+    ['II.15','¿Se dispone de fichas de datos de seguridad (FDS) de fácil acceso?'],
+    ['II.16','¿Etiquetado adecuado de químicos en español?'],
+    ['II.17','¿Se aplican lineamientos NTE-INEN de transporte/almacenamiento/manejo de químicos?'],
+    ['II.18','¿Se aplican medidas de bioseguridad?'],
+    ['II.19','¿Área específica para desechos biológicos según autoridad competente?'],
+    ['II.20','¿Mecanismos de control de plagas/vectores?'],
+    ['II.21','¿Lugares/centros de trabajo ordenados y limpios?'],
+    ['II.22','¿Áreas de circulación/pasillos con niveles mínimos de iluminación?'],
+    ['II.23','¿Áreas delimitadas para circulación de personal/vehículos?'],
+    ['II.24','¿Áreas delimitadas para emplazamiento de máquinas?'],
+    ['II.25','¿Rampas diseñadas conforme a la norma?'],
+    ['II.26','¿Estructuras de prevención contra caída de objetos/personas en buen estado (plataformas, barandillas, rodapiés, escaleras, cadenas, cuerdas, cables, eslingas, ganchos, poleas, tambores)?'],
+    ['II.27','¿Dispositivos de parada de emergencia señalizados, accesibles y en lugar seguro?'],
+    ['II.28','¿Partes fijas/móviles de motores y máquinas protegidas con resguardos?'],
+    ['II.30','¿Puertas y salidas señalizadas y libres de obstáculos?'],
+    ['II.31','Señalización preventiva.'],
+    ['II.32','Señalización prohibitiva.'],
+    ['II.33','Señalización de información.'],
+    ['II.34','Señalización de obligación.'],
+    ['II.35','Señalización de equipos contra incendio.'],
+    ['II.36','Señalización de orientación para evacuación en emergencia.'],
+    ['II.37','¿Cuenta con procedimientos de SST para trabajos especiales (objetivo, responsable, puesto, n° expuestos, riesgos, medidas de control, EPP, formato de permiso, registro de socialización)?'],
+    ['II.38','¿Se emiten permisos de trabajo conforme al procedimiento?'],
+    ['II.39','¿Cuenta con registros de apertura y cierre de permisos de trabajos especiales?'],
+  ]},
+  { id:'III', nombre:'Gestión del Talento Humano', items:[
+    ['III.1','¿Se ha identificado en las evaluaciones de riesgo a grupos de atención prioritaria (adultos mayores, mujeres en lactancia, mujeres embarazadas, personas con discapacidad, enfermedades catastróficas)?'],
+    ['III.2','¿Se evidencia in situ la implementación de medidas de prevención para estos grupos?'],
+    ['III.3','¿Cuenta con certificación de Prevención de Riesgos Laborales en Actividades de Alto Riesgo: CONSTRUCCIÓN?'],
+    ['III.4','¿Cuenta con certificación de Prevención de Riesgos Laborales en Actividades de Alto Riesgo: ENERGÍA ELÉCTRICA?'],
+    ['III.5','¿El personal que opera vehículos/maquinaria agrícola cuenta con licencia de conducir según categoría?'],
+    ['III.6','¿Cuenta con registro de asistencia a inducciones/re-inducciones (fecha, tema, nombre/cédula/firma trabajador, firma técnico SST, material, evaluación)?'],
+    ['III.7','¿Se han efectuado campañas de comunicación en SST (con respaldos)?'],
+    ['III.8','¿Cuenta con programa de formación/capacitación/entrenamiento en SST (objetivos, diagnóstico, contenido, cronograma por puesto, metodología, duración/frecuencia, responsables, material, firmas)?'],
+    ['III.9','¿Cuenta con registro de asistencia a capacitaciones/entrenamientos?'],
+    ['III.10','¿Las capacitaciones/entrenamientos están registrados en la plataforma SUT?'],
+  ]},
+  { id:'IV', nombre:'Procedimientos Operativos Básicos', items:[
+    ['IV.1','¿Cuenta con matriz de exámenes médico-ocupacionales por puesto (puesto, n° expuestos, riesgo, tipo de examen, frecuencia, responsable, firmas)?'],
+    ['IV.2','¿Cuenta con cronograma de planificación/ejecución de exámenes médicos?'],
+    ['IV.3','¿Cuenta con informe de resultados de exámenes médicos por puesto?'],
+    ['IV.4','¿Cuenta con certificados de aptitud médica laboral de ingreso y periódicos (firma trabajador + médico)?'],
+    ['IV.5','¿Cuenta con informe trimestral de indicadores de enfermedad común/profesional y accidentes de trabajo?'],
+    ['IV.6','¿Cuenta con procedimiento documentado de investigación de accidentes de trabajo aprobado por la máxima autoridad?'],
+    ['IV.7','¿Cuenta con registro interno de incidentes/accidentes (fecha/hora, nombre/cédula, puesto, lugar, descripción, consecuencias)?'],
+    ['IV.8','¿Cuenta con informe de investigación de accidente de trabajo (fecha/hora, lugar, trabajador, puesto, descripción, testigos, causas/consecuencias, acciones inmediatas, firmas)?'],
+    ['IV.9','¿Se ha reportado el accidente de trabajo a la autoridad competente (evidencia de reporte)?'],
+    ['IV.10','¿Se han aplicado medidas correctivas para evitar nuevos accidentes?'],
+    ['IV.11','¿Cuenta con procedimiento documentado de investigación de enfermedades profesionales?'],
+    ['IV.12','¿Se ha reportado la presunción de enfermedad profesional a la autoridad (evidencia)?'],
+    ['IV.13','¿Se han aplicado medidas correctivas para evitar nuevas enfermedades profesionales?'],
+    ['IV.14','¿Cuenta con programa anual de inspecciones internas de SST (objetivos, alcance, cronograma, lista de verificación, firmas)?'],
+    ['IV.15','¿Se evidencia in situ la ejecución de inspecciones internas e implementación de correctivos?'],
+    ['IV.16','¿Cuenta con plan de emergencias/contingencia (amenazas, procedimientos antes/durante/después, mapa de recursos, mapa de evacuación, cronograma de mantenimiento contra incendios, cronograma de simulacros, brigadas, firmas)?'],
+    ['IV.17','¿Cuenta con informe anual de simulacros (fecha/hora, objetivo, tipo, lugar, duración, participantes, roles, descripción, incidencias, lecciones aprendidas, fotos, firmas)?'],
+    ['IV.18','¿Se evidencia implementación de las acciones del plan de emergencia?'],
+    ['IV.19','¿Cuenta con programa de mantenimiento de instalaciones/vehículos/máquinas/equipos/herramientas?'],
+    ['IV.20','¿Se evidencia in situ la ejecución del programa de mantenimiento?'],
+    ['IV.21','¿Cuenta con procedimiento de adquisición de EPP (identificación de necesidades, matriz de EPP por puesto, firmas)?'],
+    ['IV.22','¿Cuenta con registro de entrega-recepción de EPP (fecha, nombre/cédula, detalle del EPP, firma trabajador, registro de devoluciones)?'],
+    ['IV.23','¿Se evidencia in situ la correcta utilización de EPP y ropa de trabajo?'],
+    ['IV.24','¿Se ha implementado el programa de prevención de riesgo psicosocial?'],
+    ['IV.25','¿Se ha registrado el programa de prevención de riesgo psicosocial en la plataforma SUT?'],
+    ['IV.26','¿Se ha implementado el programa de prevención del uso/consumo de alcohol, tabaco u otras drogas?'],
+    ['IV.27','¿Se ha registrado dicho programa en la plataforma SUT?'],
+  ]},
+  { id:'V', nombre:'Servicios Permanentes', items:[
+    ['V.1','¿Cuenta con botiquín de emergencia?'],
+    ['V.2','¿El comedor tiene adecuada salubridad/ambientación (aplica ≥50 trabajadores y >2km de la población más cercana)?'],
+    ['V.3','¿Servicios de cocina con adecuada salubridad y almacenamiento de alimentos?'],
+    ['V.4','¿Abastecimiento de agua para consumo?'],
+    ['V.5','¿Servicios higiénicos/excusados/urinarios en buenas condiciones, separados por sexo?'],
+    ['V.6','¿Duchas en buenas condiciones?'],
+    ['V.7','¿Lavabos en buenas condiciones con útiles de aseo?'],
+    ['V.8','¿Vestuarios separados por sexo, limpios?'],
+    ['V.9','¿Campamentos en buenas condiciones (luz eléctrica, ventilación, agua, servicios higiénicos, comedores, alojamiento/vestuarios separados)?'],
+  ]},
+];
+
+async function cargarChecklist(){
+  const { data } = await sb.from('sst_checklist_respuestas').select('*').eq('proyecto_id',currentProyecto).eq('modo',sstChecklistModo);
+  sstChecklistRespuestasCache = {};
+  (data||[]).forEach(r=>{ sstChecklistRespuestasCache[r.item_codigo] = r; });
+  renderChecklist();
+}
+
+function cambiarModoChecklist(modo){
+  sstChecklistModo = modo;
+  cargarChecklist();
+}
+
+function renderChecklist(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar();
+  let totalCumple=0, totalNoCumple=0, totalNoAplica=0, totalItems=0;
+  ANEXO1_CHECKLIST.forEach(cat=>cat.items.forEach(([cod])=>{
+    totalItems++;
+    const r = sstChecklistRespuestasCache[cod];
+    if(r?.respuesta==='cumple') totalCumple++;
+    else if(r?.respuesta==='no_cumple') totalNoCumple++;
+    else if(r?.respuesta==='no_aplica') totalNoAplica++;
+  }));
+  const evaluados = totalCumple+totalNoCumple+totalNoAplica;
+  const pctCumple = evaluados ? Math.round((totalCumple/evaluados)*100) : 0;
+
+  el.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="cambiarModoChecklist('autoevaluacion')" class="btn ${sstChecklistModo==='autoevaluacion'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">🏗️ Autoevaluación (constructor)</button>
+      <button onclick="cambiarModoChecklist('auditoria')" class="btn ${sstChecklistModo==='auditoria'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">🔍 Auditoría (fiscalizador)</button>
+    </div>
+    <div style="font-size:12px;color:#676879">Progreso: ${evaluados}/${totalItems} ítems evaluados · <b style="color:#00c875">${pctCumple}% cumple</b> (de lo evaluado)</div>
+  </div>
+  <div style="background:#fdf6e3;color:#8a6d00;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">ℹ️ Este checklist replica el Anexo 1 (Lista de Verificación SST) del MDT como herramienta interna de seguimiento. No reemplaza una inspección oficial ni constituye un puntaje certificado por la autoridad.</div>
+  ${ANEXO1_CHECKLIST.map(cat=>renderCategoriaChecklist(cat, puedeEditar)).join('')}`;
+}
+
+function renderCategoriaChecklist(cat, puedeEditar){
+  const opciones = [['cumple','Cumple','#00c875'],['no_cumple','No cumple','#e2445c'],['no_aplica','No aplica','#676879']];
+  return `<div class="card">
+    <div class="card-header"><div class="card-title">${cat.id}. ${cat.nombre}</div></div>
+    <div style="padding:4px 0">
+      ${cat.items.map(([cod,texto])=>{
+        const r = sstChecklistRespuestasCache[cod]||{};
+        return `<div style="padding:10px 20px;border-bottom:1px solid #f5f6f8;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+          <div style="flex:1;min-width:240px;font-size:13px"><b>${cod}</b> — ${texto}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${opciones.map(([val,label,color])=>`<button ${puedeEditar?`onclick="guardarRespuestaChecklist('${cod}','${val}')"`:'disabled'} class="btn" style="padding:4px 10px;font-size:11px;border-radius:14px;${r.respuesta===val?`background:${color};color:#fff;border-color:${color}`:''}">${label}</button>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+async function guardarRespuestaChecklist(codigo, respuesta){
+  sstChecklistRespuestasCache[codigo] = {...(sstChecklistRespuestasCache[codigo]||{}), respuesta};
+  renderChecklist();
+  const { error } = await sb.from('sst_checklist_respuestas').upsert({
+    proyecto_id: currentProyecto, modo: sstChecklistModo, item_codigo: codigo,
+    respuesta, evaluado_por: currentUser?.id, fecha: new Date().toISOString().split('T')[0],
+    updated_at: new Date().toISOString()
+  }, {onConflict:'proyecto_id,modo,item_codigo'});
+  if(error) toast('Error al guardar: '+error.message,'error');
+}
+
+// ============================================================================
+// DASHBOARD DE CUMPLIMIENTO SST
+// ============================================================================
+
+async function cargarSSTDashboard(){
+  const [{data:riesgos}, {data:epp}, {data:capacitaciones}, {data:incidentes}, {data:checklistAuto}, {data:checklistAudit}] = await Promise.all([
+    sb.from('sst_matriz_riesgos').select('*').eq('proyecto_id',currentProyecto),
+    sb.from('sst_epp_entregas').select('*').eq('proyecto_id',currentProyecto),
+    sb.from('sst_capacitaciones').select('*').eq('proyecto_id',currentProyecto),
+    sb.from('sst_incidentes').select('*').eq('proyecto_id',currentProyecto),
+    sb.from('sst_checklist_respuestas').select('*').eq('proyecto_id',currentProyecto).eq('modo','autoevaluacion'),
+    sb.from('sst_checklist_respuestas').select('*').eq('proyecto_id',currentProyecto).eq('modo','auditoria'),
+  ]);
+  const riesgosAltos = (riesgos||[]).filter(r=>{
+    const n = sstNivelRiesgo(r.probabilidad,r.consecuencia);
+    return n.label==='Intolerable'||n.label==='Importante';
+  }).length;
+  const incidentesPendientes = (incidentes||[]).filter(i=>!i.reportado_iess && i.fecha_limite_reporte_iess);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const incidentesVencidos = incidentesPendientes.filter(i=>new Date(i.fecha_limite_reporte_iess+'T00:00:00') < hoy).length;
+  const incidentesPorVencer = incidentesPendientes.filter(i=>{
+    const lim = new Date(i.fecha_limite_reporte_iess+'T00:00:00');
+    const dias = Math.round((lim-hoy)/86400000);
+    return dias>=0 && dias<=2;
+  }).length;
+  const totalItemsChecklist = ANEXO1_CHECKLIST.reduce((a,c)=>a+c.items.length,0);
+  const pct = (data)=> {
+    const cumplidos=(data||[]).filter(r=>r.respuesta==='cumple').length;
+    const evaluadosRel=(data||[]).filter(r=>r.respuesta==='cumple'||r.respuesta==='no_cumple').length;
+    return evaluadosRel? Math.round(cumplidos/evaluadosRel*100) : 0;
+  };
+
+  const el = document.getElementById('sstBody');
+  if(!el) return; // el usuario navegó fuera del módulo SST antes de que terminara de cargar
+  el.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:20px">
+    ${tarjetaSST('⚠️','Riesgos altos/intolerables', riesgosAltos, `${(riesgos||[]).length} total en matriz`, riesgosAltos?'#e2445c':'#00c875')}
+    ${tarjetaSST('🦺','Entregas de EPP', (epp||[]).length, 'registradas en el proyecto', '#0073ea')}
+    ${tarjetaSST('🎓','Capacitaciones', (capacitaciones||[]).length, 'realizadas', '#0073ea')}
+    ${tarjetaSST('🚑','Reportes IESS vencidos', incidentesVencidos, incidentesPorVencer?`+ ${incidentesPorVencer} por vencer (≤2 días)`:'sin plazos por vencer', incidentesVencidos?'#e2445c':'#00c875')}
+    ${tarjetaSST('📋','Checklist autoevaluación', pct(checklistAuto)+'%', `de ${totalItemsChecklist} ítems (cumple/no cumple)`, '#0073ea')}
+    ${tarjetaSST('🔍','Checklist auditoría', pct(checklistAudit)+'%', 'evaluado por fiscalizador', '#0073ea')}
+  </div>
+  ${incidentesVencidos||incidentesPorVencer?`<div class="card"><div class="card-header"><div class="card-title">🚨 Alertas de plazo IESS</div></div>
+    <div style="padding:0 0 8px">${incidentesPendientes.filter(i=>{
+      const lim = new Date(i.fecha_limite_reporte_iess+'T00:00:00');
+      const dias = Math.round((lim-hoy)/86400000);
+      return dias<=2;
+    }).map(i=>`<div style="padding:10px 20px;border-bottom:1px solid #f5f6f8;display:flex;justify-content:space-between;align-items:center">
+      <div><b>${escapeHtml(i.trabajador_nombre||'Sin nombre')}</b> — ${escapeHtml(i.descripcion||'')}</div>
+      ${sstBadgePlazo(i.fecha_limite_reporte_iess, i.reportado_iess)}
+    </div>`).join('')}</div></div>`:''}
+  <div style="font-size:11px;color:#676879;margin-top:8px">Panel interno de seguimiento — no sustituye el reporte oficial de cumplimiento ante el MDT/IESS.</div>`;
+}
+
+function tarjetaSST(icono, titulo, valor, sub, color){
+  return `<div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;border-left:4px solid ${color}">
+    <div style="font-size:20px;margin-bottom:6px">${icono}</div>
+    <div style="font-size:24px;font-weight:700;color:${color}">${valor}</div>
+    <div style="font-size:12px;color:#676879;margin-top:2px">${titulo}</div>
+    <div style="font-size:11px;color:#9699a6;margin-top:4px">${sub}</div>
+  </div>`;
 }
 
 // ── INIT ──
