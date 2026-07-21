@@ -13052,6 +13052,8 @@ function renderSSTShell(){
     ['epp','🦺 EPP'],
     ['capacitaciones','🎓 Capacitaciones'],
     ['incidentes','🚑 Accidentes/Incidentes'],
+    ['pte','🛠️ Permisos de trabajo'],
+    ['examenes','🩺 Exámenes médicos'],
     ['checklist','📋 Checklist Anexo 1'],
     ['dashboard','📊 Cumplimiento'],
   ];
@@ -13078,6 +13080,8 @@ function renderSSTTabBody(){
   else if(sstTab==='epp') renderSSTEppShell();
   else if(sstTab==='capacitaciones') cargarCapacitaciones();
   else if(sstTab==='incidentes') cargarIncidentes();
+  else if(sstTab==='pte') cargarPTE();
+  else if(sstTab==='examenes') renderSSTExamenesShell();
   else if(sstTab==='checklist') cargarChecklist();
   else if(sstTab==='dashboard') cargarSSTDashboard();
 }
@@ -13416,7 +13420,7 @@ async function cargarEPPEntregas(){
     <td>${escapeHtml(x.puesto||'')}</td><td>${escapeHtml(x.detalle_epp)}</td>
     <td>${x.confirmado_trabajador?'<span style="color:#00c875;font-weight:600">✅ Confirmado</span>':'<span style="color:#ff9f00">Pendiente</span>'}</td>
     <td>${x.foto_url?`<a href="${x.foto_url}" target="_blank">📷 ver</a>`:'—'}</td>
-    <td style="white-space:nowrap">${puedeBorrar?`<button onclick="eliminarEPPEntrega('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}</td>
+    <td style="white-space:nowrap"><button onclick="imprimirActaEPP('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir acta">🖨</button>${puedeBorrar?`<button onclick="eliminarEPPEntrega('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}</td>
   </tr>`).join('')}</tbody></table></div></div>`}`;
 }
 
@@ -13495,6 +13499,7 @@ function renderCapacitaciones(){
     <div style="font-size:12px;color:#676879;margin-bottom:10px">👤 ${escapeHtml(c.responsable||'—')} · 👥 ${c.asistentes?.length||0} asistente(s)</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button onclick="abrirModalAsistentes('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px">👥 Asistentes</button>
+      <button onclick="imprimirRegistroCapacitacion('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir registro de asistencia">🖨</button>
       ${puedeEditar?`<button onclick='abrirModalCapacitacion(${JSON.stringify(c).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
       ${puedeBorrar?`<button onclick="eliminarCapacitacion('${c.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
     </div>
@@ -13620,6 +13625,7 @@ function renderIncidentes(){
     <td style="text-transform:capitalize">${x.estado||'abierto'}</td>
     <td>${sstBadgePlazo(x.fecha_limite_reporte_iess, x.reportado_iess)}</td>
     <td style="white-space:nowrap">
+      <button onclick="imprimirInformeIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir informe de investigación">🖨</button>
       ${puedeEditar?`<button onclick='abrirModalIncidente(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
       ${puedeBorrar?`<button onclick="eliminarIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
     </td>
@@ -13889,13 +13895,15 @@ async function guardarRespuestaChecklist(codigo, respuesta){
 // ============================================================================
 
 async function cargarSSTDashboard(){
-  const [{data:riesgos}, {data:epp}, {data:capacitaciones}, {data:incidentes}, {data:checklistAuto}, {data:checklistAudit}] = await Promise.all([
+  const [{data:riesgos}, {data:epp}, {data:capacitaciones}, {data:incidentes}, {data:checklistAuto}, {data:checklistAudit}, {data:ptes}, {data:examenes}] = await Promise.all([
     sb.from('sst_matriz_riesgos').select('*').eq('proyecto_id',currentProyecto),
     sb.from('sst_epp_entregas').select('*').eq('proyecto_id',currentProyecto),
     sb.from('sst_capacitaciones').select('*').eq('proyecto_id',currentProyecto),
     sb.from('sst_incidentes').select('*').eq('proyecto_id',currentProyecto),
     sb.from('sst_checklist_respuestas').select('*').eq('proyecto_id',currentProyecto).eq('modo','autoevaluacion'),
     sb.from('sst_checklist_respuestas').select('*').eq('proyecto_id',currentProyecto).eq('modo','auditoria'),
+    sb.from('sst_pte').select('*').eq('proyecto_id',currentProyecto),
+    sb.from('sst_examenes_registros').select('*').eq('proyecto_id',currentProyecto),
   ]);
   const riesgosAltos = (riesgos||[]).filter(r=>{
     const n = sstNivelRiesgo(r.probabilidad,r.consecuencia);
@@ -13916,6 +13924,14 @@ async function cargarSSTDashboard(){
     return evaluadosRel? Math.round(cumplidos/evaluadosRel*100) : 0;
   };
 
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const ptesCaducados = (ptes||[]).filter(p=>p.estado==='abierto' && p.fecha<hoyStr).length;
+  const ptesAbiertosHoy = (ptes||[]).filter(p=>p.estado==='abierto' && p.fecha===hoyStr).length;
+  const examenesVencidos = (examenes||[]).filter(e=>e.tipo!=='retiro' && e.fecha_proximo && e.fecha_proximo<hoyStr).length;
+  const en30 = new Date(); en30.setDate(en30.getDate()+30);
+  const en30Str = en30.toISOString().split('T')[0];
+  const examenesPorVencer = (examenes||[]).filter(e=>e.tipo!=='retiro' && e.fecha_proximo && e.fecha_proximo>=hoyStr && e.fecha_proximo<=en30Str).length;
+
   const el = document.getElementById('sstBody');
   if(!el) return; // el usuario navegó fuera del módulo SST antes de que terminara de cargar
   el.innerHTML = `
@@ -13924,6 +13940,8 @@ async function cargarSSTDashboard(){
     ${tarjetaSST('🦺','Entregas de EPP', (epp||[]).length, 'registradas en el proyecto', '#0073ea')}
     ${tarjetaSST('🎓','Capacitaciones', (capacitaciones||[]).length, 'realizadas', '#0073ea')}
     ${tarjetaSST('🚑','Reportes IESS vencidos', incidentesVencidos, incidentesPorVencer?`+ ${incidentesPorVencer} por vencer (≤2 días)`:'sin plazos por vencer', incidentesVencidos?'#e2445c':'#00c875')}
+    ${tarjetaSST('🛠️','PTE sin cerrar caducados', ptesCaducados, ptesAbiertosHoy?`${ptesAbiertosHoy} abierto(s) vigente(s) hoy`:'sin permisos abiertos hoy', ptesCaducados?'#e2445c':'#00c875')}
+    ${tarjetaSST('🩺','Exámenes médicos vencidos', examenesVencidos, examenesPorVencer?`+ ${examenesPorVencer} vencen en ≤30 días`:'sin vencimientos próximos', examenesVencidos?'#e2445c':examenesPorVencer?'#ff9f00':'#00c875')}
     ${tarjetaSST('📋','Checklist autoevaluación', pct(checklistAuto)+'%', `de ${totalItemsChecklist} ítems (cumple/no cumple)`, '#0073ea')}
     ${tarjetaSST('🔍','Checklist auditoría', pct(checklistAudit)+'%', 'evaluado por fiscalizador', '#0073ea')}
   </div>
@@ -13946,6 +13964,509 @@ function tarjetaSST(icono, titulo, valor, sub, color){
     <div style="font-size:12px;color:#676879;margin-top:2px">${titulo}</div>
     <div style="font-size:11px;color:#9699a6;margin-top:4px">${sub}</div>
   </div>`;
+}
+
+// ============================================================================
+// MÓDULO SST — FASE 2
+// Permisos de Trabajo Especial (Anexo 3 Art. 110-115), Exámenes médicos
+// ocupacionales (Decreto 255 Art. 29, 68) y documentos imprimibles.
+// ============================================================================
+
+let sstExamSubtab = 'registros';
+sstCache.ptes = [];
+sstCache.examMatriz = [];
+sstCache.examRegistros = [];
+
+const PTE_TIPOS = {
+  caliente:'🔥 Trabajo en caliente', frio:'❄️ Trabajo en frío', alturas:'🪜 Trabajo en alturas',
+  electrico:'⚡ Trabajo eléctrico', confinado:'🕳️ Espacio confinado', maritimo:'🌊 Marítimo/submarino/aguas abiertas',
+  aereo:'🚁 Trabajo aéreo', radiaciones:'☢️ Radiaciones ionizantes', subterraneo:'⛏️ Trabajo subterráneo',
+  sustancias:'☣️ Sustancias/materiales peligrosos'
+};
+
+async function sstGetProyecto(){
+  const local = (typeof proyectos!=='undefined' && proyectos?.length) ? proyectos.find(p=>p.id===currentProyecto) : null;
+  if(local) return local;
+  const { data } = await sb.from('proyectos').select('*').eq('id',currentProyecto).single();
+  return data||{};
+}
+
+// ============================================================================
+// PERMISOS DE TRABAJO ESPECIAL (PTE)
+// ============================================================================
+
+async function cargarPTE(){
+  const { data } = await sb.from('sst_pte').select('*').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false}).order('created_at',{ascending:false});
+  sstCache.ptes = data||[];
+  renderPTE();
+}
+
+function sstBadgeEstadoPTE(p){
+  const hoyStr = new Date().toISOString().split('T')[0];
+  if(p.estado==='anulado') return `<span style="background:#67687920;color:#676879;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">🚫 Anulado</span>`;
+  if(p.estado==='cerrado') return `<span style="background:#00c87520;color:#00c875;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">✅ Cerrado</span>`;
+  if(p.fecha < hoyStr) return `<span style="background:#e2445c20;color:#e2445c;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">⛔ Caducado sin cerrar (vigencia 1 jornada)</span>`;
+  return `<span style="background:#0073ea20;color:#0073ea;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">🟢 Abierto (vence hoy)</span>`;
+}
+
+function renderPTE(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  const lista = sstCache.ptes;
+  el.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+    <div style="font-size:12px;color:#676879">⏱ Cada permiso vale una sola jornada laboral y no es renovable (Anexo 3, Art. 110-115). Si cambian las condiciones o el grupo de trabajo, se anula y se emite uno nuevo.</div>
+    ${puedeEditar?`<button class="btn primary" onclick="abrirModalPTE()">➕ Nuevo permiso</button>`:''}
+  </div>
+  ${!lista.length?`<div class="empty-state"><div class="empty-icon">🛠️</div><div class="empty-title">Sin permisos de trabajo</div><div class="empty-sub">Emite un permiso antes de iniciar trabajos en altura, espacios confinados, en caliente, eléctricos, etc.</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table>
+    <thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Ubicación</th><th>Cuadrilla</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${lista.map(p=>`<tr>
+      <td style="font-weight:700;color:#0073ea">PTE-${String(p.numero).padStart(3,'0')}</td>
+      <td>${formatFecha(p.fecha)}${p.hora_inicio?`<div style="font-size:11px;color:#676879">${p.hora_inicio.slice(0,5)}${p.hora_fin_prevista?' – '+p.hora_fin_prevista.slice(0,5):''}</div>`:''}</td>
+      <td>${PTE_TIPOS[p.tipo]||p.tipo}</td>
+      <td style="font-size:12px">${escapeHtml(p.ubicacion||'—')}</td>
+      <td style="font-size:12px">${(p.trabajadores||[]).length} trabajador(es)</td>
+      <td>${sstBadgeEstadoPTE(p)}</td>
+      <td style="white-space:nowrap">
+        <button onclick="imprimirPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir permiso">🖨</button>
+        ${puedeEditar&&p.estado==='abierto'?`<button onclick="cerrarPTEPermiso('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#00c875" title="Cerrar permiso">✅</button>
+        <button onclick="anularPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#ff9f00" title="Anular">🚫</button>
+        <button onclick='abrirModalPTE(${JSON.stringify(p).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+        ${puedeBorrar?`<button onclick="eliminarPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+      </td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`}`;
+}
+
+function abrirModalPTE(p){
+  p = p||{};
+  const trabajadores = p.trabajadores||[];
+  const body = `<input type="hidden" id="pteId" value="${p.id||''}"/>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Tipo de trabajo especial *</label>
+      <select class="form-control" id="pteTipo">${Object.entries(PTE_TIPOS).map(([v,l])=>`<option value="${v}" ${p.tipo===v?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label class="form-label">Fecha (vigencia: solo esta jornada) *</label><input type="date" class="form-control" id="pteFecha" value="${p.fecha||new Date().toISOString().split('T')[0]}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Hora de inicio</label><input type="time" class="form-control" id="pteHoraInicio" value="${p.hora_inicio?p.hora_inicio.slice(0,5):''}"/></div>
+    <div class="form-group"><label class="form-label">Hora fin prevista</label><input type="time" class="form-control" id="pteHoraFin" value="${p.hora_fin_prevista?p.hora_fin_prevista.slice(0,5):''}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Ubicación exacta en obra</label><input type="text" class="form-control" id="pteUbicacion" value="${escAttr(p.ubicacion||'')}"/></div>
+  <div class="form-group"><label class="form-label">Descripción del trabajo</label><textarea class="form-control" id="pteDescripcion">${escapeHtml(p.descripcion_trabajo||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">Riesgos identificados</label><textarea class="form-control" id="pteRiesgos">${escapeHtml(p.riesgos||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">Medidas de control</label><textarea class="form-control" id="pteMedidas">${escapeHtml(p.medidas_control||'')}</textarea></div>
+  <div class="form-group"><label class="form-label">EPP requerido</label><input type="text" class="form-control" id="pteEpp" value="${escAttr(p.epp_requerido||'')}" placeholder="Ej: arnés con doble línea de vida, casco con barbiquejo..."/></div>
+  <div class="form-group" id="ptePlanRescateGroup"><label class="form-label">Plan de rescate (obligatorio en espacios confinados Tipo II)</label><textarea class="form-control" id="ptePlanRescate">${escapeHtml(p.plan_rescate||'')}</textarea></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Técnico SST que autoriza *</label><input type="text" class="form-control" id="pteTecnico" value="${escAttr(p.tecnico_nombre||'')}"/></div>
+    <div class="form-group"><label class="form-label">Supervisor *</label><input type="text" class="form-control" id="pteSupervisor" value="${escAttr(p.supervisor_nombre||'')}"/></div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Cuadrilla (todos deben firmar el permiso impreso)</label>
+    <div id="pteTrabajadoresLista">${renderFilasPTETrabajadores(trabajadores)}</div>
+    <button type="button" class="btn" style="margin-top:6px" onclick="agregarFilaPTETrabajador()">➕ Agregar trabajador</button>
+  </div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalPTE')">Cancelar</button><button class="btn primary" onclick="guardarPTE()">Guardar permiso</button>`;
+  modalSST('modalPTE', p.id?`✏️ Editar PTE-${String(p.numero).padStart(3,'0')}`:'➕ Nuevo Permiso de Trabajo Especial', body, footer, 680);
+}
+
+function renderFilasPTETrabajadores(lista){
+  if(!lista.length) return '<div class="ptePlaceholder" style="color:#676879;font-size:12px;margin-bottom:6px">Sin trabajadores aún</div>';
+  return lista.map(t=>`<div class="filaPTETrab" style="display:grid;grid-template-columns:2fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center">
+    <input type="text" class="form-control pteTrabNombre" placeholder="Nombre" value="${escAttr(t.nombre||'')}" style="padding:6px 8px;font-size:12px">
+    <input type="text" class="form-control pteTrabCedula" placeholder="Cédula" value="${escAttr(t.cedula||'')}" style="padding:6px 8px;font-size:12px">
+    <button type="button" onclick="this.closest('.filaPTETrab').remove()" style="background:none;border:none;color:#e2445c;cursor:pointer">🗑</button>
+  </div>`).join('');
+}
+
+function agregarFilaPTETrabajador(){
+  const cont = document.getElementById('pteTrabajadoresLista');
+  const ph = cont.querySelector('.ptePlaceholder');
+  if(ph) ph.remove();
+  cont.insertAdjacentHTML('beforeend', renderFilasPTETrabajadores([{nombre:'',cedula:''}]));
+}
+
+async function guardarPTE(){
+  const id = document.getElementById('pteId').value;
+  const tecnico = document.getElementById('pteTecnico').value.trim();
+  const supervisor = document.getElementById('pteSupervisor').value.trim();
+  if(!tecnico||!supervisor){ toast('Técnico SST y supervisor son obligatorios','error'); return; }
+  const trabajadores = Array.from(document.querySelectorAll('#pteTrabajadoresLista .filaPTETrab')).map(f=>({
+    nombre: f.querySelector('.pteTrabNombre').value.trim(),
+    cedula: f.querySelector('.pteTrabCedula').value.trim()
+  })).filter(t=>t.nombre);
+  if(!trabajadores.length){ toast('Agrega al menos un trabajador a la cuadrilla','error'); return; }
+  const tipo = document.getElementById('pteTipo').value;
+  const planRescate = document.getElementById('ptePlanRescate').value.trim();
+  if(tipo==='confinado' && !planRescate){ toast('En espacios confinados el plan de rescate es obligatorio','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto, tipo,
+    fecha: document.getElementById('pteFecha').value,
+    hora_inicio: document.getElementById('pteHoraInicio').value||null,
+    hora_fin_prevista: document.getElementById('pteHoraFin').value||null,
+    ubicacion: document.getElementById('pteUbicacion').value.trim()||null,
+    descripcion_trabajo: document.getElementById('pteDescripcion').value.trim()||null,
+    riesgos: document.getElementById('pteRiesgos').value.trim()||null,
+    medidas_control: document.getElementById('pteMedidas').value.trim()||null,
+    epp_requerido: document.getElementById('pteEpp').value.trim()||null,
+    plan_rescate: planRescate||null,
+    tecnico_nombre: tecnico, supervisor_nombre: supervisor,
+    trabajadores,
+    updated_at: new Date().toISOString()
+  };
+  const {error} = id ? await sb.from('sst_pte').update(payload).eq('id',id)
+                     : await sb.from('sst_pte').insert({...payload, created_by:currentUser?.id});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Permiso actualizado':'Permiso emitido ✓','success');
+  cerrarModal('modalPTE');
+  cargarPTE();
+}
+
+async function cerrarPTEPermiso(id){
+  const obs = prompt('Observaciones de cierre del permiso (estado del área, novedades):');
+  if(obs===null) return;
+  const {error} = await sb.from('sst_pte').update({estado:'cerrado', hora_cierre:new Date().toISOString(), observaciones_cierre:obs||null, updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Permiso cerrado ✓','success');
+  cargarPTE();
+}
+
+async function anularPTE(id){
+  const motivo = prompt('Motivo de anulación (cambio de condiciones, cambio de cuadrilla, clima, etc.):');
+  if(motivo===null) return;
+  if(!motivo.trim()){ toast('Indica el motivo de anulación','error'); return; }
+  const {error} = await sb.from('sst_pte').update({estado:'anulado', motivo_anulacion:motivo, updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Permiso anulado','success');
+  cargarPTE();
+}
+
+async function eliminarPTE(id){
+  if(!confirm('¿Eliminar este permiso? Si el trabajo ya se realizó, es preferible cerrarlo o anularlo para conservar la trazabilidad.')) return;
+  const {error} = await sb.from('sst_pte').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success');
+  cargarPTE();
+}
+
+// ============================================================================
+// EXÁMENES MÉDICOS OCUPACIONALES
+// ============================================================================
+
+function renderSSTExamenesShell(){
+  const el = document.getElementById('sstBody');
+  if(!el) return;
+  el.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
+      <button onclick="switchSSTExamTab('registros')" class="btn ${sstExamSubtab==='registros'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">Registros por trabajador</button>
+      <button onclick="switchSSTExamTab('matriz')" class="btn ${sstExamSubtab==='matriz'?'primary':''}" style="padding:6px 12px;font-size:12px;border-radius:6px">Matriz por puesto</button>
+    </div>
+  </div>
+  <div style="background:#fdf6e3;color:#8a6d00;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">🔒 Confidencialidad (Decreto 255 Art. 68): aquí se registra solo la <b>aptitud laboral</b> (el certificado), nunca diagnósticos ni historia clínica — esa documentación la custodia el médico ocupacional.</div>
+  <div id="sstExamBody"></div>`;
+  if(sstExamSubtab==='matriz') cargarExamMatriz();
+  else cargarExamRegistros();
+}
+function switchSSTExamTab(tab){ sstExamSubtab=tab; renderSSTExamenesShell(); }
+
+async function cargarExamMatriz(){
+  const { data } = await sb.from('sst_examenes_matriz').select('*').eq('proyecto_id',currentProyecto).order('puesto');
+  sstCache.examMatriz = data||[];
+  const el = document.getElementById('sstExamBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalExamMatriz()">➕ Nuevo ítem</button>`:''}</div>
+  ${!sstCache.examMatriz.length?`<div class="empty-state"><div class="empty-icon">🩺</div><div class="empty-title">Sin matriz de exámenes</div><div class="empty-sub">Define qué exámenes corresponden a cada puesto según sus riesgos</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Puesto</th><th>Riesgo asociado</th><th>Examen</th><th>Frecuencia</th><th>Responsable</th><th></th></tr></thead>
+  <tbody>${sstCache.examMatriz.map(x=>`<tr>
+    <td style="font-weight:600">${escapeHtml(x.puesto)}</td><td>${escapeHtml(x.riesgo_asociado||'')}</td>
+    <td>${escapeHtml(x.tipo_examen)}</td><td>${x.frecuencia_meses?`cada ${x.frecuencia_meses} meses`:'—'}</td>
+    <td style="font-size:12px">${escapeHtml(x.responsable||'')}</td>
+    <td style="white-space:nowrap">
+      ${puedeEditar?`<button onclick='abrirModalExamMatriz(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${puedeBorrar?`<button onclick="eliminarExamMatriz('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+    </td></tr>`).join('')}</tbody></table></div></div>`}`;
+}
+
+function abrirModalExamMatriz(x){
+  x=x||{};
+  const body = `<input type="hidden" id="exmId" value="${x.id||''}"/>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Puesto *</label><input type="text" class="form-control" id="exmPuesto" value="${escAttr(x.puesto||'')}"/></div>
+    <div class="form-group"><label class="form-label">Riesgo asociado</label><input type="text" class="form-control" id="exmRiesgo" value="${escAttr(x.riesgo_asociado||'')}" placeholder="Ej: ruido, polvo de sílice, alturas..."/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Tipo de examen *</label><input type="text" class="form-control" id="exmTipo" value="${escAttr(x.tipo_examen||'')}" placeholder="Ej: audiometría, espirometría, examen de columna..."/></div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Frecuencia (meses)</label><input type="number" min="1" class="form-control" id="exmFrecuencia" value="${x.frecuencia_meses||''}"/></div>
+    <div class="form-group"><label class="form-label">Responsable</label><input type="text" class="form-control" id="exmResponsable" value="${escAttr(x.responsable||'')}"/></div>
+  </div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalExamMatriz')">Cancelar</button><button class="btn primary" onclick="guardarExamMatriz()">Guardar</button>`;
+  modalSST('modalExamMatriz', x.id?'✏️ Editar ítem':'➕ Nuevo ítem de matriz de exámenes', body, footer, 600);
+}
+
+async function guardarExamMatriz(){
+  const id = document.getElementById('exmId').value;
+  const puesto = document.getElementById('exmPuesto').value.trim();
+  const tipoExamen = document.getElementById('exmTipo').value.trim();
+  if(!puesto||!tipoExamen){ toast('Puesto y tipo de examen son obligatorios','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto, puesto, tipo_examen: tipoExamen,
+    riesgo_asociado: document.getElementById('exmRiesgo').value.trim()||null,
+    frecuencia_meses: parseInt(document.getElementById('exmFrecuencia').value)||null,
+    responsable: document.getElementById('exmResponsable').value.trim()||null
+  };
+  const {error} = id ? await sb.from('sst_examenes_matriz').update(payload).eq('id',id) : await sb.from('sst_examenes_matriz').insert(payload);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Guardado','success'); cerrarModal('modalExamMatriz'); cargarExamMatriz();
+}
+async function eliminarExamMatriz(id){
+  if(!confirm('¿Eliminar este ítem de la matriz de exámenes?')) return;
+  const {error} = await sb.from('sst_examenes_matriz').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarExamMatriz();
+}
+
+function sstBadgeExamen(fechaProximo){
+  if(!fechaProximo) return '<span style="color:#676879;font-size:11px">Sin vencimiento</span>';
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const lim = new Date(fechaProximo+'T00:00:00');
+  const dias = Math.round((lim-hoy)/86400000);
+  if(dias < 0) return `<span style="background:#e2445c20;color:#e2445c;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">⛔ Vencido hace ${-dias}d</span>`;
+  if(dias <= 30) return `<span style="background:#ff9f0020;color:#ff9f00;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">⚠️ Vence en ${dias}d</span>`;
+  return `<span style="background:#00c87520;color:#00c875;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600">Vigente hasta ${formatFecha(fechaProximo)}</span>`;
+}
+
+async function cargarExamRegistros(){
+  const { data } = await sb.from('sst_examenes_registros').select('*').eq('proyecto_id',currentProyecto).order('fecha_examen',{ascending:false});
+  sstCache.examRegistros = data||[];
+  const el = document.getElementById('sstExamBody');
+  if(!el) return;
+  const puedeEditar = sstPuedeGestionar(), puedeBorrar = sstPuedeEliminar();
+  const tipoLabel = {preempleo:'Preempleo', periodico:'Periódico', reintegro:'Reintegro', retiro:'Retiro'};
+  const aptLabel = {apto:'<span style="color:#00c875;font-weight:700">✅ Apto</span>', apto_observaciones:'<span style="color:#ff9f00;font-weight:700">⚠️ Apto con observaciones</span>', no_apto:'<span style="color:#e2445c;font-weight:700">⛔ No apto</span>'};
+  el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${puedeEditar?`<button class="btn primary" onclick="abrirModalExamRegistro()">➕ Registrar examen</button>`:''}</div>
+  ${!sstCache.examRegistros.length?`<div class="empty-state"><div class="empty-icon">🩺</div><div class="empty-title">Sin exámenes registrados</div></div>`:
+  `<div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Trabajador</th><th>Puesto</th><th>Tipo</th><th>Fecha</th><th>Aptitud</th><th>Vigencia</th><th></th></tr></thead>
+  <tbody>${sstCache.examRegistros.map(x=>`<tr>
+    <td style="font-weight:600">${escapeHtml(x.trabajador_nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${escapeHtml(x.trabajador_cedula||'')}</div></td>
+    <td>${escapeHtml(x.puesto||'')}</td>
+    <td>${tipoLabel[x.tipo]||x.tipo}</td>
+    <td>${formatFecha(x.fecha_examen)}</td>
+    <td>${aptLabel[x.aptitud]||'—'}</td>
+    <td>${x.tipo==='retiro'?'<span style="color:#676879;font-size:11px">N/A</span>':sstBadgeExamen(x.fecha_proximo)}</td>
+    <td style="white-space:nowrap">
+      ${puedeEditar?`<button onclick='abrirModalExamRegistro(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${puedeBorrar?`<button onclick="eliminarExamRegistro('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+    </td>
+  </tr>`).join('')}</tbody></table></div></div>`}`;
+}
+
+function abrirModalExamRegistro(x){
+  x=x||{};
+  const body = `<input type="hidden" id="exrId" value="${x.id||''}"/>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Trabajador *</label><input type="text" class="form-control" id="exrNombre" value="${escAttr(x.trabajador_nombre||'')}"/></div>
+    <div class="form-group"><label class="form-label">Cédula</label><input type="text" class="form-control" id="exrCedula" value="${escAttr(x.trabajador_cedula||'')}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Puesto</label><input type="text" class="form-control" id="exrPuesto" value="${escAttr(x.puesto||'')}"/></div>
+    <div class="form-group"><label class="form-label">Tipo de evaluación *</label>
+      <select class="form-control" id="exrTipo">${[['preempleo','Preempleo / inicio'],['periodico','Periódico'],['reintegro','Reintegro'],['retiro','Retiro']].map(([v,l])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Fecha del examen *</label><input type="date" class="form-control" id="exrFecha" value="${x.fecha_examen||new Date().toISOString().split('T')[0]}"/></div>
+    <div class="form-group"><label class="form-label">Próximo examen (vencimiento)</label><input type="date" class="form-control" id="exrProximo" value="${x.fecha_proximo||''}"/></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label class="form-label">Aptitud laboral</label>
+      <select class="form-control" id="exrAptitud">
+        <option value="">Sin definir</option>
+        ${[['apto','Apto'],['apto_observaciones','Apto con observaciones'],['no_apto','No apto']].map(([v,l])=>`<option value="${v}" ${x.aptitud===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Médico</label><input type="text" class="form-control" id="exrMedico" value="${escAttr(x.medico_nombre||'')}"/></div>
+  </div>
+  <div class="form-group"><label class="form-label">Observaciones (sin datos clínicos)</label><textarea class="form-control" id="exrObs" placeholder="Ej: restricción para trabajo en alturas por 30 días...">${escapeHtml(x.observaciones||'')}</textarea></div>`;
+  const footer = `<button class="btn" onclick="cerrarModal('modalExamRegistro')">Cancelar</button><button class="btn primary" onclick="guardarExamRegistro()">Guardar</button>`;
+  modalSST('modalExamRegistro', x.id?'✏️ Editar registro de examen':'➕ Registrar examen médico', body, footer, 640);
+}
+
+async function guardarExamRegistro(){
+  const id = document.getElementById('exrId').value;
+  const nombre = document.getElementById('exrNombre').value.trim();
+  if(!nombre){ toast('El nombre del trabajador es obligatorio','error'); return; }
+  const payload = {
+    proyecto_id: currentProyecto, trabajador_nombre: nombre,
+    trabajador_cedula: document.getElementById('exrCedula').value.trim()||null,
+    puesto: document.getElementById('exrPuesto').value.trim()||null,
+    tipo: document.getElementById('exrTipo').value,
+    fecha_examen: document.getElementById('exrFecha').value,
+    fecha_proximo: document.getElementById('exrProximo').value||null,
+    aptitud: document.getElementById('exrAptitud').value||null,
+    observaciones: document.getElementById('exrObs').value.trim()||null,
+    medico_nombre: document.getElementById('exrMedico').value.trim()||null,
+    updated_at: new Date().toISOString()
+  };
+  const {error} = id ? await sb.from('sst_examenes_registros').update(payload).eq('id',id)
+                     : await sb.from('sst_examenes_registros').insert({...payload, created_by:currentUser?.id});
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast(id?'Actualizado':'Examen registrado ✓','success');
+  cerrarModal('modalExamRegistro');
+  cargarExamRegistros();
+}
+async function eliminarExamRegistro(id){
+  if(!confirm('¿Eliminar este registro de examen?')) return;
+  const {error} = await sb.from('sst_examenes_registros').delete().eq('id',id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Eliminado','success'); cargarExamRegistros();
+}
+
+// ============================================================================
+// DOCUMENTOS IMPRIMIBLES (reutilizan abrirVentanaDocCierre)
+// ============================================================================
+
+const sstEstiloTabla = 'width:100%;border-collapse:collapse;font-size:12px;margin:10px 0';
+const sstEstiloTh = 'border:1px solid #999;padding:6px 8px;background:#f0f0f0;text-align:left;font-size:11px';
+const sstEstiloTd = 'border:1px solid #999;padding:6px 8px';
+
+function sstFilaDato(label, valor){
+  return `<tr><td style="${sstEstiloTd};background:#f7f7f7;font-weight:700;width:220px">${label}</td><td style="${sstEstiloTd}">${escapeHtml(valor||'—')}</td></tr>`;
+}
+
+async function imprimirActaEPP(id){
+  const reg = sstCache.eppEntregas.find(x=>x.id===id);
+  if(!reg){ toast('Registro no encontrado','error'); return; }
+  const proy = await sstGetProyecto();
+  const cuerpo = `
+    <p style="font-size:12px">En cumplimiento del Decreto Ejecutivo 255 (Art. 15) y del Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 10), se deja constancia de la entrega gratuita del siguiente equipo de protección personal:</p>
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Trabajador', reg.trabajador_nombre)}
+      ${sstFilaDato('Cédula', reg.trabajador_cedula)}
+      ${sstFilaDato('Puesto de trabajo', reg.puesto)}
+      ${sstFilaDato('Fecha de entrega', formatFecha(reg.fecha_entrega))}
+      ${sstFilaDato('Detalle del EPP entregado', reg.detalle_epp)}
+    </table>
+    <p style="font-size:11px;color:#444">El trabajador declara haber recibido el EPP detallado en buen estado, así como la instrucción sobre su uso, mantenimiento y disposición final, y se compromete a utilizarlo conforme a la capacitación recibida (Acuerdo MDT-2024-196, Art. 6).</p>`;
+  abrirVentanaDocCierre('Acta de Entrega-Recepción de EPP', proy, cuerpo, [
+    [reg.trabajador_nombre||'Trabajador','Recibí conforme'],
+    ['','Responsable de SST']
+  ]);
+}
+
+async function imprimirRegistroCapacitacion(id){
+  const cap = sstCache.capacitaciones.find(c=>c.id===id);
+  if(!cap){ toast('Capacitación no encontrada','error'); return; }
+  const { data: asistentes } = await sb.from('sst_capacitacion_asistentes').select('*').eq('capacitacion_id',id).order('created_at');
+  const proy = await sstGetProyecto();
+  const tipoLabel = {induccion:'Inducción', reinduccion:'Re-inducción', capacitacion:'Capacitación', simulacro:'Simulacro'};
+  const cuerpo = `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Tema', cap.tema)}
+      ${sstFilaDato('Tipo', tipoLabel[cap.tipo]||cap.tipo)}
+      ${sstFilaDato('Fecha', formatFecha(cap.fecha))}
+      ${sstFilaDato('Duración', cap.duracion_horas?cap.duracion_horas+' horas':'—')}
+      ${sstFilaDato('Responsable / instructor', cap.responsable)}
+      ${sstFilaDato('Metodología', cap.metodologia)}
+    </table>
+    <h3 style="font-size:13px;margin:16px 0 6px">Registro de asistencia</h3>
+    <table style="${sstEstiloTabla}">
+      <tr><th style="${sstEstiloTh}">N°</th><th style="${sstEstiloTh}">Nombre</th><th style="${sstEstiloTh}">Cédula</th><th style="${sstEstiloTh}">Puesto</th><th style="${sstEstiloTh};width:120px">Firma</th></tr>
+      ${(asistentes||[]).map((a,i)=>`<tr>
+        <td style="${sstEstiloTd}">${i+1}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.nombre)}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.cedula||'')}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.puesto||'')}</td>
+        <td style="${sstEstiloTd}"></td>
+      </tr>`).join('')}
+      ${!(asistentes||[]).length?`<tr><td colspan="5" style="${sstEstiloTd};text-align:center;color:#777">Sin asistentes registrados</td></tr>`:''}
+    </table>
+    <p style="font-size:11px;color:#444">Registro conforme al Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 6) y a la Lista de Verificación SST del MDT (Gestión del Talento Humano, ítems 6-10).</p>`;
+  abrirVentanaDocCierre('Registro de Asistencia — Capacitación en SST', proy, cuerpo, [
+    [cap.responsable||'','Instructor / responsable'],
+    ['','Responsable de SST']
+  ]);
+}
+
+async function imprimirInformeIncidente(id){
+  const x = sstCache.incidentes.find(i=>i.id===id);
+  if(!x){ toast('Registro no encontrado','error'); return; }
+  const proy = await sstGetProyecto();
+  const tipoLabel = {incidente:'Incidente', accidente:'Accidente de trabajo', enfermedad_profesional:'Presunción de enfermedad profesional'};
+  const fh = new Date(x.fecha_hora);
+  const cuerpo = `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Tipo de evento', tipoLabel[x.tipo]||x.tipo)}
+      ${sstFilaDato('Fecha y hora', fh.toLocaleDateString('es-EC')+' '+fh.toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}))}
+      ${sstFilaDato('Trabajador', x.trabajador_nombre)}
+      ${sstFilaDato('Cédula', x.trabajador_cedula)}
+      ${sstFilaDato('Puesto de trabajo', x.puesto)}
+      ${sstFilaDato('Lugar del evento', x.lugar)}
+      ${sstFilaDato('Gravedad', x.gravedad)}
+    </table>
+    <h3 style="font-size:13px;margin:14px 0 4px">Descripción del evento</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px;min-height:50px">${escapeHtml(x.descripcion||'')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Testigos</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.testigos||'—')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Análisis de causas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px;min-height:40px">${escapeHtml(x.causas||'')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Acciones inmediatas adoptadas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.acciones_inmediatas||'—')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Acciones correctivas y preventivas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.acciones_correctivas||'—')}</p>
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Plazo legal de aviso al IESS (10 días hábiles)', x.fecha_limite_reporte_iess?formatFecha(x.fecha_limite_reporte_iess):'—')}
+      ${sstFilaDato('Reportado al IESS', x.reportado_iess?('Sí'+(x.fecha_reporte_iess?' — '+formatFecha(x.fecha_reporte_iess):'')):'No')}
+    </table>
+    <p style="font-size:11px;color:#444">Informe de investigación conforme a la Resolución C.D. 513 del IESS (Art. 44-45 y Anexo B) y al Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 7).</p>`;
+  abrirVentanaDocCierre('Informe de Investigación — '+(tipoLabel[x.tipo]||x.tipo), proy, cuerpo, [
+    ['','Responsable de SST'],
+    ['','Representante del empleador'],
+    [x.trabajador_nombre||'','Trabajador afectado']
+  ]);
+}
+
+async function imprimirPTE(id){
+  const p = sstCache.ptes.find(x=>x.id===id);
+  if(!p){ toast('Permiso no encontrado','error'); return; }
+  const proy = await sstGetProyecto();
+  const cuerpo = `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('N° de permiso', 'PTE-'+String(p.numero).padStart(3,'0'))}
+      ${sstFilaDato('Tipo de trabajo especial', (PTE_TIPOS[p.tipo]||p.tipo).replace(/^[^\s]+\s/,''))}
+      ${sstFilaDato('Fecha (vigencia: una jornada, no renovable)', formatFecha(p.fecha))}
+      ${sstFilaDato('Horario', (p.hora_inicio?p.hora_inicio.slice(0,5):'—')+' a '+(p.hora_fin_prevista?p.hora_fin_prevista.slice(0,5):'—'))}
+      ${sstFilaDato('Ubicación', p.ubicacion)}
+      ${sstFilaDato('Descripción del trabajo', p.descripcion_trabajo)}
+      ${sstFilaDato('Riesgos identificados', p.riesgos)}
+      ${sstFilaDato('Medidas de control', p.medidas_control)}
+      ${sstFilaDato('EPP requerido', p.epp_requerido)}
+      ${p.plan_rescate?sstFilaDato('Plan de rescate', p.plan_rescate):''}
+    </table>
+    <h3 style="font-size:13px;margin:14px 0 4px">Cuadrilla autorizada (firma obligatoria de todos)</h3>
+    <table style="${sstEstiloTabla}">
+      <tr><th style="${sstEstiloTh}">N°</th><th style="${sstEstiloTh}">Nombre</th><th style="${sstEstiloTh}">Cédula</th><th style="${sstEstiloTh};width:120px">Firma</th></tr>
+      ${(p.trabajadores||[]).map((t,i)=>`<tr>
+        <td style="${sstEstiloTd}">${i+1}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(t.nombre||'')}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(t.cedula||'')}</td>
+        <td style="${sstEstiloTd}"></td>
+      </tr>`).join('')}
+    </table>
+    ${p.estado==='cerrado'?`<table style="${sstEstiloTabla}">
+      ${sstFilaDato('Cierre del permiso', p.hora_cierre?new Date(p.hora_cierre).toLocaleString('es-EC'):'')}
+      ${sstFilaDato('Observaciones de cierre', p.observaciones_cierre)}
+    </table>`:''}
+    ${p.estado==='anulado'?`<table style="${sstEstiloTabla}">${sstFilaDato('ANULADO — motivo', p.motivo_anulacion)}</table>`:''}
+    <p style="font-size:11px;color:#444">Permiso emitido conforme al Decreto Ejecutivo 255 (Art. 58) y a la Norma Técnica de Seguridad e Higiene del Trabajo (Anexo 3 del A.M. MDT-2024-196, Art. 110-115). Este permiso caduca al término de la jornada y se anula automáticamente si cambian las condiciones físicas o climáticas del sitio o la conformación del grupo de trabajo.</p>`;
+  abrirVentanaDocCierre('Permiso de Trabajo Especial — PTE-'+String(p.numero).padStart(3,'0'), proy, cuerpo, [
+    [p.tecnico_nombre||'','Técnico SST — Autoriza'],
+    [p.supervisor_nombre||'','Supervisor']
+  ]);
 }
 
 // ── INIT ──
