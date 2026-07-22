@@ -12989,6 +12989,17 @@ function sstPuedeGestionar(){
 function sstPuedeEliminar(){
   return ['admin','fiscalizador'].includes(currentPerfil?.rol);
 }
+function sstEsAdmin(){
+  return currentPerfil?.rol === 'admin';
+}
+// Configuración del proyecto: potestad de admin/fiscalizador (el residente la consulta)
+function sstPuedeConfigurar(){
+  return ['admin','fiscalizador'].includes(currentPerfil?.rol);
+}
+// Candado visual para registros bloqueados por estado
+function sstCandado(titulo){
+  return `<span title="${escAttr(titulo)}" style="font-size:12px;padding:4px;cursor:help">🔒</span>`;
+}
 
 // Suma N días hábiles (lun-vie) a una fecha (string 'YYYY-MM-DD' o Date) — usado
 // para el plazo legal de aviso de accidente/enfermedad presuntiva al IESS (10
@@ -13100,7 +13111,7 @@ function sstCalcularSugerencia(numTrab){
 function renderSSTConfig(){
   const c = sstConfigActual||{};
   const sugerencia = sstCalcularSugerencia(c.num_trabajadores);
-  const puedeEditar = sstPuedeGestionar();
+  const puedeEditar = sstPuedeConfigurar();
   const grupos = c.grupos_atencion_prioritaria||[];
   const gruposDef = [
     ['embarazadas','Mujeres embarazadas'],['lactancia','Mujeres en período de lactancia'],
@@ -13109,7 +13120,7 @@ function renderSSTConfig(){
   ];
   document.getElementById('sstBody').innerHTML = `
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Configuración SST del proyecto</div><div class="card-subtitle">Determina qué exige la ley según el tamaño de la obra y quién es responsable de gestionarlo</div></div></div>
+    <div class="card-header"><div><div class="card-title">Configuración SST del proyecto</div><div class="card-subtitle">Determina qué exige la ley según el tamaño de la obra y quién es responsable de gestionarlo${puedeEditar?'':' · 🔒 Solo admin y fiscalizador pueden modificarla'}</div></div></div>
     <div style="padding:20px">
       <div class="form-row">
         <div class="form-group">
@@ -13420,7 +13431,7 @@ async function cargarEPPEntregas(){
     <td>${escapeHtml(x.puesto||'')}</td><td>${escapeHtml(x.detalle_epp)}</td>
     <td>${x.confirmado_trabajador?'<span style="color:#00c875;font-weight:600">✅ Confirmado</span>':'<span style="color:#ff9f00">Pendiente</span>'}</td>
     <td>${x.foto_url?`<a href="${x.foto_url}" target="_blank">📷 ver</a>`:'—'}</td>
-    <td style="white-space:nowrap"><button onclick="imprimirActaEPP('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir acta">🖨</button>${puedeBorrar?`<button onclick="eliminarEPPEntrega('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}</td>
+    <td style="white-space:nowrap"><button onclick="imprimirActaEPP('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir acta">🖨</button>${(sstEsAdmin() || (puedeBorrar && !x.confirmado_trabajador))?`<button onclick="eliminarEPPEntrega('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:(x.confirmado_trabajador?sstCandado('Entrega confirmada por el trabajador: bloqueada. Solo un admin puede eliminarla.'):'')}</td>
   </tr>`).join('')}</tbody></table></div></div>`}`;
 }
 
@@ -13446,21 +13457,30 @@ async function guardarEPPEntrega(){
   const detalle = document.getElementById('eeDetalle').value.trim();
   if(!nombre||!detalle){ toast('Trabajador y detalle de EPP son obligatorios','error'); return; }
   const btn = document.querySelector('#modalEppEntrega .btn.primary'); btn.disabled=true; btn.textContent='Guardando...';
+  const confirmado = document.getElementById('eeConfirmado').checked;
+  // Se inserta sin confirmar y la confirmación se aplica en un solo update final
+  // junto con la foto: así el registro queda bloqueado por RLS recién DESPUÉS
+  // de estar completo (una entrega confirmada ya no se puede modificar).
   const payload = {
     proyecto_id: currentProyecto, trabajador_nombre: nombre,
     trabajador_cedula: document.getElementById('eeCedula').value.trim()||null,
     puesto: document.getElementById('eePuesto').value.trim()||null,
     fecha_entrega: document.getElementById('eeFecha').value||new Date().toISOString().split('T')[0],
     detalle_epp: detalle,
-    confirmado_trabajador: document.getElementById('eeConfirmado').checked,
+    confirmado_trabajador: false,
     registrado_por: currentUser?.id
   };
   const { data:nuevo, error } = await sb.from('sst_epp_entregas').insert(payload).select().single();
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
   const file = document.getElementById('eeFoto').files[0];
+  const cambiosFinales = {};
   if(file){
     const url = await subirFotoSST(file,'epp',nuevo.id);
-    if(url) await sb.from('sst_epp_entregas').update({foto_url:url}).eq('id',nuevo.id);
+    if(url) cambiosFinales.foto_url = url;
+  }
+  if(confirmado) cambiosFinales.confirmado_trabajador = true;
+  if(Object.keys(cambiosFinales).length){
+    await sb.from('sst_epp_entregas').update(cambiosFinales).eq('id',nuevo.id);
   }
   toast('Entrega registrada ✓','success');
   cerrarModal('modalEppEntrega');
@@ -13626,8 +13646,11 @@ function renderIncidentes(){
     <td>${sstBadgePlazo(x.fecha_limite_reporte_iess, x.reportado_iess)}</td>
     <td style="white-space:nowrap">
       <button onclick="imprimirInformeIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px" title="Imprimir informe de investigación">🖨</button>
-      ${puedeEditar?`<button onclick='abrirModalIncidente(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
-      ${puedeBorrar?`<button onclick="eliminarIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+      ${(()=>{ const bloqueado = x.estado==='cerrado' || x.reportado_iess;
+        if(sstEsAdmin() || (puedeEditar && !bloqueado)) return `<button onclick='abrirModalIncidente(${JSON.stringify(x).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`;
+        if(bloqueado) return sstCandado('Registro bloqueado: '+(x.reportado_iess?'ya reportado al IESS':'investigación cerrada')+'. Solo un admin puede modificarlo.');
+        return ''; })()}
+      ${sstEsAdmin()?`<button onclick="eliminarIncidente('${x.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
     </td>
   </tr>`).join('')}</tbody></table></div></div>`}`;
 }
@@ -13837,7 +13860,10 @@ function cambiarModoChecklist(modo){
 function renderChecklist(){
   const el = document.getElementById('sstBody');
   if(!el) return;
-  const puedeEditar = sstPuedeGestionar();
+  // Separación de roles: la autoevaluación la llena el constructor (residente),
+  // la auditoría la llena el fiscalizador; admin puede ambas.
+  const rolActual = currentPerfil?.rol;
+  const puedeEditar = rolActual==='admin' || (sstChecklistModo==='autoevaluacion' ? rolActual==='residente' : rolActual==='fiscalizador');
   let totalCumple=0, totalNoCumple=0, totalNoAplica=0, totalItems=0;
   ANEXO1_CHECKLIST.forEach(cat=>cat.items.forEach(([cod])=>{
     totalItems++;
@@ -13858,6 +13884,7 @@ function renderChecklist(){
     <div style="font-size:12px;color:#676879">Progreso: ${evaluados}/${totalItems} ítems evaluados · <b style="color:#00c875">${pctCumple}% cumple</b> (de lo evaluado)</div>
   </div>
   <div style="background:#fdf6e3;color:#8a6d00;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">ℹ️ Este checklist replica el Anexo 1 (Lista de Verificación SST) del MDT como herramienta interna de seguimiento. No reemplaza una inspección oficial ni constituye un puntaje certificado por la autoridad.</div>
+  ${!puedeEditar?`<div style="background:#f0f7ff;border:1px solid #b3d7ff;color:#323338;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">🔒 Estás viendo este modo en solo lectura: la <b>autoevaluación</b> la llena el residente (constructor) y la <b>auditoría</b> la llena el fiscalizador. El admin puede editar ambas.</div>`:''}
   ${ANEXO1_CHECKLIST.map(cat=>renderCategoriaChecklist(cat, puedeEditar)).join('')}`;
 }
 
@@ -14034,7 +14061,8 @@ function renderPTE(){
         ${puedeEditar&&p.estado==='abierto'?`<button onclick="cerrarPTEPermiso('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#00c875" title="Cerrar permiso">✅</button>
         <button onclick="anularPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#ff9f00" title="Anular">🚫</button>
         <button onclick='abrirModalPTE(${JSON.stringify(p).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
-        ${puedeBorrar?`<button onclick="eliminarPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
+        ${p.estado!=='abierto'?(sstEsAdmin()?`<button onclick='abrirModalPTE(${JSON.stringify(p).replace(/'/g,"&#39;")})' class="btn" style="padding:4px 8px;font-size:11px" title="Edición excepcional (admin)">✏️</button>`:sstCandado('Permiso '+(p.estado==='cerrado'?'cerrado':'anulado')+': bloqueado. Solo un admin puede modificarlo.')):''}
+        ${sstEsAdmin()?`<button onclick="eliminarPTE('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c">🗑</button>`:''}
       </td>
     </tr>`).join('')}</tbody>
   </table></div></div>`}`;
