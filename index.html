@@ -1586,6 +1586,7 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <select class="form-control" id="miembroRol">
           <option value="fiscalizador">Fiscalizador — acceso completo menos usuarios</option>
           <option value="residente">Residente — responder observaciones</option>
+          <option value="tecnico_sst">Técnico SST (SISO) — módulo de seguridad y salud</option>
           <option value="visualizador">Visualizador — solo lectura</option>
           <option value="bodeguero">Bodeguero — control de materiales</option>
           <option value="cliente">Cliente — dashboard y Curva S</option>
@@ -3123,6 +3124,7 @@ function aplicarAccesosPorRol(rol){
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
+    tecnico_sst:  ['sso','archivos','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
@@ -3175,6 +3177,13 @@ function aplicarAccesosPorRol(rol){
     }
   });
 
+  // Contrato y Ensayos no están en el mapa de accesos (visibles para todos por
+  // defecto), pero el Técnico SST no debe ver información financiera de la obra.
+  const navContrato = document.querySelector('.nav-item[onclick*="contrato"]');
+  const navEnsayos = document.querySelector('.nav-item[onclick*="ensayos"]');
+  if(navContrato) navContrato.style.display = rol==='tecnico_sst' ? 'none' : 'flex';
+  if(navEnsayos) navEnsayos.style.display = rol==='tecnico_sst' ? 'none' : 'flex';
+
   // Ocultar botón de acción principal para roles sin permisos de creación
   if(rol==='residente'||rol==='visualizador'){
     const btnAccion = document.getElementById('btnAccionPrincipal');
@@ -3183,7 +3192,7 @@ function aplicarAccesosPorRol(rol){
 
   // Redirigir al dashboard si están en una página no permitida
   if(!permitidos.includes(currentPage)){
-    const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : 'dashboard';
+    const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : rol==='tecnico_sst' ? 'sso' : 'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
@@ -3633,6 +3642,7 @@ function aplicarModulosProyecto(modulos){
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
     residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
+    tecnico_sst:  ['sso','archivos','chat'],
     visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
@@ -3676,7 +3686,7 @@ function aplicarModulosProyecto(modulos){
 
   // Si está en una página que se desactivó, redirigir
   if(currentPage && navItems[currentPage] && navItems[currentPage].style.display==='none'){
-    const paginaInicio = rol==='residente'?'fiscalizacion':rol==='visualizador'?'rubros':rol==='bodeguero'?'materiales':rol==='cliente'?'dashboard':'dashboard';
+    const paginaInicio = rol==='residente'?'fiscalizacion':rol==='visualizador'?'rubros':rol==='bodeguero'?'materiales':rol==='tecnico_sst'?'sso':rol==='cliente'?'dashboard':'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
@@ -12984,7 +12994,7 @@ function modalSST(id, titulo, bodyHtml, footerHtml, anchoMax){
 }
 
 function sstPuedeGestionar(){
-  return ['admin','fiscalizador','residente'].includes(currentPerfil?.rol);
+  return ['admin','fiscalizador','residente','tecnico_sst'].includes(currentPerfil?.rol);
 }
 function sstPuedeEliminar(){
   return ['admin','fiscalizador'].includes(currentPerfil?.rol);
@@ -12992,9 +13002,10 @@ function sstPuedeEliminar(){
 function sstEsAdmin(){
   return currentPerfil?.rol === 'admin';
 }
-// Configuración del proyecto: potestad de admin/fiscalizador (el residente la consulta)
+// Configuración del proyecto: admin/fiscalizador y el Técnico SST (SISO).
+// El residente la consulta pero no la modifica.
 function sstPuedeConfigurar(){
-  return ['admin','fiscalizador'].includes(currentPerfil?.rol);
+  return ['admin','fiscalizador','tecnico_sst'].includes(currentPerfil?.rol);
 }
 // Candado visual para registros bloqueados por estado
 function sstCandado(titulo){
@@ -13860,10 +13871,10 @@ function cambiarModoChecklist(modo){
 function renderChecklist(){
   const el = document.getElementById('sstBody');
   if(!el) return;
-  // Separación de roles: la autoevaluación la llena el constructor (residente),
-  // la auditoría la llena el fiscalizador; admin puede ambas.
+  // Separación de roles: la autoevaluación la llena el constructor (residente
+  // o Técnico SST), la auditoría la llena el fiscalizador; admin puede ambas.
   const rolActual = currentPerfil?.rol;
-  const puedeEditar = rolActual==='admin' || (sstChecklistModo==='autoevaluacion' ? rolActual==='residente' : rolActual==='fiscalizador');
+  const puedeEditar = rolActual==='admin' || (sstChecklistModo==='autoevaluacion' ? ['residente','tecnico_sst'].includes(rolActual) : rolActual==='fiscalizador');
   let totalCumple=0, totalNoCumple=0, totalNoAplica=0, totalItems=0;
   ANEXO1_CHECKLIST.forEach(cat=>cat.items.forEach(([cod])=>{
     totalItems++;
@@ -13884,7 +13895,7 @@ function renderChecklist(){
     <div style="font-size:12px;color:#676879">Progreso: ${evaluados}/${totalItems} ítems evaluados · <b style="color:#00c875">${pctCumple}% cumple</b> (de lo evaluado)</div>
   </div>
   <div style="background:#fdf6e3;color:#8a6d00;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">ℹ️ Este checklist replica el Anexo 1 (Lista de Verificación SST) del MDT como herramienta interna de seguimiento. No reemplaza una inspección oficial ni constituye un puntaje certificado por la autoridad.</div>
-  ${!puedeEditar?`<div style="background:#f0f7ff;border:1px solid #b3d7ff;color:#323338;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">🔒 Estás viendo este modo en solo lectura: la <b>autoevaluación</b> la llena el residente (constructor) y la <b>auditoría</b> la llena el fiscalizador. El admin puede editar ambas.</div>`:''}
+  ${!puedeEditar?`<div style="background:#f0f7ff;border:1px solid #b3d7ff;color:#323338;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:14px">🔒 Estás viendo este modo en solo lectura: la <b>autoevaluación</b> la llena el constructor (residente o Técnico SST) y la <b>auditoría</b> la llena el fiscalizador. El admin puede editar ambas.</div>`:''}
   ${ANEXO1_CHECKLIST.map(cat=>renderCategoriaChecklist(cat, puedeEditar)).join('')}`;
 }
 
