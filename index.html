@@ -3830,8 +3830,8 @@ function renderRubros(rubros){
       <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
       ${rubros.length ? `<table style="table-layout:fixed;width:100%"><thead><tr><th style="width:8%">Código</th><th style="width:19%">Descripción</th><th style="width:6%">Unidad</th><th style="width:8%">Cantidad</th><th style="width:8%">P. Unitario</th><th style="width:9%">Contratado</th><th style="width:8%">Ejecutado</th><th style="width:9%">Total Prod.</th><th style="width:7%">% Rubro</th><th style="width:8%">Estado</th><th style="width:6%"></th></tr></thead><tbody>
         ${rubros.map(r=>{
-          const pct = r.cantidad_contrato>0 ? Math.min((r.cantidad_ejecutada||0)/r.cantidad_contrato*100,100) : 0;
-          const color = pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
+          const pct = r.cantidad_contrato>0 ? (r.cantidad_ejecutada||0)/r.cantidad_contrato*100 : 0;
+          const color = pct>100?'#e2445c':pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
           const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
           return `<tr>
             <td style="white-space:nowrap;font-size:12px;color:#676879">${r.codigo||'—'}</td>
@@ -3842,7 +3842,7 @@ function renderRubros(rubros){
             <td style="text-align:right;white-space:nowrap">$${Number(r.monto_contrato||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
             <td style="text-align:right;white-space:nowrap">${Number(r.cantidad_ejecutada||0).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
             <td style="text-align:right;white-space:nowrap">$${Number(r.total_produccion||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
-            <td><span style="font-size:12px;font-weight:600;color:${color}">${pct.toFixed(1)}%</span><div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div></td>
+            <td><span style="font-size:12px;font-weight:600;color:${color}">${pct.toFixed(1)}%${pct>100?' ⚠️':''}</span><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${color}"></div></div></td>
             <td>
               <select onchange="cambiarEstadoRubro('${r.id}',this.value)" style="font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid #c5c7d4;cursor:pointer;background:${r.estado==='terminado'?'#e8f5e9':r.estado==='trabajando'?'#e8f4ff':r.estado==='suspendido'?'#fff3e0':'#f5f6f8'};color:${r.estado==='terminado'?'#2e7d32':r.estado==='trabajando'?'#0060c0':r.estado==='suspendido'?'#e65100':'#676879'};font-weight:600;max-width:100%">
                 <option value="planificado" ${r.estado==='planificado'?'selected':''}>📋 Planificado</option>
@@ -12543,7 +12543,7 @@ ${incCuadroRubros && todosRubros.length ? `
     </tr></thead>
     <tbody>
       ${todosRubros.map(r=>{
-        const avance = r.monto_contrato>0 ? Math.min((r.total_produccion||0)/r.monto_contrato*100,100) : 0;
+        const avance = r.monto_contrato>0 ? (r.total_produccion||0)/r.monto_contrato*100 : 0;
         return `<tr>
           <td style="font-size:8px">${r.codigo||'—'}</td>
           <td style="font-size:8px">${escAttr(r.descripcion)}</td>
