@@ -3805,11 +3805,30 @@ async function guardarProyecto(){
 }
 
 // ── RUBROS ──
-async function cargarRubros(){
+// mantener: undefined = carga normal (con spinner, scroll al inicio);
+//           true      = refresco conservando la posición de scroll;
+//           '<id>'    = refresco conservando scroll + resaltar la fila del rubro actualizado.
+async function cargarRubros(mantener){
   if(!currentProyecto){ return; }
-  document.getElementById('rubrosContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando rubros...</div>';
+  const contScroll = document.querySelector('.content');
+  const scrollPrevio = (mantener!==undefined && contScroll) ? contScroll.scrollTop : null;
+  if(scrollPrevio===null){
+    document.getElementById('rubrosContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando rubros...</div>';
+  }
   const { data } = await sb.from('rubros').select('*').eq('proyecto_id',currentProyecto).order('orden');
   renderRubros(data||[]);
+  if(scrollPrevio!==null && contScroll){
+    contScroll.scrollTop = scrollPrevio;
+    if(typeof mantener==='string'){
+      const fila = document.getElementById('rubro-fila-'+mantener);
+      if(fila){
+        fila.scrollIntoView({block:'nearest'});
+        fila.style.transition='background .4s';
+        fila.style.background='#fff8e1';
+        setTimeout(()=>{ fila.style.background=''; }, 1800);
+      }
+    }
+  }
 }
 
 function renderRubros(rubros){
@@ -3833,7 +3852,7 @@ function renderRubros(rubros){
           const pct = r.cantidad_contrato>0 ? (r.cantidad_ejecutada||0)/r.cantidad_contrato*100 : 0;
           const color = pct>100?'#e2445c':pct>=100?'#00c875':pct>=60?'#0073ea':'#ff9f00';
           const ocBadge = r.es_orden_cambio ? `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${r.orden_cambio_codigo||'OC'}</span>` : '';
-          return `<tr>
+          return `<tr id="rubro-fila-${r.id}">
             <td style="white-space:nowrap;font-size:12px;color:#676879">${r.codigo||'—'}</td>
             <td style="font-weight:500;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4">${ocBadge}${escAttr(r.descripcion)}</td>
             <td style="white-space:nowrap">${r.unidad||'—'}</td>
@@ -4079,7 +4098,8 @@ async function guardarRubro(){
   toast(id ? 'Rubro actualizado ✓' : 'Rubro creado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevoRubro');
-  cargarRubros();
+  // Al editar: conservar scroll y resaltar la fila; al crear: conservar scroll
+  cargarRubros(id || true);
 }
 
 async function eliminarRubro(id, descripcion){
@@ -4090,7 +4110,7 @@ async function eliminarRubro(id, descripcion){
     return;
   }
   toast('Rubro eliminado','success');
-  cargarRubros();
+  cargarRubros(true);
 }
 
 function mostrarLinkFormulario(){
@@ -11946,9 +11966,9 @@ async function eliminarArchivo(id, url, modulo){
 // ── HELPERS ──
 async function cambiarEstadoRubro(id, estado){
   const { error } = await sb.from('rubros').update({ estado }).eq('id', id);
-  if(error){ toast('Error: '+error.message,'error'); cargarRubros(); return; }
+  if(error){ toast('Error: '+error.message,'error'); cargarRubros(true); return; }
   toast(`Estado actualizado a "${estado}"`, 'success');
-  cargarRubros();
+  cargarRubros(id);
 }
 
 async function recalcularRubros(){
@@ -11980,7 +12000,7 @@ async function recalcularRubros(){
   }
 
   toast(`✅ ${actualizados} rubros recalculados`, 'success');
-  cargarRubros();
+  cargarRubros(true);
 }
 
 function cerrarModal(id){ document.getElementById(id).classList.remove('show'); }
