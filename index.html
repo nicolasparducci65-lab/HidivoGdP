@@ -6090,6 +6090,10 @@ function calcularDatosGraficoCurvaS(rubros, modo){
       : new Date(p.getFullYear(),p.getMonth()+1,0);
     finPeriodos.push(finPeriodo);
 
+    // La curva real se evalúa hasta HOY: los periodos pasados usan su fin de
+    // periodo y el periodo en curso usa la fecha de hoy (avance al día).
+    const fechaCorte = finPeriodo<=hoy ? finPeriodo : (p<=hoy ? hoy : null);
+
     let acumPlan=0, acumReal=0;
     conFechas.forEach(r=>{
       const ini=new Date(r.fecha_inicio+'T00:00:00');
@@ -6097,13 +6101,19 @@ function calcularDatosGraficoCurvaS(rubros, modo){
       const duracion=(fin-ini)||1;
       const tPlan=Math.min(Math.max(finPeriodo-ini,0),duracion);
       acumPlan += Math.min(tPlan/duracion,1)*r.pesoEfectivo;
-      if(finPeriodo<=hoy){
-        const tReal=Math.min(Math.max(finPeriodo-ini,0),duracion);
-        acumReal += (r.avance_real/100)*r.pesoEfectivo*(tReal>=duracion?1:tReal/duracion);
+      if(fechaCorte){
+        // El dato conocido es el avance real acumulado HOY. Para reconstruir la
+        // historia se interpola linealmente desde el inicio del rubro hasta hoy,
+        // de modo que el último punto de la curva coincide con el avance actual
+        // (el mismo que muestran la tabla y el BCWP).
+        const transcurridoHoy = Math.min(Math.max(hoy-ini,0),duracion);
+        const tReal = Math.min(Math.max(fechaCorte-ini,0),transcurridoHoy);
+        const factor = transcurridoHoy>0 ? Math.min(tReal/transcurridoHoy,1) : (fechaCorte>=hoy?1:0);
+        acumReal += (r.avance_real/100)*r.pesoEfectivo*factor;
       }
     });
     planArr.push(parseFloat(Math.min(acumPlan,100).toFixed(2)));
-    realArr.push(finPeriodo<=hoy ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
+    realArr.push(fechaCorte ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
   });
 
   return { labels, planArr, realArr, sinCronograma:false, finPeriodos };
