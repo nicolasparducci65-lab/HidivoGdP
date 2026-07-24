@@ -9529,7 +9529,7 @@ const TIPOS_GARANTIA = {
 
 function semaforoGarantia(g){
   if(g.estado !== 'vigente') return { color:'#676879', bg:'#f5f6f8', label:{renovada:'Renovada',devuelta:'Devuelta',ejecutada:'Ejecutada'}[g.estado]||g.estado };
-  if(!g.vigencia_hasta) return { color:'#676879', bg:'#f5f6f8', label:'Sin fecha de vigencia' };
+  if(!g.vigencia_hasta) return { color:'#676879', bg:'#f5f6f8', label:'Por definir' };
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const hasta = new Date(g.vigencia_hasta + 'T00:00:00');
   const dias = Math.round((hasta - hoy) / 86400000);
@@ -9642,7 +9642,7 @@ async function cargarContrato(){
           <td>${escAttr(g.aseguradora||'—')}</td>
           <td>${escAttr(g.numero||'—')}</td>
           <td style="text-align:right;white-space:nowrap">${g.monto?fmt(g.monto):'—'}</td>
-          <td style="white-space:nowrap;font-size:12px">${g.vigencia_desde||'?'} → ${g.vigencia_hasta||'—'}</td>
+          <td style="white-space:nowrap;font-size:12px">${g.vigencia_desde||'—'} → ${g.vigencia_hasta||'—'}</td>
           <td><span style="background:${s.bg};color:${s.color};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">${s.label}</span></td>
           <td style="white-space:nowrap">
             ${g.archivo_url?`<a href="${g.archivo_url}" target="_blank" title="Ver póliza" style="text-decoration:none">📎</a>`:''}
@@ -10162,9 +10162,28 @@ async function guardarDatosContrato(){
   const strOrNull = id => { const v = document.getElementById(id).value.trim(); return v||null; };
 
   const garantiasValidas = window._extraccion.garantias.filter(g=>g.tipo);
-  const nGar = garantiasValidas.length;
 
-  if(!confirm(`Se actualizarán los datos del proyecto y el anticipo con lo que hay en el formulario, y se agregarán ${nGar} garantía(s) como registros nuevos (estado "vigente").\n\n¿Continuar?`)) return;
+  // Duplicados al re-extraer: si el proyecto ya tiene garantías del mismo tipo,
+  // preguntar si se reemplazan o se omiten — nunca insertar a ciegas.
+  let garantiasAInsertar = garantiasValidas;
+  let idsGarantiasReemplazar = [];
+  if(garantiasValidas.length){
+    const { data: existentes } = await sb.from('garantias').select('id,tipo').eq('proyecto_id', currentProyecto);
+    const tiposExistentes = new Set((existentes||[]).map(g=>g.tipo));
+    const tiposDuplicados = [...new Set(garantiasValidas.filter(g=>tiposExistentes.has(g.tipo)).map(g=>g.tipo))];
+    if(tiposDuplicados.length){
+      const nombres = tiposDuplicados.map(t=>TIPOS_GARANTIA[t]||t).join(', ');
+      const reemplazar = confirm(`Este proyecto ya tiene garantías de estos tipos:\n${nombres}\n\nACEPTAR → reemplazarlas por las extraídas del PDF.\nCANCELAR → conservar las existentes y omitir las duplicadas del PDF.`);
+      if(reemplazar){
+        idsGarantiasReemplazar = (existentes||[]).filter(g=>tiposDuplicados.includes(g.tipo)).map(g=>g.id);
+      } else {
+        garantiasAInsertar = garantiasValidas.filter(g=>!tiposExistentes.has(g.tipo));
+      }
+    }
+  }
+  const nGar = garantiasAInsertar.length;
+
+  if(!confirm(`Se actualizarán los datos del proyecto y el anticipo con lo que hay en el formulario, y se agregarán ${nGar} garantía(s) como registros nuevos (estado "vigente")${idsGarantiasReemplazar.length?` reemplazando ${idsGarantiasReemplazar.length} existente(s)`:''}.\n\n¿Continuar?`)) return;
 
   const btn = document.getElementById('btnGuardarDatosContrato');
   btn.disabled = true; btn.textContent = 'Guardando…';
@@ -10206,9 +10225,13 @@ async function guardarDatosContrato(){
       if(e2) throw new Error('Anticipo: '+e2.message);
     }
 
-    // 3) Garantías: registros nuevos con estado 'vigente'
+    // 3) Garantías: reemplazar las duplicadas si el usuario lo pidió, e insertar
+    if(idsGarantiasReemplazar.length){
+      const { error: eDel } = await sb.from('garantias').delete().in('id', idsGarantiasReemplazar);
+      if(eDel) throw new Error('Garantías (reemplazo): '+eDel.message);
+    }
     if(nGar){
-      const filas = garantiasValidas.map(g=>({
+      const filas = garantiasAInsertar.map(g=>({
         proyecto_id: currentProyecto,
         tipo: g.tipo,
         aseguradora: g.aseguradora||null,
