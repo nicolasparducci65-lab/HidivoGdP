@@ -2871,7 +2871,6 @@ async function guardarCompletarPerfil(){
 function showAuthError(msg){ const el=document.getElementById('authError'); el.textContent=msg; el.style.display='block'; document.getElementById('authSuccess').style.display='none'; }
 function showAuthSuccess(msg){ const el=document.getElementById('authSuccess'); el.textContent=msg; el.style.display='block'; document.getElementById('authError').style.display='none'; }
 function showLogin(){ document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; }
-function showRegister(){ document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; }
 
 function togglePasswordVisibility(inputId, iconEl){
   const input = document.getElementById(inputId);
@@ -3176,26 +3175,6 @@ document.addEventListener('click', e=>{
 
 function esVisualizador(){
   return currentPerfil?.rol === 'visualizador';
-}
-
-function ocultarBotonesAccion(){
-  if(!esVisualizador()) return;
-  // Ocultar todos los botones primary y de edición/eliminación
-  document.querySelectorAll('.btn.primary, .btn.danger, [onclick*="abrirModal"], [onclick*="editar"], [onclick*="eliminar"], [onclick*="guardar"], [onclick*="subir"], [onclick*="nuevo"], [onclick*="crear"]').forEach(btn=>{
-    // Excepciones: botones de navegación y cierre de modal
-    if(btn.onclick?.toString().includes('navTo')) return;
-    if(btn.onclick?.toString().includes('cerrarModal')) return;
-    if(btn.onclick?.toString().includes('logout')) return;
-    if(btn.onclick?.toString().includes('imprimirReporte')) return;
-    if(btn.onclick?.toString().includes('verReporte')) return;
-    if(btn.onclick?.toString().includes('abrirModalReporte')) return;
-    btn.style.display='none';
-  });
-  // Ocultar inputs de archivo
-  document.querySelectorAll('input[type="file"], input[type="date"][onchange], label[style*="cursor:pointer"]').forEach(el=>{
-    if(el.closest('.modal')) return; // No tocar modales
-    el.style.display='none';
-  });
 }
 
 // Calcula el rol efectivo del usuario para el proyecto activo y actualiza accesos
@@ -6939,15 +6918,6 @@ function cambiarPaginaPDF(delta){
   renderizarPDF(planoActivo.url, nueva);
 }
 
-function ajustarOverlayAlPlano(){
-  const img = document.getElementById('planoImg');
-  const overlay = document.getElementById('pinsOverlay');
-  if(img && overlay){
-    overlay.style.width = img.offsetWidth + 'px';
-    overlay.style.height = img.offsetHeight + 'px';
-  }
-}
-
 async function cargarPinsPlano(planoId){
   const { data: obs } = await sb.from('observaciones')
     .select('*').eq('plano_id', planoId).not('pin_x','is',null);
@@ -7546,36 +7516,6 @@ async function cargarArchivosGlobal(){
   </div>`;
 }
 
-async function describirArchivoIA(id, url, nombre){
-  const btn = event?.target;
-  if(btn){ btn.disabled=true; btn.textContent='✨ Analizando...'; }
-
-  try {
-    const ext = nombre.split('.').pop()?.toLowerCase()||'';
-
-    const response = await fetch('https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/bright-handler', {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA`
-      },
-      body: JSON.stringify({ nombre, ext })
-    });
-
-    const data = await response.json();
-    if(data.error){ toast('Error IA: '+data.error,'error'); return; }
-    const descripcion = data.descripcion||'Sin descripción';
-
-    await sb.from('archivos').update({ descripcion_ia: descripcion }).eq('id',id);
-    toast('Descripción generada ✓','success');
-    cargarArchivosGlobal();
-
-  } catch(err){
-    console.error(err);
-    toast('Error al generar descripción: '+err.message,'error');
-    if(btn){ btn.disabled=false; btn.textContent='✨ Describir con IA'; }
-  }
-}
 
 async function eliminarArchivoGlobal(id, url, modulo){
   if(!confirm('¿Eliminar este archivo?')) return;
@@ -8991,53 +8931,6 @@ function renderFiltrosReportes(contratantes){
     <input type="date" id="reportesHastaInput" value="${reportesFiltroHasta}" onchange="reportesFiltroHasta=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px"/>
     ${(reportesFiltroContratante||reportesFiltroDesde||reportesFiltroHasta)?`<button onclick="reportesFiltroContratante='';reportesFiltroDesde='';reportesFiltroHasta='';cargarReportesGlobales()" class="btn" style="font-size:12px">✕ Limpiar filtros</button>`:''}
   </div>`;
-}
-
-function renderTablaDetalleReportes(tab, libroData, obsData, solData, proyectoMap){
-  if(tab==='obs'){
-    if(!obsData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin observaciones en este período</div>';
-    return `<table style="table-layout:fixed;width:100%">
-      <thead><tr><th style="width:12%">N°</th><th style="width:30%">Proyecto</th><th style="width:33%">Título</th><th style="width:13%">Estado</th><th style="width:12%">Fecha</th></tr></thead>
-      <tbody>${obsData.map(o=>`
-        <tr>
-          <td style="font-weight:600;color:#0073ea">N°${o.numero||'—'}</td>
-          <td style="font-size:13px">${proyectoMap[o.proyecto_id]?.nombre||'—'}</td>
-          <td style="word-wrap:break-word">${o.titulo}</td>
-          <td><span style="background:${estadoObsColor(o.estado)}20;color:${estadoObsColor(o.estado)};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${estadoObsLabel(o.estado)}</span></td>
-          <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(o.created_at).toLocaleDateString('es-EC')}</td>
-        </tr>`).join('')}</tbody>
-    </table>`;
-  }
-  if(tab==='sol'){
-    if(!solData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin solicitudes en este período</div>';
-    return `<table style="table-layout:fixed;width:100%">
-      <thead><tr><th style="width:10%">N°</th><th style="width:25%">Proyecto</th><th style="width:13%">Tipo</th><th style="width:25%">Título</th><th style="width:13%">Estado</th><th style="width:14%">Fecha</th></tr></thead>
-      <tbody>${solData.map(s=>{
-        const tipo = TIPOS_SOLICITUD[s.tipo]||{label:s.tipo,emoji:'📋',color:'#676879'};
-        const estado = ESTADOS_SOLICITUD[s.estado]||{label:s.estado,color:'#676879',bg:'#f5f6f8'};
-        return `
-        <tr>
-          <td style="font-weight:600;color:#0073ea">N°${s.numero||'—'}</td>
-          <td style="font-size:13px">${proyectoMap[s.proyecto_id]?.nombre||'—'}</td>
-          <td style="font-size:12px">${tipo.emoji} ${tipo.label}</td>
-          <td style="word-wrap:break-word">${s.titulo}</td>
-          <td><span style="background:${estado.bg};color:${estado.color};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">${estado.label}</span></td>
-          <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(s.created_at).toLocaleDateString('es-EC')}</td>
-        </tr>`;}).join('')}</tbody>
-    </table>`;
-  }
-  // libro
-  if(!libroData.length) return '<div style="padding:24px;text-align:center;color:#676879">Sin registros de libro de obra en este período</div>';
-  return `<table style="table-layout:fixed;width:100%">
-    <thead><tr><th style="width:25%">Proyecto</th><th style="width:13%">Fecha</th><th style="width:42%">Actividades</th><th style="width:20%">Clima</th></tr></thead>
-    <tbody>${libroData.map(r=>`
-      <tr>
-        <td style="font-size:13px;font-weight:600">${proyectoMap[r.proyecto_id]?.nombre||'—'}</td>
-        <td style="font-size:12px;color:#676879;white-space:nowrap">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC')}</td>
-        <td style="word-wrap:break-word;font-size:13px">${(r.actividades_ejecutadas||'').substring(0,120)}${(r.actividades_ejecutadas||'').length>120?'...':''}</td>
-        <td style="font-size:12px;color:#676879">☀️ ${r.clima_diurno||'—'} / 🌙 ${r.clima_nocturno||'—'}</td>
-      </tr>`).join('')}</tbody>
-  </table>`;
 }
 
 let materialesTab = 'stock';
@@ -11150,7 +11043,6 @@ async function marcarCanalLeido(canalId){
 let chatCanalActivo = null; // {id, nombre, tipo, dm_usuario_id}
 let chatSuscripcion = null;
 let chatHiloActivo = null; // mensaje_id del hilo activo
-let chatNotifCount = {};
 
 async function cargarChat(){
   const proy = proyectos.find(p=>p.id===currentProyecto);
