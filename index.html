@@ -11261,11 +11261,17 @@ async function generarComunicado(){
   btn.textContent = 'Generando...';
 
   try{
+    // Token de la sesión del usuario: la función valida identidad y rol con él
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if(!token){ toast('Tu sesión expiró, vuelve a iniciar sesión','error'); volverFormularioComunicado(); return; }
+
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/redactar-comunicado`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_KEY}`
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
         proyecto_id: currentProyecto,

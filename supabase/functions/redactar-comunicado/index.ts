@@ -87,6 +87,35 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
+    // ── Autenticación y autorización ──
+    // Requiere un usuario con sesión válida que además sea admin global, o
+    // admin/fiscalizador en ESTE proyecto. Evita que se llame el endpoint
+    // directamente sin permisos (protege el crédito y el uso indebido).
+    const authHeader = req.headers.get('Authorization') || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token) return json({ error: 'No autorizado: falta sesión' }, 401);
+
+    const { data: userData, error: userErr } = await sb.auth.getUser(token);
+    if (userErr || !userData?.user) {
+      return json({ error: 'No autorizado: sesión inválida o expirada' }, 401);
+    }
+    const userId = userData.user.id;
+
+    // ¿Admin global? (perfiles.rol === 'admin' es el único rol verdaderamente global)
+    const { data: perfil } = await sb.from('perfiles').select('rol').eq('id', userId).maybeSingle();
+    let autorizado = perfil?.rol === 'admin';
+
+    // Si no es admin global, debe ser admin/fiscalizador en este proyecto
+    if (!autorizado) {
+      const { data: miembro } = await sb.from('proyecto_miembros')
+        .select('rol').eq('usuario_id', userId).eq('proyecto_id', proyecto_id).maybeSingle();
+      autorizado = ['admin', 'fiscalizador'].includes(miembro?.rol);
+    }
+
+    if (!autorizado) {
+      return json({ error: 'No autorizado: se requiere rol admin o fiscalizador en el proyecto' }, 403);
+    }
+
     // ── Datos del proyecto ──
     const [
       { data: proyecto, error: errProy },
