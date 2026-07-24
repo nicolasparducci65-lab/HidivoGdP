@@ -9590,10 +9590,10 @@ async function cargarContrato(){
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e6e9ef;border-radius:8px;flex-wrap:wrap">
         <span style="font-size:18px">📕</span>
         <a href="${escAttr(a.url)}" target="_blank" rel="noopener" style="flex:1;min-width:160px;font-size:13px;color:#0073ea;text-decoration:none;word-break:break-word">${escAttr(a.nombre||'contrato.pdf')}</a>
-        <button class="btn primary" style="gap:6px;font-size:12px;padding:6px 12px" onclick="extraerContratoIA(${a.id}, this)">
+        <button class="btn primary" style="gap:6px;font-size:12px;padding:6px 12px" onclick="extraerContratoIA('${a.id}', this)">
           ✨ Extraer datos
         </button>
-        <button class="btn" style="font-size:12px;padding:6px 10px;color:#e2445c" onclick="eliminarContratoPDF(${a.id})" title="Quitar">🗑</button>
+        <button class="btn" style="font-size:12px;padding:6px 10px;color:#e2445c" onclick="eliminarContratoPDF('${a.id}')" title="Quitar">🗑</button>
       </div>`).join('')
     }</div>` : '<div style="font-size:13px;color:#676879;padding:6px 2px">Aún no hay contratos cargados. Sube un PDF para extraer sus datos con IA.</div>'}
   </div>` : ''}
@@ -9967,7 +9967,7 @@ async function subirContratoPDF(input){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   if(file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)){ toast('Debe ser un archivo PDF','error'); return; }
   toast('Subiendo contrato...','info');
-  const nombreSan = file.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+  const nombreSan = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
   const path = `contratos/${currentProyecto}/${Date.now()}_${nombreSan}`;
   const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:'application/pdf', upsert:true});
   if(upErr){ toast('Error al subir: '+upErr.message,'error'); return; }
