@@ -9529,6 +9529,7 @@ const TIPOS_GARANTIA = {
 
 function semaforoGarantia(g){
   if(g.estado !== 'vigente') return { color:'#676879', bg:'#f5f6f8', label:{renovada:'Renovada',devuelta:'Devuelta',ejecutada:'Ejecutada'}[g.estado]||g.estado };
+  if(!g.vigencia_hasta) return { color:'#676879', bg:'#f5f6f8', label:'Sin fecha de vigencia' };
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const hasta = new Date(g.vigencia_hasta + 'T00:00:00');
   const dias = Math.round((hasta - hoy) / 86400000);
@@ -9641,7 +9642,7 @@ async function cargarContrato(){
           <td>${escAttr(g.aseguradora||'—')}</td>
           <td>${escAttr(g.numero||'—')}</td>
           <td style="text-align:right;white-space:nowrap">${g.monto?fmt(g.monto):'—'}</td>
-          <td style="white-space:nowrap;font-size:12px">${g.vigencia_desde||'?'} → ${g.vigencia_hasta}</td>
+          <td style="white-space:nowrap;font-size:12px">${g.vigencia_desde||'?'} → ${g.vigencia_hasta||'—'}</td>
           <td><span style="background:${s.bg};color:${s.color};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap">${s.label}</span></td>
           <td style="white-space:nowrap">
             ${g.archivo_url?`<a href="${g.archivo_url}" target="_blank" title="Ver póliza" style="text-decoration:none">📎</a>`:''}
@@ -10163,15 +10164,6 @@ async function guardarDatosContrato(){
   const garantiasValidas = window._extraccion.garantias.filter(g=>g.tipo);
   const nGar = garantiasValidas.length;
 
-  // La BD exige vigencia_hasta en garantias (not-null). Señalar cuál falta.
-  const sinVigencia = garantiasValidas.findIndex(g=>!g.vigencia_hasta);
-  if(sinVigencia >= 0){
-    toast(`La garantía ${sinVigencia+1} necesita fecha de "Vigencia hasta" (el PDF no la traía). Complétala o quita esa garantía.`,'error');
-    const campo = document.querySelector(`#exGarantias [data-gar="${sinVigencia}"][data-campo="vigencia_hasta"]`);
-    if(campo){ campo.style.borderColor = '#e2445c'; campo.focus(); campo.scrollIntoView({behavior:'smooth', block:'center'}); }
-    return;
-  }
-
   if(!confirm(`Se actualizarán los datos del proyecto y el anticipo con lo que hay en el formulario, y se agregarán ${nGar} garantía(s) como registros nuevos (estado "vigente").\n\n¿Continuar?`)) return;
 
   const btn = document.getElementById('btnGuardarDatosContrato');
@@ -10272,8 +10264,8 @@ function abrirModalGarantia(g=null){
 }
 
 async function guardarGarantia(){
+  // La fecha de vigencia es opcional: la póliza suele llegar después del contrato
   const hasta = document.getElementById('garHasta').value;
-  if(!hasta){ toast('La fecha de vigencia hasta es obligatoria','error'); return; }
   const btn = document.getElementById('btnGuardarGarantia');
   btn.disabled = true; btn.textContent = 'Guardando...';
 
@@ -10295,7 +10287,7 @@ async function guardarGarantia(){
     numero: document.getElementById('garNumero').value||null,
     monto: parseFloat(document.getElementById('garMonto').value)||null,
     vigencia_desde: document.getElementById('garDesde').value||null,
-    vigencia_hasta: hasta,
+    vigencia_hasta: hasta||null,
     estado: document.getElementById('garEstado').value,
     notas: document.getElementById('garNotas').value||null
   };
