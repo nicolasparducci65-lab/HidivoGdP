@@ -10163,6 +10163,15 @@ async function guardarDatosContrato(){
   const garantiasValidas = window._extraccion.garantias.filter(g=>g.tipo);
   const nGar = garantiasValidas.length;
 
+  // La BD exige vigencia_hasta en garantias (not-null). Señalar cuál falta.
+  const sinVigencia = garantiasValidas.findIndex(g=>!g.vigencia_hasta);
+  if(sinVigencia >= 0){
+    toast(`La garantía ${sinVigencia+1} necesita fecha de "Vigencia hasta" (el PDF no la traía). Complétala o quita esa garantía.`,'error');
+    const campo = document.querySelector(`#exGarantias [data-gar="${sinVigencia}"][data-campo="vigencia_hasta"]`);
+    if(campo){ campo.style.borderColor = '#e2445c'; campo.focus(); campo.scrollIntoView({behavior:'smooth', block:'center'}); }
+    return;
+  }
+
   if(!confirm(`Se actualizarán los datos del proyecto y el anticipo con lo que hay en el formulario, y se agregarán ${nGar} garantía(s) como registros nuevos (estado "vigente").\n\n¿Continuar?`)) return;
 
   const btn = document.getElementById('btnGuardarDatosContrato');
