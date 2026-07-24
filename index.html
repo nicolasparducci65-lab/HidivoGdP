@@ -3275,8 +3275,12 @@ function aplicarAccesosPorRol(rol){
     if(btnAccion) btnAccion.style.display='none';
   }
 
-  // Redirigir al dashboard si están en una página no permitida
-  if(!permitidos.includes(currentPage)){
+  // Redirigir al dashboard si están en una página no permitida.
+  // Contrato, Ensayos y Cartera están fuera del mapa de accesos (visibles por
+  // defecto, salvo Técnico SST): se consideran permitidas para no expulsar al
+  // usuario de ellas al cambiar de proyecto.
+  const fueraDelMapa = currentPage==='cartera' || ((currentPage==='contrato'||currentPage==='ensayos') && rol!=='tecnico_sst');
+  if(!permitidos.includes(currentPage) && !fueraDelMapa){
     const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : rol==='tecnico_sst' ? 'sso' : 'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
@@ -3366,15 +3370,6 @@ function registrarNavegacion(page){
   _histMax = _histIdx; // un push nuevo descarta las entradas "hacia adelante"
   history.pushState({ seccion: page, proyecto_id: currentProyecto || null, idx: _histIdx }, '');
   actualizarBotonesHistorial();
-}
-
-// Guarda el proyecto activo en el state actual sin crear una entrada nueva
-// (se llama al cambiar de proyecto, para que ← lo pueda restaurar).
-function sincronizarProyectoEnHistorial(){
-  const st = history.state;
-  if(st && st.seccion){
-    history.replaceState({ ...st, proyecto_id: currentProyecto || null }, '');
-  }
 }
 
 function actualizarBotonesHistorial(){
@@ -3762,6 +3757,7 @@ function sincronizarBuscadorProyecto(){
 }
 
 async function cambiarProyecto(id){
+  const paginaAntes = currentPage; // para detectar si hubo redirección por accesos/módulos
   currentProyecto = id;
   if(!id) return;
   // Cerrar modales abiertos
@@ -3783,13 +3779,19 @@ async function cambiarProyecto(id){
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
   if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='planillas') cargarPlanillas();
+  if(currentPage==='contrato') cargarContrato();
+  if(currentPage==='ensayos') cargarEnsayos();
   if(currentPage==='equipos') cargarEquipos();
   if(currentPage==='materiales') cargarMateriales();
   if(currentPage==='archivos') cargarArchivosGlobal();
   if(currentPage==='subcontratistas') cargarSubcontratistas();
+  if(currentPage==='formatosCalidad') cargarFormatosCalidad();
+  if(currentPage==='sso') cargarSST();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
-  // Guardar el proyecto en la entrada actual del historial (sin crear una nueva)
-  if(!_restaurandoHistorial) sincronizarProyectoEnHistorial();
+  // Historial: el cambio de proyecto crea su propia entrada {seccion, proyecto},
+  // de modo que "atrás" regresa a la misma sección del proyecto anterior.
+  // Si hubo redirección (accesos/módulos), navTo ya registró la entrada.
+  if(!_restaurandoHistorial && currentPage===paginaAntes) registrarNavegacion(currentPage);
 }
 
 function aplicarModulosProyecto(modulos){
@@ -3841,8 +3843,10 @@ function aplicarModulosProyecto(modulos){
     el.style.display = moduloActivo ? 'flex' : 'none';
   });
 
-  // Si está en una página que se desactivó, redirigir
+  // Si está en una página que se desactivó, redirigir avisando el motivo
   if(currentPage && navItems[currentPage] && navItems[currentPage].style.display==='none'){
+    const NOMBRES_PAGINA = { curvaS:'Curva S', libro:'Libro de Obra', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Equipos', materiales:'Materiales', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST/SSO' };
+    toast(`Este proyecto no tiene el módulo ${NOMBRES_PAGINA[currentPage]||currentPage}`,'info');
     const paginaInicio = rol==='residente'?'fiscalizacion':rol==='visualizador'?'rubros':rol==='bodeguero'?'materiales':rol==='tecnico_sst'?'sso':rol==='cliente'?'dashboard':'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
