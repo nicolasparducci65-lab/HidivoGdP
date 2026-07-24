@@ -114,6 +114,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .opcion-buscar-proyecto.seleccionada{background:#e6f1fd;font-weight:600}
 .btn{font-size:13px;padding:7px 14px;border-radius:7px;border:1px solid #c5c7d4;background:#fff;color:#323338;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .btn:hover{background:#f5f6f8}
+.btn:disabled,.btn[disabled]{opacity:.4;cursor:default;pointer-events:none}
+.btn-nav{padding:7px 9px}
+.btn-nav svg{width:16px;height:16px}
 .btn.primary{background:#0073ea;color:#fff;border-color:#0073ea}
 .btn.primary:hover{background:#0060c0}
 .btn.danger{background:#e2445c;color:#fff;border-color:#e2445c}
@@ -536,6 +539,12 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="22" height="22">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
+      </button>
+      <button class="btn btn-nav" id="btnNavAtras" onclick="history.back()" title="Atrás" aria-label="Atrás" disabled>
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="btn btn-nav" id="btnNavAdelante" onclick="history.forward()" title="Adelante" aria-label="Adelante" disabled>
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
       <div class="topbar-title" id="topbarTitle">Dashboard</div>
       <div class="topbar-actions">
@@ -2878,6 +2887,7 @@ async function mostrarApp(){
   cargarDashboard();
   cargarProyectosSelector();
   actualizarEstadoBotonPush();
+  iniciarHistorialApp();
   setTimeout(async ()=>{
     await actualizarRolEfectivo(currentProyecto);
     // Iniciar badge y suscripción global de chat
@@ -3318,7 +3328,77 @@ function navTo(page, btn){
   }
   if(page==='usuarios') cargarUsuarios();
   if(page==='reportesGlobales') cargarReportesGlobales();
+
+  // Registrar la navegación en el historial del navegador (salvo cuando la
+  // propia restauración por popstate está reproduciendo un estado anterior).
+  if(!_restaurandoHistorial) registrarNavegacion(page);
 }
+
+// ── INTEGRACIÓN CON EL HISTORIAL DEL NAVEGADOR (History API) ──
+// Cada cambio de sección hace pushState con {seccion, proyecto_id, idx}. Como
+// la History API no expone si hay a dónde volver/avanzar, llevamos nuestro
+// propio índice (_histIdx) y su máximo (_histMax) para habilitar/deshabilitar
+// los botones ← →.
+let _histIdx = 0;
+let _histMax = 0;
+let _restaurandoHistorial = false;
+
+function registrarNavegacion(page){
+  _histIdx += 1;
+  _histMax = _histIdx; // un push nuevo descarta las entradas "hacia adelante"
+  history.pushState({ seccion: page, proyecto_id: currentProyecto || null, idx: _histIdx }, '');
+  actualizarBotonesHistorial();
+}
+
+// Guarda el proyecto activo en el state actual sin crear una entrada nueva
+// (se llama al cambiar de proyecto, para que ← lo pueda restaurar).
+function sincronizarProyectoEnHistorial(){
+  const st = history.state;
+  if(st && st.seccion){
+    history.replaceState({ ...st, proyecto_id: currentProyecto || null }, '');
+  }
+}
+
+function actualizarBotonesHistorial(){
+  const atras = document.getElementById('btnNavAtras');
+  const adelante = document.getElementById('btnNavAdelante');
+  if(atras) atras.disabled = _histIdx <= 0;
+  if(adelante) adelante.disabled = _histIdx >= _histMax;
+}
+
+// Estado inicial de la app (una sola entrada base, idx 0).
+function iniciarHistorialApp(){
+  _histIdx = 0;
+  _histMax = 0;
+  history.replaceState({ seccion: currentPage, proyecto_id: currentProyecto || null, idx: 0 }, '');
+  actualizarBotonesHistorial();
+}
+
+window.addEventListener('popstate', async (e)=>{
+  const st = e.state;
+  if(!st || !st.seccion) return; // no es un estado nuestro
+  _restaurandoHistorial = true;
+  try{
+    // Restaurar primero el proyecto si cambió (recalcula rol y módulos)
+    const objetivo = st.proyecto_id || null;
+    if(objetivo !== (currentProyecto || null)){
+      if(objetivo){
+        const sel = document.getElementById('selectProyecto');
+        if(sel) sel.value = objetivo;
+        sincronizarBuscadorProyecto();
+        await cambiarProyecto(objetivo);
+      } else {
+        currentProyecto = null;
+      }
+    }
+    // Restaurar la sección sin volver a hacer push
+    navTo(st.seccion, document.querySelector(`.nav-item[onclick*="${st.seccion}"]`));
+    _histIdx = (typeof st.idx === 'number') ? st.idx : 0;
+  } finally {
+    _restaurandoHistorial = false;
+    actualizarBotonesHistorial();
+  }
+});
 
 function accionPrincipal(){
   if(currentPage==='proyectos') abrirModalProyecto();
@@ -3690,6 +3770,8 @@ async function cambiarProyecto(id){
   if(currentPage==='archivos') cargarArchivosGlobal();
   if(currentPage==='subcontratistas') cargarSubcontratistas();
   if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
+  // Guardar el proyecto en la entrada actual del historial (sin crear una nueva)
+  if(!_restaurandoHistorial) sincronizarProyectoEnHistorial();
 }
 
 function aplicarModulosProyecto(modulos){
