@@ -1219,6 +1219,63 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL REDACTAR COMUNICADO (IA) -->
+<div class="modal-overlay" id="modalComunicado">
+  <div class="modal" style="width:720px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">✍️ Redactar comunicado</div>
+      <button class="btn" onclick="cerrarModal('modalComunicado')" style="border:none;font-size:18px;padding:2px 8px">&times;</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div id="comFormulario">
+        <div class="form-group">
+          <label class="form-label">Tipo de comunicado</label>
+          <select class="form-control" id="comTipo">
+            <option value="suspension_temporal">Suspensión temporal de los trabajos</option>
+            <option value="llamado_atencion">Llamado de atención</option>
+            <option value="requerimiento">Requerimiento de subsanación</option>
+            <option value="notificacion_multa">Notificación de multa</option>
+            <option value="autorizacion_reinicio">Autorización de reinicio</option>
+            <option value="informe_administrador">Informe al Administrador del Contrato</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instrucciones adicionales</label>
+          <textarea class="form-control" id="comInstrucciones" rows="4"
+            placeholder="Ej: citar la cláusula décima sobre plazos; dirigir al Ing. Juan Pérez, Gerente General; conceder 10 días término para subsanar..."></textarea>
+          <div style="font-size:12px;color:#676879;margin-top:6px">
+            Se usarán los datos reales del proyecto: contrato, anticipo, garantías, observaciones pendientes y últimos registros del libro de obra.
+          </div>
+        </div>
+      </div>
+
+      <div id="comCargando" style="display:none;padding:30px;text-align:center;color:#676879">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        Redactando el comunicado…
+      </div>
+
+      <div id="comResultado" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Borrador generado — revísalo y edítalo antes de usarlo</label>
+          <textarea class="form-control" id="comBorrador" rows="20"
+            style="font-family:'Courier New',monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap"></textarea>
+        </div>
+        <div style="font-size:12px;color:#9b3d00;background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:10px">
+          ⚠️ Borrador generado por IA. Verifica cláusulas, montos, fechas y nombres antes de emitirlo. Los datos faltantes quedan marcados entre corchetes.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn" id="btnComVolver" style="display:none" onclick="volverFormularioComunicado()">← Cambiar parámetros</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="cerrarModal('modalComunicado')">Cerrar</button>
+        <button class="btn" id="btnComCopiar" style="display:none" onclick="copiarComunicado()">📋 Copiar texto</button>
+        <button class="btn primary" id="btnComGenerar" onclick="generarComunicado()">✨ Generar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL VISTA PREVIA REPORTE -->
 <div class="modal-overlay" id="modalVistaReporte" style="align-items:flex-start;padding:20px;overflow-y:auto">
   <div style="background:#fff;border-radius:14px;width:100%;max-width:820px;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
@@ -6479,6 +6536,10 @@ function renderFiscalizacionShell(){
       ${['todas','abierta','en_proceso','resuelta'].map(e=>`
       <button onclick="filtrarObs('${e}')" class="btn ${obsFiltrando===e?'primary':''}" style="padding:5px 12px;font-size:12px">${estadoObsLabel(e)}</button>`).join('')}
     </div>`}
+    ${['admin','fiscalizador'].includes(currentPerfil?.rol) ? `
+    <button onclick="abrirModalComunicado()" class="btn" style="gap:6px;margin-left:auto">
+      ✍️ Redactar comunicado
+    </button>` : ''}
   </div>
   <div id="fiscalBody"></div>`;
 }
@@ -11161,6 +11222,83 @@ async function notificarPorPush(tipo, titulo, mensaje){
   }catch(err){
     console.error('Error notificando por push:', err);
   }
+}
+
+// ── REDACCIÓN DE COMUNICADOS (IA) ──
+// Genera el borrador de una comunicación formal de fiscalización a partir de
+// los datos reales del proyecto (contrato, garantías, observaciones, libro de
+// obra). El texto siempre queda editable: es un borrador, no un documento final.
+
+function abrirModalComunicado(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  document.getElementById('comInstrucciones').value = '';
+  document.getElementById('comBorrador').value = '';
+  volverFormularioComunicado();
+  document.getElementById('modalComunicado').classList.add('show');
+}
+
+function volverFormularioComunicado(){
+  document.getElementById('comFormulario').style.display = '';
+  document.getElementById('comCargando').style.display = 'none';
+  document.getElementById('comResultado').style.display = 'none';
+  document.getElementById('btnComVolver').style.display = 'none';
+  document.getElementById('btnComCopiar').style.display = 'none';
+  const btn = document.getElementById('btnComGenerar');
+  btn.style.display = '';
+  btn.disabled = false;
+  btn.textContent = '✨ Generar';
+}
+
+async function generarComunicado(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+
+  const btn = document.getElementById('btnComGenerar');
+  document.getElementById('comFormulario').style.display = 'none';
+  document.getElementById('comCargando').style.display = '';
+  btn.disabled = true;
+  btn.textContent = 'Generando...';
+
+  try{
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/redactar-comunicado`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({
+        proyecto_id: currentProyecto,
+        tipo_comunicado: document.getElementById('comTipo').value,
+        instrucciones_adicionales: document.getElementById('comInstrucciones').value.trim()
+      })
+    });
+    const data = await resp.json();
+    if(!resp.ok || data.error) throw new Error(data.error || `Error ${resp.status}`);
+
+    document.getElementById('comBorrador').value = data.borrador;
+    document.getElementById('comCargando').style.display = 'none';
+    document.getElementById('comResultado').style.display = '';
+    document.getElementById('btnComVolver').style.display = '';
+    document.getElementById('btnComCopiar').style.display = '';
+    btn.style.display = 'none';
+    toast('Borrador generado ✓','success');
+  }catch(err){
+    console.error('Error redactando comunicado:', err);
+    toast('No se pudo generar el comunicado: ' + err.message, 'error');
+    volverFormularioComunicado();
+  }
+}
+
+async function copiarComunicado(){
+  const ta = document.getElementById('comBorrador');
+  try{
+    await navigator.clipboard.writeText(ta.value);
+  }catch(e){
+    // Fallback para navegadores sin permiso de portapapeles
+    ta.select();
+    document.execCommand('copy');
+    window.getSelection()?.removeAllRanges();
+  }
+  toast('Texto copiado al portapapeles ✓','success');
 }
 
 // ── SOLICITUDES ──
