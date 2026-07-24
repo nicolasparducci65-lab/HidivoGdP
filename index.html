@@ -3039,7 +3039,19 @@ async function cargarNotificacionesGlobales(){
       (s2||[]).forEach(s=>asegura(s.proyecto_id).sol++);
     }
 
-    notiDatos = { porProyecto, dmsPendientes };
+    // Resumen de cartera de HOY (notificación persistente) para mostrarlo en la campana
+    let resumenHoy = null;
+    try{
+      const { data: rc } = await sb.from('notificaciones')
+        .select('titulo,mensaje,created_at').eq('perfil_id', currentUser.id)
+        .eq('tipo','resumen_cartera').order('created_at',{ascending:false}).limit(1);
+      if(rc?.length){
+        const fechaEc = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(new Date(rc[0].created_at));
+        if(fechaEc === hoyEcuador()) resumenHoy = rc[0];
+      }
+    }catch(e){ /* la campana sigue funcionando sin el resumen */ }
+
+    notiDatos = { porProyecto, dmsPendientes, resumenHoy };
     pintarBadgeNotificaciones();
     const panel = document.getElementById('panelNotificaciones');
     if(panel && panel.style.display==='block') renderPanelNotificaciones();
@@ -3089,11 +3101,15 @@ function renderPanelNotificaciones(){
     .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol||p.gar||p.libro||p.libroObs; })
     .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
 
-  if(!pids.length && !dmsPendientes.length){
+  if(!pids.length && !dmsPendientes.length && !notiDatos.resumenHoy){
     panel.innerHTML = '<div style="padding:18px;font-size:13px;color:#676879;text-align:center">✓ No tienes pendientes</div>';
     return;
   }
   let html = '';
+  if(notiDatos.resumenHoy){
+    html += `<div class="noti-proyecto">Resumen del día</div>
+      <div class="noti-item" onclick="irAResumenCartera()">🌅 ${escAttr(notiDatos.resumenHoy.titulo||'Resumen de cartera')}</div>`;
+  }
   if(dmsPendientes.length){
     html += `<div class="noti-proyecto">Mensajes directos</div>` + dmsPendientes.map(d=>
       `<div class="noti-item" onclick="irANotiChat(null,'${d.id}')">💬 ${escAttr(d.nombre)}<span class="noti-count">${d.n}</span></div>`
@@ -3115,6 +3131,11 @@ function renderPanelNotificaciones(){
     if(p.libroObs) html += `<div class="noti-item" onclick="irANotificacion('${pid}','libro')">📖 Registros observados<span class="noti-count">${p.libroObs}</span></div>`;
   });
   panel.innerHTML = html;
+}
+
+function irAResumenCartera(){
+  document.getElementById('panelNotificaciones').style.display='none';
+  navTo('cartera', document.querySelector('.nav-item[onclick*="cartera"]'));
 }
 
 async function irANotiChat(pid, canalId){
@@ -4966,7 +4987,7 @@ async function proyectosVisiblesCartera(){
     return data||[];
   }
   const { data: miembros } = await sb.from('proyecto_miembros')
-    .select('proyecto_id').eq('user_id', currentUser?.id).eq('rol','fiscalizador');
+    .select('proyecto_id').eq('usuario_id', currentUser?.id).eq('rol','fiscalizador');
   const ids = (miembros||[]).map(m=>m.proyecto_id);
   if(!ids.length) return [];
   const { data } = await sb.from('proyectos').select('*').in('id', ids).order('nombre');
@@ -4978,8 +4999,77 @@ async function mostrarNavCartera(){
   if(!el) return;
   if(currentPerfil?.rol === 'admin'){ el.style.display='flex'; return; }
   const { data } = await sb.from('proyecto_miembros')
-    .select('id').eq('user_id', currentUser?.id).eq('rol','fiscalizador').limit(1);
+    .select('id').eq('usuario_id', currentUser?.id).eq('rol','fiscalizador').limit(1);
   el.style.display = (data&&data.length) ? 'flex' : 'none';
+}
+
+// ── RESUMEN DIARIO DE CARTERA (IA) ──
+// Tarjeta con la notificación 'resumen_cartera' más reciente del usuario,
+// colapsable y con acceso a los últimos 7 resúmenes.
+function renderTarjetaResumenCartera(){
+  const rs = window._resumenesCartera||[];
+  const esAdmin = currentPerfil?.rol==='admin';
+  const btnGen = esAdmin ? `<button class="btn" id="btnGenResumenCartera" onclick="event.stopPropagation();generarResumenCarteraManual()" style="font-size:11px;padding:4px 10px">🔄 Generar ahora</button>` : '';
+  if(!rs.length) return esAdmin ? `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${btnGen}</div>` : '';
+  const r = rs[0];
+  const fechaEc = d => new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(new Date(d));
+  const fmtDia = d => new Intl.DateTimeFormat('es-EC',{timeZone:'America/Guayaquil',weekday:'long',day:'2-digit',month:'2-digit'}).format(new Date(d));
+  const esHoy = fechaEc(r.created_at) === hoyEcuador();
+  const etiqueta = esHoy ? 'Resumen del día' : `Resumen del ${fmtDia(r.created_at)}`;
+  const anteriores = rs.slice(1);
+  return `
+  <div class="card" style="margin-bottom:18px;border-left:4px solid #0073ea">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px;flex-wrap:wrap" onclick="toggleResumenCartera()">
+      <h3 style="margin:0;font-size:15px">🌅 ${etiqueta}${esHoy?'':' <span style="font-size:11px;color:#b8860b">(anterior)</span>'}</h3>
+      <div style="display:flex;gap:8px;align-items:center">${btnGen}<span id="resumenCarteraChevron" style="color:#676879">▾</span></div>
+    </div>
+    <div id="resumenCarteraBody" style="margin-top:10px">
+      <div style="font-size:13px;line-height:1.7;color:#323338;white-space:pre-wrap">${escAttr(r.mensaje||'')}</div>
+      ${anteriores.length?`
+      <div style="margin-top:10px">
+        <a href="javascript:void(0)" onclick="const x=document.getElementById('resumenesAnteriores');x.style.display=x.style.display==='none'?'block':'none'" style="font-size:12px;color:#0073ea;text-decoration:none">ver anteriores (${anteriores.length})</a>
+        <div id="resumenesAnteriores" style="display:none;margin-top:8px;border-top:1px solid #e6e9ef">
+          ${anteriores.map(a=>`<div style="padding:10px 0;border-bottom:1px solid #f5f6f8">
+            <div style="font-size:11px;font-weight:700;color:#676879;text-transform:capitalize">${fmtDia(a.created_at)}</div>
+            <div style="font-size:12.5px;line-height:1.6;white-space:pre-wrap;margin-top:4px">${escAttr(a.mensaje||'')}</div>
+          </div>`).join('')}
+        </div>
+      </div>`:''}
+    </div>
+  </div>`;
+}
+
+function toggleResumenCartera(){
+  const b = document.getElementById('resumenCarteraBody');
+  const ch = document.getElementById('resumenCarteraChevron');
+  if(!b) return;
+  const abierto = b.style.display!=='none';
+  b.style.display = abierto?'none':'block';
+  if(ch) ch.textContent = abierto?'▸':'▾';
+}
+
+// Disparo manual (solo admin): la Edge Function acepta JWT de admin además del cron
+async function generarResumenCarteraManual(){
+  const btn = document.getElementById('btnGenResumenCartera');
+  if(btn){ btn.disabled=true; btn.textContent='Generando…'; }
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if(!token) throw new Error('Sesión expirada');
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/resumen-cartera`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${token}` },
+      body:'{}'
+    });
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error||`Error ${r.status}`);
+    toast(`Resumen generado ✓ — ${d.entregados||0} entregado(s), ${d.grupos||0} grupo(s)`,'success');
+    cargarCartera();
+    cargarNotificacionesGlobales();
+  }catch(e){
+    toast('No se pudo generar el resumen: '+e.message,'error');
+    if(btn){ btn.disabled=false; btn.textContent='🔄 Generar ahora'; }
+  }
 }
 
 async function cargarCartera(){
@@ -5047,6 +5137,14 @@ async function cargarCartera(){
   const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtK = v => v>=1e6 ? '$'+(v/1e6).toFixed(2)+'M' : v>=1e3 ? '$'+(v/1e3).toFixed(1)+'K' : fmt(v);
 
+  // Resumen diario IA: últimos 7 del usuario (la tarjeta se oculta si no hay ninguno).
+  // Esquema real de notificaciones: perfil_id / mensaje / created_at.
+  const { data: resumenesIA } = await sb.from('notificaciones')
+    .select('id,titulo,mensaje,created_at')
+    .eq('perfil_id', currentUser?.id).eq('tipo','resumen_cartera')
+    .order('created_at',{ascending:false}).limit(7);
+  window._resumenesCartera = resumenesIA||[];
+
   const filas = activos.map(p=>{
     const d = porP[p.id];
     const real = d.vigente>0 ? d.ejecutado/d.vigente*100 : 0;
@@ -5100,6 +5198,7 @@ async function cargarCartera(){
   const nVerde = activos.filter(p=>porP[p.id]._sem==='🟢').length;
 
   cont.innerHTML = `
+  ${renderTarjetaResumenCartera()}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px">
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">CARTERA CONTRATADA</div><div style="font-size:20px;font-weight:800;color:#0073ea">${fmtK(totVigente)}</div><div style="font-size:11px;color:#676879">${activos.length} proyecto(s) activo(s)</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">PLANILLADO ACUMULADO</div><div style="font-size:20px;font-weight:800;color:#00854d">${fmtK(totPlanillado)}</div><div style="font-size:11px;color:#676879">${totVigente>0?(totPlanillado/totVigente*100).toFixed(1):0}% de la cartera</div></div>
