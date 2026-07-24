@@ -1,8 +1,9 @@
-const CACHE_NAME = 'hidivo-v4';
+const CACHE_NAME = 'hidivo-v5';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
   '/HidivoGdP/styles.css',
+  '/HidivoGdP/constantes.js',
   '/HidivoGdP/registro-obra.html',
   '/HidivoGdP/manifest.json',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
