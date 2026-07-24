@@ -985,6 +985,9 @@
       </div>
 
       <div id="comResultado" style="display:none">
+        <div id="comAvisoTruncado" style="display:none;background:#fff3cd;color:#856404;border:1px solid #ffe08a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;font-weight:600">
+          ⚠️ El borrador salió incompleto — reintenta o simplifica las instrucciones.
+        </div>
         <div class="form-group">
           <label class="form-label">Borrador generado — revísalo y edítalo antes de usarlo</label>
           <textarea class="form-control" id="comBorrador" rows="20"
@@ -11480,12 +11483,14 @@ async function generarComunicado(){
     if(!resp.ok || data.error) throw new Error(data.error || `Error ${resp.status}`);
 
     document.getElementById('comBorrador').value = data.borrador;
+    document.getElementById('comAvisoTruncado').style.display = data.truncado ? '' : 'none';
     document.getElementById('comCargando').style.display = 'none';
     document.getElementById('comResultado').style.display = '';
     document.getElementById('btnComVolver').style.display = '';
     document.getElementById('btnComCopiar').style.display = '';
     btn.style.display = 'none';
-    toast('Borrador generado ✓','success');
+    if(data.truncado) toast('El borrador salió incompleto — reintenta o simplifica','error');
+    else toast('Borrador generado ✓','success');
   }catch(err){
     console.error('Error redactando comunicado:', err);
     toast('No se pudo generar el comunicado: ' + err.message, 'error');

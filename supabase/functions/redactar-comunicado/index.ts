@@ -6,7 +6,8 @@
 // observaciones abiertas y últimos registros del libro de obra.
 //
 // POST { proyecto_id, tipo_comunicado, instrucciones_adicionales }
-//  ->  { borrador: "<texto plano listo para pegar en Word>" }
+//  ->  { borrador: "<texto plano listo para pegar en Word>", truncado?: true }
+//      truncado=true si el modelo agotó max_tokens y la carta salió incompleta
 //
 // Requiere las variables de entorno:
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY
@@ -170,7 +171,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 3000,
+        max_tokens: 8000,
         messages: [{ role: 'user', content: contenidoUsuario }]
       })
     });
@@ -194,6 +195,10 @@ Deno.serve(async (req) => {
       .trim();
 
     if (!borrador) return json({ error: 'El modelo no devolvió texto.' }, 502);
+
+    if (data.stop_reason === 'max_tokens') {
+      return json({ borrador, truncado: true });
+    }
 
     return json({ borrador });
 
