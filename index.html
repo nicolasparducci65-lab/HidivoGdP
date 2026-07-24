@@ -10005,7 +10005,7 @@ async function extraerContratoIA(archivoId, btn){
     });
     const data = await resp.json();
     if(!resp.ok || data.error) throw new Error(data.error || `Error ${resp.status}`);
-    abrirModalExtraccion(data.datos||{});
+    abrirModalExtraccion(data.datos||{}, archivoId);
     toast('Datos extraídos ✓ — revísalos antes de guardar','success');
   }catch(err){
     console.error('Error extrayendo contrato:', err);
@@ -10023,11 +10023,13 @@ const TIPOS_GARANTIA_OPC = [
   ['otra','Otra']
 ];
 
-function abrirModalExtraccion(datos){
+function abrirModalExtraccion(datos, archivoId){
   const p = datos.proyecto||{};
   const a = datos.anticipo||{};
   const ad = datos.datos_adicionales||{};
   window._extraccion = {
+    archivoId: archivoId||null,
+    descripcion_archivo: (typeof datos.descripcion_archivo==='string' && datos.descripcion_archivo.trim()) ? datos.descripcion_archivo.trim() : null,
     garantias: Array.isArray(datos.garantias) ? datos.garantias.map(g=>({...g})) : [],
     reajuste_terminos: Array.isArray(datos.reajuste_terminos) ? datos.reajuste_terminos : [],
     datos_no_mapeados: datos.datos_no_mapeados||{}
@@ -10258,6 +10260,14 @@ async function guardarDatosContrato(){
         })));
         if(e4) console.warn('Reajuste no insertado:', e4.message);
       }
+    }
+
+    // 5) Descripción automática del archivo (si el extractor la generó)
+    if(window._extraccion.descripcion_archivo && window._extraccion.archivoId){
+      const { error: e5 } = await sb.from('archivos')
+        .update({ descripcion_ia: window._extraccion.descripcion_archivo })
+        .eq('id', window._extraccion.archivoId);
+      if(e5) console.warn('Descripción del archivo no actualizada:', e5.message);
     }
 
     toast('Datos del contrato guardados ✓','success');

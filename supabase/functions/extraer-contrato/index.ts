@@ -33,6 +33,7 @@ REGLAS ESTRICTAS:
 
 ESQUEMA JSON EXACTO A DEVOLVER:
 {
+  "descripcion_archivo": string|null,   // UNA sola línea, máx 20 palabras, que identifique el documento: tipo de contrato, partes, monto y fecha de suscripción. Ej.: "Contrato de obra civil SONGA-RINOMAQ, USD 779,535.25, suscrito 17-jun-2026, plazo 8 semanas"
   "proyecto": {
     "nombre": string|null,              // objeto del contrato / nombre de la obra
     "contratante": string|null,         // entidad/municipio que contrata

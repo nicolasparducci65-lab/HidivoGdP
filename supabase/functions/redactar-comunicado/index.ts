@@ -225,6 +225,17 @@ function armarContexto({ proyecto, anticipo, garantias, observaciones, libro, ru
   L.push(`Estado del proyecto: ${proyecto.estado || 'no registrado'}`);
   if (proyecto.descripcion) L.push(`Descripción: ${proyecto.descripcion}`);
 
+  // Datos extraídos del PDF del contrato (si el proyecto pasó por la extracción IA).
+  // Incluye plazo, multas, representantes y cláusulas: permiten citar con precisión.
+  if (proyecto.contrato_datos && typeof proyecto.contrato_datos === 'object') {
+    const lineas = formatearContratoDatos(proyecto.contrato_datos);
+    if (lineas.length) {
+      L.push('');
+      L.push('-- DATOS DEL CONTRATO (extraídos del documento) --');
+      L.push(...lineas);
+    }
+  }
+
   // Avance económico calculado desde rubros
   if (rubros?.length) {
     const contratado = rubros.reduce((s: number, r: any) => s + (r.monto_contrato || 0), 0);
@@ -297,4 +308,59 @@ function armarContexto({ proyecto, anticipo, garantias, observaciones, libro, ru
   L.push(`Fecha de emisión sugerida (hoy): ${new Date().toISOString().slice(0, 10)}`);
 
   return L.join('\n');
+}
+
+// Convierte el jsonb proyectos.contrato_datos en líneas de texto legible.
+// Con manejo especial para cláusulas ({ref, resumen}) y representantes; el
+// resto de claves se vuelca genéricamente (clave: valor), a cualquier
+// profundidad razonable, para tolerar variantes del esquema del extractor.
+// deno-lint-ignore no-explicit-any
+function formatearContratoDatos(cd: any, prefijo = ''): string[] {
+  const L: string[] = [];
+  const etiqueta = (k: string) => k.replace(/_/g, ' ');
+  for (const [k, v] of Object.entries(cd)) {
+    if (v == null || v === '' || k === 'extraido_at') continue;
+
+    if (k === 'clausulas_relevantes' && Array.isArray(v)) {
+      v.forEach((c: any) => {
+        if (c == null) return;
+        if (typeof c === 'object') {
+          const ref = c.ref ?? c.referencia ?? c.clausula ?? '';
+          const res = c.resumen ?? c.texto ?? c.descripcion ?? '';
+          L.push(`${prefijo}Cláusula ${ref}: ${res}`.trim());
+        } else {
+          L.push(`${prefijo}Cláusula: ${c}`);
+        }
+      });
+      continue;
+    }
+
+    if (Array.isArray(v)) {
+      if (!v.length) continue;
+      L.push(`${prefijo}${etiqueta(k)}:`);
+      v.forEach((item: any, i: number) => {
+        if (item != null && typeof item === 'object') {
+          const partes = Object.entries(item)
+            .filter(([, x]) => x != null && x !== '')
+            .map(([kk, x]) => `${etiqueta(kk)}: ${x}`);
+          L.push(`${prefijo}  ${i + 1}. ${partes.join('; ')}`);
+        } else if (item != null && item !== '') {
+          L.push(`${prefijo}  ${i + 1}. ${item}`);
+        }
+      });
+      continue;
+    }
+
+    if (typeof v === 'object') {
+      const sub = formatearContratoDatos(v, prefijo + '  ');
+      if (sub.length) {
+        L.push(`${prefijo}${etiqueta(k)}:`);
+        L.push(...sub);
+      }
+      continue;
+    }
+
+    L.push(`${prefijo}${etiqueta(k)}: ${v}`);
+  }
+  return L;
 }
