@@ -3783,6 +3783,15 @@ async function cambiarProyecto(id){
   if(!id) return;
   // Cerrar modales abiertos
   document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'));
+  // Limpiar estado ligado al proyecto anterior (evita fugas de datos entre proyectos)
+  if(chatSuscripcion){ sb.removeChannel(chatSuscripcion); chatSuscripcion = null; }
+  chatCanalActivo = null;
+  chatHiloActivo = null;
+  if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico = null; }
+  cronogramaData = [];
+  _ensayosFiltro = {estado:'todos', espec:''};
+  planoActivo = null;
+  pinModo = false;
   // Recalcular rol efectivo para este proyecto
   await actualizarRolEfectivo(id);
   // Recargar proyecto desde BD para tener módulos frescos
@@ -3808,7 +3817,7 @@ async function cambiarProyecto(id){
   if(currentPage==='subcontratistas') cargarSubcontratistas();
   if(currentPage==='formatosCalidad') cargarFormatosCalidad();
   if(currentPage==='sso') cargarSST();
-  if(currentPage==='chat'){ chatCanalActivo=null; cargarChat(); }
+  if(currentPage==='chat') cargarChat();
   // Historial: el cambio de proyecto crea su propia entrada {seccion, proyecto},
   // de modo que "atrás" regresa a la misma sección del proyecto anterior.
   // Si hubo redirección (accesos/módulos), navTo ya registró la entrada.
