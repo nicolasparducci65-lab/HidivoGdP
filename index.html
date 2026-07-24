@@ -7219,7 +7219,7 @@ async function subirArchivoGlobal(input){
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
     if(upErr){ toast('Error: '+upErr.message,'error'); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-    await sb.from('archivos').insert({
+    const { data: nuevoArch } = await sb.from('archivos').insert({
       proyecto_id: currentProyecto,
       modulo: 'general',
       nombre: file.name,
@@ -7227,7 +7227,8 @@ async function subirArchivoGlobal(input){
       url: urlData.publicUrl,
       tamanio: file.size,
       subido_por: currentUser?.id||null
-    });
+    }).select('id').single();
+    if(nuevoArch) solicitarDescripcionIA(nuevoArch.id);
   }
   toast('✅ Archivos subidos','success');
   input.value='';
@@ -7255,6 +7256,60 @@ const MODULO_LABELS = {
   planillas:'Planillas', equipos:'Equipos', materiales:'Materiales',
   contratos:'Contratos', general:'General'
 };
+
+// Pide a la IA una descripción de una línea para un archivo recién subido.
+// Fire-and-forget: nunca bloquea ni hace fallar la subida; errores silenciosos.
+function solicitarDescripcionIA(archivoId){
+  if(!archivoId) return;
+  (async()=>{
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if(!token) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/describir-archivo`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${token}` },
+      body: JSON.stringify({ archivo_id: archivoId })
+    });
+  })().catch(()=>{});
+}
+
+// Barrido manual (solo admin): describe todos los archivos del proyecto sin
+// descripción y de tipo compatible, de a uno con pausa, mostrando progreso.
+async function generarDescripcionesFaltantes(){
+  if(!currentProyecto) return;
+  const btn = document.getElementById('btnGenDescripciones');
+  const { data: archivos } = await sb.from('archivos')
+    .select('id,nombre,descripcion_ia').eq('proyecto_id', currentProyecto);
+  const compatibles = (archivos||[]).filter(a=>{
+    if(a.descripcion_ia && a.descripcion_ia.trim()) return false;
+    const ext = (a.nombre||'').split('.').pop().toLowerCase();
+    return ext==='pdf' || ['jpg','jpeg','png','gif','webp'].includes(ext);
+  });
+  if(!compatibles.length){ toast('No hay archivos pendientes de descripción','info'); return; }
+  const { data: { session } } = await sb.auth.getSession();
+  const token = session?.access_token;
+  if(!token){ toast('Tu sesión expiró, vuelve a iniciar sesión','error'); return; }
+
+  if(btn) btn.disabled = true;
+  let generadas = 0;
+  for(let i=0; i<compatibles.length; i++){
+    if(btn) btn.textContent = `Describiendo ${i+1} de ${compatibles.length}…`;
+    try{
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/describir-archivo`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${token}` },
+        body: JSON.stringify({ archivo_id: compatibles[i].id })
+      });
+      const d = await r.json();
+      if(r.ok && d.descripcion) generadas++;
+    }catch(e){ console.warn('describir-archivo:', e); }
+    // Pausa corta entre llamadas para no saturar la función ni la API
+    await new Promise(res=>setTimeout(res, 500));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '✨ Generar descripciones faltantes'; }
+  toast(`Descripciones generadas: ${generadas} de ${compatibles.length}`,'success');
+  cargarArchivosGlobal();
+}
 
 async function cargarArchivosGlobal(){
   if(!currentProyecto){
@@ -7299,7 +7354,10 @@ async function cargarArchivosGlobal(){
         <div class="card-title">📁 Archivos del proyecto</div>
         <div class="card-subtitle">${archivos?.length||0} archivos subidos</div>
       </div>
-      <label style="cursor:pointer"><input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg,.jpg,.jpeg,.png" multiple style="display:none" onchange="subirArchivoGlobal(this)"/><span class="btn primary" style="display:flex;align-items:center;gap:6px;font-size:13px">⬆️ Subir archivo</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${rol==='admin' ? `<button class="btn" id="btnGenDescripciones" onclick="generarDescripcionesFaltantes()" style="gap:6px;font-size:12px">✨ Generar descripciones faltantes</button>` : ''}
+        <label style="cursor:pointer"><input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg,.jpg,.jpeg,.png" multiple style="display:none" onchange="subirArchivoGlobal(this)"/><span class="btn primary" style="display:flex;align-items:center;gap:6px;font-size:13px">⬆️ Subir archivo</span></label>
+      </div>
     </div>
     ${!archivos?.length ? `
     <div style="padding:32px;text-align:center;color:#676879">
@@ -7341,10 +7399,9 @@ async function cargarArchivosGlobal(){
                     <button onclick="editarDescripcionArchivo('${a.id}','${escaparParaAtributo(a.descripcion_ia)}')" style="background:none;border:none;color:#0073ea;cursor:pointer;font-size:11px;margin-left:4px">✏️</button>
                   </div>
                 ` : `
-                  <button onclick="editarDescripcionArchivo('${a.id}','')" 
-                    class="btn" style="gap:5px;font-size:11px;padding:4px 10px">
-                    ✏️ Agregar descripción
-                  </button>
+                  <span style="color:#9699a6;font-size:12px">—</span>
+                  <button onclick="editarDescripcionArchivo('${a.id}','')" title="Agregar descripción manualmente"
+                    style="background:none;border:none;color:#0073ea;cursor:pointer;font-size:11px;margin-left:4px">✏️</button>
                 `}
               </td>
               <td style="text-align:center;font-size:12px;color:#676879;white-space:nowrap">
@@ -9973,11 +10030,12 @@ async function subirContratoPDF(input){
   const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:'application/pdf', upsert:true});
   if(upErr){ toast('Error al subir: '+upErr.message,'error'); return; }
   const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-  const { error: insErr } = await sb.from('archivos').insert({
+  const { data: nuevoArch, error: insErr } = await sb.from('archivos').insert({
     proyecto_id: currentProyecto, modulo: 'contratos', nombre: file.name,
     tipo: 'application/pdf', url: urlData.publicUrl, tamanio: file.size, subido_por: currentUser?.id||null
-  });
+  }).select('id').single();
   if(insErr){ toast('Error al registrar: '+insErr.message,'error'); return; }
+  if(nuevoArch) solicitarDescripcionIA(nuevoArch.id);
   toast('Contrato subido ✓','success');
   cargarContrato();
 }
@@ -12536,7 +12594,7 @@ async function subirArchivos(input, moduloDB, moduloUI){
     const { error: uploadError } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
     if(uploadError){ toast('Error subiendo '+file.name+': '+uploadError.message,'error'); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-    const { error: insertError } = await sb.from('archivos').insert({
+    const { data: nuevoArch, error: insertError } = await sb.from('archivos').insert({
       proyecto_id: currentProyecto,
       modulo: moduloDB,
       nombre: file.name,
@@ -12544,8 +12602,9 @@ async function subirArchivos(input, moduloDB, moduloUI){
       url: urlData.publicUrl,
       tamanio: file.size,
       subido_por: currentUser?.id || null
-    });
+    }).select('id').single();
     if(insertError){ toast('Error BD: '+insertError.message+' | '+JSON.stringify(insertError),'error'); console.error('archivos insert:', insertError); continue; }
+    if(nuevoArch) solicitarDescripcionIA(nuevoArch.id);
   }
 
   toast('✅ Archivos subidos correctamente','success');
