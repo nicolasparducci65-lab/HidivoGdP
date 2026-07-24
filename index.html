@@ -9544,6 +9544,11 @@ async function obtenerMontoContratoProyecto(){
 
 async function cargarContrato(){
   const cont = document.getElementById('contratoContent');
+  // Guard: sin proyecto, no consultar (evita filtros proyecto_id=eq.null → 400 uuid)
+  if(!currentProyecto){
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🛡️</div><div class="empty-title">Selecciona un proyecto</div></div>';
+    return;
+  }
   cont.innerHTML = '<div style="padding:30px;text-align:center;color:#676879">Cargando...</div>';
 
   const [{ data: ant }, { data: gars }, montoContrato, { data: plans }, { data: contratosPDF }] = await Promise.all([
