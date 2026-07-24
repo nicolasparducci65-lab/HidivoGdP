@@ -82,20 +82,20 @@ Deno.serve(async (req) => {
     const mediaImg = MEDIA_IMG[ext];
     if (!esPDF && !mediaImg) return json({ skip: true });
 
-    // ── Descargar del bucket (path desde la URL pública; respaldo: fetch directo) ──
+    // ── Descargar del bucket: archivos.url guarda la URL pública completa
+    // (getPublicUrl al subir), así que se extrae el path relativo al bucket
+    // y se descarga con storage.download — nunca con fetch a la URL.
     const marcador = `/object/public/${BUCKET}/`;
     const idx = (archivo.url || '').indexOf(marcador);
-    let bytes: Uint8Array | null = null;
-    if (idx >= 0) {
-      const path = decodeURIComponent(archivo.url.substring(idx + marcador.length));
-      const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(path);
-      if (!dlErr && blob) bytes = new Uint8Array(await blob.arrayBuffer());
+    if (idx < 0) {
+      return json({ error: `La URL del archivo no corresponde al bucket ${BUCKET}: ${archivo.url}` }, 500);
     }
-    if (!bytes && archivo.url) {
-      const r = await fetch(archivo.url);
-      if (r.ok) bytes = new Uint8Array(await r.arrayBuffer());
+    const path = decodeURIComponent(archivo.url.substring(idx + marcador.length));
+    const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(path);
+    if (dlErr || !blob) {
+      return json({ error: `No se pudo descargar del bucket (path: ${path}): ${dlErr?.message || 'sin datos'}` }, 500);
     }
-    if (!bytes) return json({ error: 'No se pudo descargar el archivo' }, 502);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
 
     // Límites de tamaño por tipo
     if (esPDF && bytes.byteLength > MAX_PDF) return json({ skip: true });
