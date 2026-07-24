@@ -1285,6 +1285,24 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
   </div>
 </div>
 
+<!-- MODAL EXTRACCIÓN DE DATOS DE CONTRATO (IA) -->
+<div class="modal-overlay" id="modalExtraccion">
+  <div class="modal" style="width:760px;max-width:98vw;max-height:94vh">
+    <div class="modal-header">
+      <div class="modal-title">📄 Datos extraídos del contrato</div>
+      <button class="btn" onclick="cerrarModal('modalExtraccion')" style="border:none;font-size:18px;padding:2px 8px">&times;</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1" id="extraccionBody"></div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <div style="font-size:12px;color:#9b3d00">Revisa y corrige antes de guardar. Nada se guarda hasta que confirmes.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="cerrarModal('modalExtraccion')">Cancelar</button>
+        <button class="btn primary" id="btnGuardarDatosContrato" onclick="guardarDatosContrato()">💾 Guardar datos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL VISTA PREVIA REPORTE -->
 <div class="modal-overlay" id="modalVistaReporte" style="align-items:flex-start;padding:20px;overflow-y:auto">
   <div style="background:#fff;border-radius:14px;width:100%;max-width:820px;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
@@ -9527,11 +9545,12 @@ async function cargarContrato(){
   const cont = document.getElementById('contratoContent');
   cont.innerHTML = '<div style="padding:30px;text-align:center;color:#676879">Cargando...</div>';
 
-  const [{ data: ant }, { data: gars }, montoContrato, { data: plans }] = await Promise.all([
+  const [{ data: ant }, { data: gars }, montoContrato, { data: plans }, { data: contratosPDF }] = await Promise.all([
     sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle(),
     sb.from('garantias').select('*').eq('proyecto_id', currentProyecto).order('vigencia_hasta'),
     obtenerMontoContratoProyecto(),
-    sb.from('planillas_pago').select('amortizacion_anticipo,retencion_garantia,estado').eq('proyecto_id', currentProyecto)
+    sb.from('planillas_pago').select('amortizacion_anticipo,retencion_garantia,estado').eq('proyecto_id', currentProyecto),
+    sb.from('archivos').select('id,nombre,url').eq('proyecto_id', currentProyecto).eq('modulo','contratos').order('id',{ascending:false})
   ]);
 
   const plansValidas = (plans||[]).filter(p=>p.estado!=='rechazada');
@@ -9549,6 +9568,28 @@ async function cargarContrato(){
     <button class="btn primary" onclick="abrirModalComunicado()" style="gap:6px">
       ✍️ Redactar comunicado
     </button>
+  </div>` : ''}
+  ${puedeEditar ? `
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:16px">📄 Contratos (PDF)</h3>
+      <label class="btn primary" style="gap:6px;cursor:pointer">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Agregar contrato (PDF)
+        <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="subirContratoPDF(this)"/>
+      </label>
+    </div>
+    ${(contratosPDF && contratosPDF.length) ? `<div style="display:flex;flex-direction:column;gap:8px">${
+      contratosPDF.map(a=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e6e9ef;border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:18px">📕</span>
+        <a href="${escAttr(a.url)}" target="_blank" rel="noopener" style="flex:1;min-width:160px;font-size:13px;color:#0073ea;text-decoration:none;word-break:break-word">${escAttr(a.nombre||'contrato.pdf')}</a>
+        <button class="btn primary" style="gap:6px;font-size:12px;padding:6px 12px" onclick="extraerContratoIA(${a.id}, this)">
+          ✨ Extraer datos
+        </button>
+        <button class="btn" style="font-size:12px;padding:6px 10px;color:#e2445c" onclick="eliminarContratoPDF(${a.id})" title="Quitar">🗑</button>
+      </div>`).join('')
+    }</div>` : '<div style="font-size:13px;color:#676879;padding:6px 2px">Aún no hay contratos cargados. Sube un PDF para extraer sus datos con IA.</div>'}
   </div>` : ''}
   <div class="card" style="margin-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -9908,6 +9949,296 @@ async function guardarAnticipo(){
   if(error){ toast('Error al guardar: '+error.message,'error'); return; }
   toast('Configuración del anticipo guardada ✓','success');
   cargarContrato();
+}
+
+// ── EXTRACCIÓN DE DATOS DE CONTRATO DESDE PDF (IA) ──
+
+// Sube un PDF a Storage y lo registra en 'archivos' con modulo='contratos'. Sin IA.
+async function subirContratoPDF(input){
+  const file = input.files[0];
+  input.value = '';
+  if(!file) return;
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  if(file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)){ toast('Debe ser un archivo PDF','error'); return; }
+  toast('Subiendo contrato...','info');
+  const nombreSan = file.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path = `contratos/${currentProyecto}/${Date.now()}_${nombreSan}`;
+  const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:'application/pdf', upsert:true});
+  if(upErr){ toast('Error al subir: '+upErr.message,'error'); return; }
+  const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+  const { error: insErr } = await sb.from('archivos').insert({
+    proyecto_id: currentProyecto, modulo: 'contratos', nombre: file.name,
+    tipo: 'application/pdf', url: urlData.publicUrl, tamanio: file.size, subido_por: currentUser?.id||null
+  });
+  if(insErr){ toast('Error al registrar: '+insErr.message,'error'); return; }
+  toast('Contrato subido ✓','success');
+  cargarContrato();
+}
+
+async function eliminarContratoPDF(id){
+  if(!confirm('¿Quitar este contrato de la lista? (no borra los datos ya guardados)')) return;
+  const { error } = await sb.from('archivos').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message,'error'); return; }
+  toast('Contrato quitado','success');
+  cargarContrato();
+}
+
+// Llama a la Edge Function con el archivo y abre el modal con el formulario precargado
+async function extraerContratoIA(archivoId, btn){
+  const textoOrig = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = 'Extrayendo…'; }
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if(!token){ toast('Tu sesión expiró, vuelve a iniciar sesión','error'); return; }
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/extraer-contrato`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${token}` },
+      body: JSON.stringify({ proyecto_id: currentProyecto, archivo_id: archivoId })
+    });
+    const data = await resp.json();
+    if(!resp.ok || data.error) throw new Error(data.error || `Error ${resp.status}`);
+    abrirModalExtraccion(data.datos||{});
+    toast('Datos extraídos ✓ — revísalos antes de guardar','success');
+  }catch(err){
+    console.error('Error extrayendo contrato:', err);
+    toast('No se pudo extraer: '+err.message,'error');
+  }finally{
+    if(btn){ btn.disabled = false; btn.innerHTML = textoOrig; }
+  }
+}
+
+const TIPOS_GARANTIA_OPC = [
+  ['buen_uso_anticipo','Buen uso del anticipo'],
+  ['fiel_cumplimiento','Fiel cumplimiento'],
+  ['buena_calidad_materiales','Buena calidad de materiales y equipos'],
+  ['todo_riesgo','Todo riesgo'],
+  ['otra','Otra']
+];
+
+function abrirModalExtraccion(datos){
+  const p = datos.proyecto||{};
+  const a = datos.anticipo||{};
+  const ad = datos.datos_adicionales||{};
+  window._extraccion = {
+    garantias: Array.isArray(datos.garantias) ? datos.garantias.map(g=>({...g})) : [],
+    reajuste_terminos: Array.isArray(datos.reajuste_terminos) ? datos.reajuste_terminos : [],
+    datos_no_mapeados: datos.datos_no_mapeados||{}
+  };
+  const val = v => escAttr(v==null?'':v);
+  const grupo = (label, id, valor, tipo='text', extra='') =>
+    `<div class="form-group" style="margin:0"><label class="form-label">${label}</label><input type="${tipo}" ${extra} class="form-control" id="${id}" value="${val(valor)}"/></div>`;
+  document.getElementById('extraccionBody').innerHTML = `
+    <div style="margin-bottom:10px;font-size:12px;color:#676879">Campos vacíos = no se detectaron en el PDF; complétalos si hace falta.</div>
+
+    <h4 style="margin:6px 0 8px;font-size:14px">🏗️ Datos del proyecto</h4>
+    <div class="form-group"><label class="form-label">Nombre / objeto</label><input type="text" class="form-control" id="exNombre" value="${val(p.nombre)}"/></div>
+    <div class="form-row">
+      ${grupo('Contratante','exContratante',p.contratante)}
+      ${grupo('Contratista','exContratista',p.contratista)}
+    </div>
+    <div class="form-row">
+      ${grupo('Fiscalizador','exFiscalizador',p.fiscalizador)}
+      ${grupo('Monto del contrato','exMonto',p.monto_contrato,'number','step="0.01" min="0"')}
+    </div>
+    <div class="form-row">
+      ${grupo('Fecha de inicio','exFechaInicio',p.fecha_inicio,'date')}
+      ${grupo('Fecha fin planificada','exFechaFin',p.fecha_fin_planificada,'date')}
+    </div>
+    ${grupo('Ubicación','exUbicacion',p.ubicacion)}
+    <div class="form-group"><label class="form-label">Descripción</label><textarea class="form-control" id="exDescripcion" rows="2">${val(p.descripcion)}</textarea></div>
+
+    <h4 style="margin:18px 0 8px;font-size:14px">💰 Anticipo</h4>
+    <div class="form-row">
+      ${grupo('Porcentaje (%)','exAntPct',a.porcentaje,'number','step="0.1" min="0" max="100"')}
+      ${grupo('Monto','exAntMonto',a.monto,'number','step="0.01" min="0"')}
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0"><label class="form-label">Amortización</label>
+        <select class="form-control" id="exAntModo">
+          <option value="">— sin definir —</option>
+          <option value="proporcional" ${a.modo_amortizacion==='proporcional'?'selected':''}>Proporcional automática</option>
+          <option value="manual" ${a.modo_amortizacion==='manual'?'selected':''}>Manual por planilla</option>
+        </select></div>
+      ${grupo('IVA (%)','exAntIva',a.iva_pct,'number','step="0.1" min="0" max="100"')}
+    </div>
+    <div class="form-group"><label class="form-label">Notas del anticipo</label><textarea class="form-control" id="exAntNotas" rows="2">${val(a.notas)}</textarea></div>
+
+    <h4 style="margin:18px 0 8px;font-size:14px;display:flex;justify-content:space-between;align-items:center">🛡️ Garantías
+      <button class="btn" style="font-size:12px;padding:5px 10px" onclick="agregarGarantiaExtraccion()">+ Añadir</button></h4>
+    <div id="exGarantias"></div>
+
+    <div style="margin:18px 0 8px">
+      <button class="btn" style="width:100%;justify-content:space-between" onclick="const c=document.getElementById('exAdicionales');c.style.display=c.style.display==='none'?'block':'none'">
+        📎 Datos adicionales (solo referencia) <span>▾</span>
+      </button>
+    </div>
+    <div id="exAdicionales" style="display:none">
+      <div class="form-group"><label class="form-label">Plazo</label><textarea class="form-control" id="exPlazo" rows="1" readonly style="background:#f5f6f8">${val(ad.plazo)}</textarea></div>
+      <div class="form-group"><label class="form-label">Multas</label><textarea class="form-control" id="exMultas" rows="2" readonly style="background:#f5f6f8">${val(ad.multas)}</textarea></div>
+      <div class="form-group"><label class="form-label">Cláusulas</label><textarea class="form-control" id="exClausulas" rows="3" readonly style="background:#f5f6f8">${val(ad.clausulas)}</textarea></div>
+    </div>
+  `;
+  renderGarantiasExtraccion();
+  document.getElementById('modalExtraccion').classList.add('show');
+}
+
+function renderGarantiasExtraccion(){
+  const cont = document.getElementById('exGarantias');
+  const gs = window._extraccion.garantias;
+  if(!gs.length){ cont.innerHTML = '<div style="font-size:12px;color:#676879;padding:4px 0 8px">No se detectaron garantías. Puedes añadirlas manualmente.</div>'; return; }
+  const val = v => escAttr(v==null?'':v);
+  cont.innerHTML = gs.map((g,i)=>`
+    <div style="border:1px solid #e6e9ef;border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b style="font-size:12px;color:#676879">Garantía ${i+1}</b>
+        <button class="btn" style="font-size:11px;padding:4px 8px;color:#e2445c" onclick="quitarGarantiaExtraccion(${i})">Quitar</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0"><label class="form-label">Tipo</label>
+          <select class="form-control" data-gar="${i}" data-campo="tipo">
+            ${TIPOS_GARANTIA_OPC.map(([v,t])=>`<option value="${v}" ${g.tipo===v?'selected':''}>${t}</option>`).join('')}
+          </select></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Monto</label>
+          <input type="number" step="0.01" min="0" class="form-control" data-gar="${i}" data-campo="monto" value="${val(g.monto)}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0"><label class="form-label">Aseguradora</label>
+          <input type="text" class="form-control" data-gar="${i}" data-campo="aseguradora" value="${val(g.aseguradora)}"/></div>
+        <div class="form-group" style="margin:0"><label class="form-label">N° póliza</label>
+          <input type="text" class="form-control" data-gar="${i}" data-campo="numero" value="${val(g.numero)}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0"><label class="form-label">Vigencia desde</label>
+          <input type="date" class="form-control" data-gar="${i}" data-campo="vigencia_desde" value="${val(g.vigencia_desde)}"/></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Vigencia hasta</label>
+          <input type="date" class="form-control" data-gar="${i}" data-campo="vigencia_hasta" value="${val(g.vigencia_hasta)}"/></div>
+      </div>
+      <div class="form-group" style="margin:0"><label class="form-label">Notas</label>
+        <input type="text" class="form-control" data-gar="${i}" data-campo="notas" value="${val(g.notas)}"/></div>
+    </div>
+  `).join('');
+}
+
+// Vuelca los inputs de garantías al array (antes de re-render o de guardar)
+function sincronizarGarantiasExtraccion(){
+  document.querySelectorAll('#exGarantias [data-gar]').forEach(el=>{
+    const i = +el.getAttribute('data-gar');
+    const campo = el.getAttribute('data-campo');
+    if(!window._extraccion.garantias[i]) return;
+    let v = el.value;
+    if(campo==='monto') v = v===''?null:(parseFloat(v)||null);
+    else v = v===''?null:v;
+    window._extraccion.garantias[i][campo] = v;
+  });
+}
+
+function agregarGarantiaExtraccion(){
+  sincronizarGarantiasExtraccion();
+  window._extraccion.garantias.push({tipo:'otra', aseguradora:null, numero:null, monto:null, vigencia_desde:null, vigencia_hasta:null, notas:null});
+  renderGarantiasExtraccion();
+}
+
+function quitarGarantiaExtraccion(i){
+  sincronizarGarantiasExtraccion();
+  window._extraccion.garantias.splice(i,1);
+  renderGarantiasExtraccion();
+}
+
+// Guarda TODO tras confirmación explícita. Solo escribe columnas confirmadas;
+// lo demás va a proyectos.contrato_datos. Nunca guarda sin que el usuario confirme.
+async function guardarDatosContrato(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  sincronizarGarantiasExtraccion();
+
+  const numOrNull = id => { const v = document.getElementById(id).value; return v===''?null:(parseFloat(v)||null); };
+  const strOrNull = id => { const v = document.getElementById(id).value.trim(); return v||null; };
+
+  const garantiasValidas = window._extraccion.garantias.filter(g=>g.tipo);
+  const nGar = garantiasValidas.length;
+
+  if(!confirm(`Se actualizarán los datos del proyecto y el anticipo con lo que hay en el formulario, y se agregarán ${nGar} garantía(s) como registros nuevos (estado "vigente").\n\n¿Continuar?`)) return;
+
+  const btn = document.getElementById('btnGuardarDatosContrato');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+
+  try{
+    // 1) Proyecto: solo se actualizan los campos con valor (no se pisa con vacíos).
+    //    Todo lo que no tiene columna propia va a contrato_datos (jsonb).
+    const contratoDatos = {
+      fiscalizador: strOrNull('exFiscalizador'),
+      anticipo: { porcentaje: numOrNull('exAntPct'), notas: strOrNull('exAntNotas') },
+      datos_adicionales: {
+        plazo: document.getElementById('exPlazo').value.trim()||null,
+        multas: document.getElementById('exMultas').value.trim()||null,
+        clausulas: document.getElementById('exClausulas').value.trim()||null
+      },
+      datos_no_mapeados: window._extraccion.datos_no_mapeados||{},
+      extraido_at: new Date().toISOString()
+    };
+    const proyectoUpd = { contrato_datos: contratoDatos };
+    const setIf = (k,v)=>{ if(v!=null && v!=='') proyectoUpd[k]=v; };
+    setIf('nombre', strOrNull('exNombre'));
+    setIf('contratante', strOrNull('exContratante'));
+    setIf('contratista', strOrNull('exContratista'));
+    setIf('monto_contrato', numOrNull('exMonto'));
+    setIf('fecha_inicio', strOrNull('exFechaInicio'));
+    setIf('fecha_fin_planificada', strOrNull('exFechaFin'));
+    setIf('ubicacion', strOrNull('exUbicacion'));
+    setIf('descripcion', strOrNull('exDescripcion'));
+    const { error: e1 } = await sb.from('proyectos').update(proyectoUpd).eq('id', currentProyecto);
+    if(e1) throw new Error('Proyecto: '+e1.message);
+
+    // 2) Anticipo: upsert solo con columnas confirmadas y que tengan valor
+    const antPayload = { proyecto_id: currentProyecto };
+    const antMonto = numOrNull('exAntMonto'); if(antMonto!=null) antPayload.monto = antMonto;
+    const antModo = document.getElementById('exAntModo').value; if(antModo) antPayload.modo_amortizacion = antModo;
+    const antIva = numOrNull('exAntIva'); if(antIva!=null) antPayload.iva_pct = antIva;
+    if(Object.keys(antPayload).length>1){
+      const { error: e2 } = await sb.from('contrato_anticipo').upsert(antPayload, {onConflict:'proyecto_id'});
+      if(e2) throw new Error('Anticipo: '+e2.message);
+    }
+
+    // 3) Garantías: registros nuevos con estado 'vigente'
+    if(nGar){
+      const filas = garantiasValidas.map(g=>({
+        proyecto_id: currentProyecto,
+        tipo: g.tipo,
+        aseguradora: g.aseguradora||null,
+        numero: g.numero||null,
+        monto: (g.monto==null||g.monto==='')?null:(parseFloat(g.monto)||null),
+        vigencia_desde: g.vigencia_desde||null,
+        vigencia_hasta: g.vigencia_hasta||null,
+        estado: 'vigente',
+        notas: g.notas||null
+      }));
+      const { error: e3 } = await sb.from('garantias').insert(filas);
+      if(e3) throw new Error('Garantías: '+e3.message);
+    }
+
+    // 4) Reajuste: solo si vienen filas con forma válida y el proyecto no tiene términos aún
+    const rt = (window._extraccion.reajuste_terminos||[]).filter(t=>t && t.simbolo && t.coeficiente!=null && t.indice_base!=null);
+    if(rt.length){
+      const { data: existentes } = await sb.from('reajuste_terminos').select('id').eq('proyecto_id', currentProyecto);
+      if(!existentes || !existentes.length){
+        const { error: e4 } = await sb.from('reajuste_terminos').insert(rt.map((t,i)=>({
+          proyecto_id: currentProyecto, simbolo: String(t.simbolo).trim(),
+          descripcion: t.descripcion||null, coeficiente: t.coeficiente||0,
+          indice_base: t.indice_base||0, orden: i
+        })));
+        if(e4) console.warn('Reajuste no insertado:', e4.message);
+      }
+    }
+
+    toast('Datos del contrato guardados ✓','success');
+    cerrarModal('modalExtraccion');
+    cargarContrato();
+  }catch(err){
+    console.error('Error guardando datos del contrato:', err);
+    toast('Error al guardar: '+err.message,'error');
+  }finally{
+    btn.disabled = false; btn.textContent = '💾 Guardar datos';
+  }
 }
 
 function abrirModalGarantia(g=null){
