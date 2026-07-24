@@ -6536,10 +6536,6 @@ function renderFiscalizacionShell(){
       ${['todas','abierta','en_proceso','resuelta'].map(e=>`
       <button onclick="filtrarObs('${e}')" class="btn ${obsFiltrando===e?'primary':''}" style="padding:5px 12px;font-size:12px">${estadoObsLabel(e)}</button>`).join('')}
     </div>`}
-    ${['admin','fiscalizador'].includes(currentPerfil?.rol) ? `
-    <button onclick="abrirModalComunicado()" class="btn" style="gap:6px;margin-left:auto">
-      ✍️ Redactar comunicado
-    </button>` : ''}
   </div>
   <div id="fiscalBody"></div>`;
 }
@@ -9466,6 +9462,12 @@ async function cargarContrato(){
   const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   cont.innerHTML = `
+  ${puedeEditar ? `
+  <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+    <button class="btn primary" onclick="abrirModalComunicado()" style="gap:6px">
+      ✍️ Redactar comunicado
+    </button>
+  </div>` : ''}
   <div class="card" style="margin-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <h3 style="margin:0;font-size:16px">💰 Anticipo del contrato</h3>
