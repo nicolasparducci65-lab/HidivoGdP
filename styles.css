@@ -252,6 +252,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 /* Loading */
 .spinner{width:20px;height:20px;border:2px solid #e6e9ef;border-top-color:#0073ea;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* Dictado de voz (observaciones) */
+.mic-pulso{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e2445c;animation:micPulso 1s ease-in-out infinite;vertical-align:middle;margin-right:6px}
+@keyframes micPulso{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.5)}}
 .page-loader{display:flex;align-items:center;justify-content:center;height:200px;color:#676879;gap:12px}
 
 /* Empty state */

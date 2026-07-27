@@ -1221,6 +1221,34 @@
     <a id="lightboxDescargar" href="" target="_blank" download>⬇ Descargar</a>
   </div>
 </div>
+<!-- MODAL DICTADO DE OBSERVACIÓN POR VOZ -->
+<div class="modal-overlay" id="modalDictadoObs">
+  <div class="modal" style="width:520px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">🎤 Observación por voz</div>
+      <button class="btn" onclick="cerrarDictadoObs()" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="dictadoNoSoporte" style="display:none;font-size:13px;color:#9b3d00;background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:10px;margin-bottom:12px">
+        Dictado no disponible en este navegador — escribe la observación en el cuadro de abajo.
+      </div>
+      <div id="dictadoControles" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <button id="btnDictadoToggle" class="btn primary" onclick="toggleDictadoObs()" style="gap:6px;font-size:14px;padding:10px 18px">🎤 Dictar</button>
+        <span id="dictadoEstado" style="font-size:13px;color:#e2445c;font-weight:600"></span>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Transcripción (editable)</label>
+        <textarea class="form-control" id="dictadoTexto" rows="6" placeholder="Dicta o escribe aquí lo observado en obra..."></textarea>
+        <div id="dictadoInterim" style="font-size:12px;color:#9699a6;font-style:italic;min-height:16px;margin-top:4px"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarDictadoObs()">Cancelar</button>
+      <button class="btn primary" id="btnProcesarDictado" onclick="procesarDictadoObs()">✨ Procesar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalObsNueva">
   <div class="modal" style="width:560px;max-width:98vw;max-height:92vh">
     <div class="modal-header">
@@ -6437,6 +6465,9 @@ function renderFiscalizacionShell(){
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Nueva observación
     </button>
+    <button onclick="abrirModalDictadoObs()" class="btn" style="gap:6px" title="Dicta la observación y la IA la redacta formalmente">
+      🎤 Por voz
+    </button>
     <div style="display:flex;gap:6px">
       ${['todas','abierta','en_proceso','resuelta'].map(e=>`
       <button onclick="filtrarObs('${e}')" class="btn ${obsFiltrando===e?'primary':''}" style="padding:5px 12px;font-size:12px">${estadoObsLabel(e)}</button>`).join('')}
@@ -6869,6 +6900,128 @@ async function eliminarObservacion(id){
 }
 
 // ── MODAL NUEVA OBSERVACIÓN ──
+// ── OBSERVACIÓN POR DICTADO DE VOZ (IA) ──
+// El usuario dicta (Web Speech API), la Edge Function procesar-observacion-voz
+// estructura título/descripción/reincidencia, y se abre el formulario de
+// observación EXISTENTE precargado. Nunca se guarda sin revisión.
+let _dictadoRec = null;
+let _dictadoActivo = false;
+
+function abrirModalDictadoObs(){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  document.getElementById('dictadoTexto').value = '';
+  document.getElementById('dictadoInterim').textContent = '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  document.getElementById('dictadoNoSoporte').style.display = SR ? 'none' : 'block';
+  document.getElementById('dictadoControles').style.display = SR ? 'flex' : 'none';
+  actualizarUIDictado(false);
+  document.getElementById('modalDictadoObs').classList.add('show');
+}
+
+function actualizarUIDictado(escuchando){
+  _dictadoActivo = escuchando;
+  const btn = document.getElementById('btnDictadoToggle');
+  const est = document.getElementById('dictadoEstado');
+  if(escuchando){
+    btn.innerHTML = '⏸️ Pausar';
+    est.innerHTML = '<span class="mic-pulso"></span>Escuchando…';
+  } else {
+    btn.innerHTML = '🎤 Dictar';
+    est.textContent = '';
+    document.getElementById('dictadoInterim').textContent = '';
+  }
+}
+
+function toggleDictadoObs(){
+  if(_dictadoActivo){ detenerDictadoObs(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return;
+  _dictadoRec = new SR();
+  _dictadoRec.lang = 'es-EC';
+  _dictadoRec.continuous = true;
+  _dictadoRec.interimResults = true;
+  _dictadoRec.onresult = (e)=>{
+    // Los resultados finales se ANEXAN al textarea (no lo pisan: el usuario
+    // puede editar entre pausas); lo provisional se muestra aparte en gris.
+    let interim = '';
+    for(let i=e.resultIndex; i<e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal){
+        const frag = r[0].transcript.trim();
+        if(frag){
+          const ta = document.getElementById('dictadoTexto');
+          ta.value = (ta.value ? ta.value.replace(/\s+$/,'') + ' ' : '') + frag;
+        }
+      } else {
+        interim += r[0].transcript;
+      }
+    }
+    document.getElementById('dictadoInterim').textContent = interim;
+  };
+  _dictadoRec.onerror = (e)=>{
+    if(e.error==='not-allowed' || e.error==='service-not-allowed'){
+      toast('Permiso de micrófono denegado — actívalo en el navegador o escribe la observación','error');
+      actualizarUIDictado(false);
+    } else if(e.error!=='no-speech' && e.error!=='aborted'){
+      console.warn('Dictado:', e.error);
+    }
+  };
+  _dictadoRec.onend = ()=>{
+    // El navegador corta solo tras silencios largos (típico en móvil):
+    // reflejar el estado real para que el usuario pueda reanudar.
+    if(_dictadoActivo) actualizarUIDictado(false);
+  };
+  try{
+    _dictadoRec.start();
+    actualizarUIDictado(true);
+  }catch(err){
+    toast('No se pudo iniciar el dictado: '+err.message,'error');
+  }
+}
+
+function detenerDictadoObs(){
+  actualizarUIDictado(false);
+  try{ _dictadoRec?.stop(); }catch(e){}
+}
+
+function cerrarDictadoObs(){
+  detenerDictadoObs();
+  cerrarModal('modalDictadoObs');
+}
+
+async function procesarDictadoObs(){
+  const texto = document.getElementById('dictadoTexto').value.trim();
+  if(!texto){ toast('Dicta o escribe la observación primero','error'); return; }
+  detenerDictadoObs();
+  const btn = document.getElementById('btnProcesarDictado');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Procesando…';
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if(!token) throw new Error('Tu sesión expiró, vuelve a iniciar sesión');
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/procesar-observacion-voz`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${token}` },
+      body: JSON.stringify({ proyecto_id: currentProyecto, texto_dictado: texto })
+    });
+    const d = await resp.json();
+    if(!resp.ok || d.error) throw new Error(d.error||`Error ${resp.status}`);
+    cerrarModal('modalDictadoObs');
+    // Reutilizar el flujo existente: abrir el formulario normal y precargarlo.
+    // abrirModalObservacion() limpia los campos, por eso se setean DESPUÉS.
+    abrirModalObservacion();
+    document.getElementById('obsNuevaTitulo').value = d.titulo||'';
+    document.getElementById('obsNuevaDesc').value = (d.descripcion||'') + (d.reincidencia ? '\n\n' + d.reincidencia : '');
+    toast('Borrador listo — revisa, ajusta y guarda','success');
+  }catch(err){
+    toast('No se pudo procesar: '+err.message,'error');
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = '✨ Procesar';
+  }
+}
+
 function abrirModalObservacion(planoId=null, pinX=null, pinY=null){
   window._obsNuevaPlano = planoId;
   window._obsNuevaPin = {x:pinX, y:pinY};
