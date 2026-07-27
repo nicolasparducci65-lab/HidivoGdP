@@ -256,6 +256,10 @@ body.modo-visualizador button[onclick*="logout"]{display:flex!important}
 /* Dictado de voz (observaciones) */
 .mic-pulso{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e2445c;animation:micPulso 1s ease-in-out infinite;vertical-align:middle;margin-right:6px}
 @keyframes micPulso{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.5)}}
+
+/* Pin resaltado al llegar desde "Ver en plano" (el translate replica el inline del pin) */
+.pin-resaltado{animation:pinResalta 1s ease-in-out 4}
+@keyframes pinResalta{0%,100%{transform:translate(-50%,-100%) scale(1)}50%{transform:translate(-50%,-100%) scale(1.4)}}
 .page-loader{display:flex;align-items:center;justify-content:center;height:200px;color:#676879;gap:12px}
 
 /* Empty state */

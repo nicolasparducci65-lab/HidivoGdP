@@ -1253,7 +1253,7 @@
   <div class="modal" style="width:560px;max-width:98vw;max-height:92vh">
     <div class="modal-header">
       <div class="modal-title">🔍 Nueva observación</div>
-      <button class="btn" onclick="cerrarModal('modalObsNueva')" style="padding:6px 10px">✕</button>
+      <button class="btn" onclick="cerrarModalObsNueva()" style="padding:6px 10px">✕</button>
     </div>
     <div class="modal-body" style="overflow-y:auto;flex:1">
       <div class="form-group">
@@ -1280,10 +1280,20 @@
           onchange="agregarFotosObs(this)"/>
         <div id="obsNuevaFotosPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
       </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">Ubicación en plano (opcional)</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-control" id="obsPlanoSelect" onchange="cambioPlanoObs(this)" style="flex:1;min-width:160px;max-width:280px">
+            <option value="">— Sin plano —</option>
+          </select>
+          <button type="button" class="btn" onclick="abrirSelectorPin('nueva')" style="gap:6px">📍 Ubicar en plano</button>
+          <button type="button" class="btn" id="btnQuitarUbicacionObs" onclick="quitarUbicacionObs()" style="display:none;font-size:12px;color:#e2445c">✕ Quitar</button>
+        </div>
+      </div>
       <div id="obsNuevaPinInfo" style="font-size:12px;color:#676879;padding:8px;background:#f5f6f8;border-radius:8px"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn" onclick="cerrarModal('modalObsNueva')">Cancelar</button>
+      <button class="btn" onclick="cerrarModalObsNueva()">Cancelar</button>
       <button id="btnGuardarObsNueva" class="btn primary" onclick="guardarObservacionNueva()">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         Guardar
@@ -1309,6 +1319,7 @@
         </select>
       </div>
       <div id="obsDetalleDesc" style="font-size:13px;color:#323338;margin-bottom:16px;line-height:1.6"></div>
+      <div id="obsDetalleUbicacion" style="font-size:12px;color:#676879;margin-bottom:16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>
       <div id="obsDetalleFotos" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
       <div style="font-size:12px;font-weight:600;color:#676879;text-transform:uppercase;margin-bottom:8px">Respuestas</div>
       <div id="obsDetalleRespuestas" style="margin-bottom:16px"></div>
@@ -1329,6 +1340,30 @@
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         Enviar respuesta
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SELECTOR DE PIN EN PLANO (se apila sobre los modales de observación) -->
+<div class="modal-overlay" id="modalSelectorPin">
+  <div class="modal" style="width:860px;max-width:98vw;max-height:94vh">
+    <div class="modal-header">
+      <div class="modal-title">📍 Ubicar en plano</div>
+      <button class="btn" onclick="cerrarModal('modalSelectorPin')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">Plano</label>
+        <select class="form-control" id="selPinPlano" onchange="cargarPlanoSelectorPin()"></select>
+      </div>
+      <div style="font-size:12px;color:#676879;margin-bottom:8px">Toca el plano para colocar el pin — puedes volver a tocar para moverlo.</div>
+      <div id="selPinVisor" style="border:1px solid #e6e9ef;border-radius:12px;background:#f5f6f8;min-height:320px;position:relative;display:flex;align-items:center;justify-content:center">
+        <div style="color:#676879;font-size:13px">Cargando plano…</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalSelectorPin')">Cancelar</button>
+      <button class="btn primary" id="btnConfirmarSelPin" onclick="confirmarSelectorPin()" disabled>✓ Confirmar ubicación</button>
     </div>
   </div>
 </div>
@@ -6616,16 +6651,21 @@ function verPlano(id, url, nombre, tipo){
 let pdfDoc = null;
 let pdfPaginaActual = 1;
 
+// Carga pdf.js bajo demanda (compartido por el visor de la pestaña Planos y
+// el selector de pin del modal de observación)
+async function asegurarPdfJs(){
+  if(typeof pdfjsLib !== 'undefined') return;
+  await new Promise(resolve=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
 async function renderizarPDF(url, pagina){
-  if(typeof pdfjsLib === 'undefined'){
-    await new Promise(resolve=>{
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      s.onload = resolve;
-      document.head.appendChild(s);
-    });
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
+  await asegurarPdfJs();
   try {
     if(!pdfDoc || pdfDoc._url !== url){
       pdfDoc = await pdfjsLib.getDocument(url).promise;
@@ -6671,6 +6711,7 @@ async function cargarPinsPlano(planoId){
   overlay.style.pointerEvents = 'none';
   overlay.innerHTML = obs.map(o=>`
     <div title="N°${o.numero||'—'} — ${o.titulo}" onclick="event.stopPropagation();verObservacion('${o.id}')"
+      data-obs="${o.id}" class="${o.id===window._resaltarObsId?'pin-resaltado':''}"
       style="position:absolute;left:${o.pin_x}%;top:${o.pin_y}%;transform:translate(-50%,-100%);
       pointer-events:all;cursor:pointer;z-index:10">
       <div style="background:${estadoObsColor(o.estado)};color:#fff;border-radius:50%;width:26px;height:26px;
@@ -6678,6 +6719,12 @@ async function cargarPinsPlano(planoId){
         box-shadow:0 2px 8px rgba(0,0,0,.3)">${o.numero||'!'}</div>
       <div style="width:2px;height:10px;background:${estadoObsColor(o.estado)};margin:0 auto"></div>
     </div>`).join('');
+  // Si venimos de "Ver en plano": centrar el pin resaltado y consumir la marca
+  if(window._resaltarObsId){
+    const el = overlay.querySelector(`[data-obs="${window._resaltarObsId}"]`);
+    if(el) setTimeout(()=>el.scrollIntoView({behavior:'smooth', block:'center', inline:'center'}), 250);
+    window._resaltarObsId = null;
+  }
 }
 
 function activarPinModo(planoId){
@@ -6693,17 +6740,25 @@ function activarPinModo(planoId){
   if(iframe) iframe.style.pointerEvents='none';
 }
 
-function colocarPin(event, overlay){
-  // Calcular coordenadas relativas al overlay (que tiene el mismo tamaño que la imagen)
+// Cálculo ÚNICO de coordenadas de pin (porcentaje 0-100 con 1 decimal,
+// relativo al overlay que cubre la imagen/canvas). Lo usan el modo pin del
+// visor y el selector de pin del modal: garantiza pines consistentes.
+function coordsPinDesdeEvento(event, overlay){
   const rect = overlay.getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / rect.width * 100).toFixed(1);
-  const y = ((event.clientY - rect.top) / rect.height * 100).toFixed(1);
+  return {
+    x: parseFloat(((event.clientX - rect.left) / rect.width * 100).toFixed(1)),
+    y: parseFloat(((event.clientY - rect.top) / rect.height * 100).toFixed(1))
+  };
+}
+
+function colocarPin(event, overlay){
+  const c = coordsPinDesdeEvento(event, overlay);
   pinModo = false;
   overlay.style.cursor='default';
   overlay.style.pointerEvents='none';
   const iframe = document.querySelector('#imgVisorContainer iframe');
   if(iframe) iframe.style.pointerEvents='auto';
-  abrirModalObservacion(planoActivo?.id, parseFloat(x), parseFloat(y));
+  abrirModalObservacion(planoActivo?.id, c.x, c.y);
 }
 
 // ── OBSERVACIONES ──
@@ -6760,6 +6815,10 @@ async function cargarObservaciones(){
   const { data: fotosTodas } = await sb.from('observacion_fotos').select('observacion_id,url').in('observacion_id', obs.map(o=>o.id));
   const fotosPorObs = {};
   (fotosTodas||[]).forEach(f=>{ (fotosPorObs[f.observacion_id]=fotosPorObs[f.observacion_id]||[]).push(f.url); });
+  // Nombres de planos para mostrar la ubicación en cada tarjeta
+  const { data: planosProy } = await sb.from('planos').select('id,nombre').eq('proyecto_id', currentProyecto);
+  const planoNombre = {};
+  (planosProy||[]).forEach(p=>planoNombre[p.id]=p.nombre);
   body.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">
     ${obs.map(o=>`
     <div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s"
@@ -6771,7 +6830,9 @@ async function cargarObservaciones(){
             <span style="background:${estadoObsColor(o.estado)}20;color:${estadoObsColor(o.estado)};
               padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${estadoObsLabel(o.estado)}</span>
             <span style="font-size:11px;color:#676879">${new Date(o.created_at).toLocaleDateString('es-EC')}</span>
-            ${o.pin_x!==null?'<span style="font-size:11px;color:#0073ea">📍 Con pin</span>':''}
+            ${o.pin_x!==null && o.plano_id
+              ? `<span style="font-size:11px;color:#0073ea;cursor:pointer;text-decoration:underline" title="Ver en plano" onclick="event.stopPropagation();verObsEnPlano('${o.id}')">📍 ${escAttr(planoNombre[o.plano_id]||'Ver en plano')}</span>`
+              : `<span style="font-size:11px;color:#9699a6;cursor:pointer" title="Asignar ubicación en plano" onclick="event.stopPropagation();abrirSelectorPin('obs','${o.id}')">📍 Asignar ubicación</span>`}
           </div>
           <div style="font-weight:600;color:#323338;margin-bottom:4px">${o.numero?`<span style="color:#0073ea">N°${o.numero}</span> — `:''}${escAttr(o.titulo)}</div>
           <div style="font-size:13px;color:#676879;line-height:1.5">${escAttr(o.descripcion||'')}</div>
@@ -6804,6 +6865,17 @@ async function verObservacion(id){
   document.getElementById('obsDetalleId').textContent = (o.numero?`N°${o.numero} — `:'')+o.titulo;
   document.getElementById('obsDetalleEstado').value = o.estado;
   document.getElementById('obsDetalleDesc').textContent = o.descripcion||'';
+  // Ubicación en plano: ver el pin o asignar una ubicación si no tiene
+  const ubic = document.getElementById('obsDetalleUbicacion');
+  if(ubic){
+    if(o.plano_id && o.pin_x!==null){
+      const { data: pl } = await sb.from('planos').select('nombre').eq('id', o.plano_id).maybeSingle();
+      ubic.innerHTML = `📍 Ubicada en: <b>${escAttr(pl?.nombre||'plano')}</b>
+        <button class="btn" style="font-size:11px;padding:3px 10px" onclick="verObsEnPlano('${o.id}')">Ver en plano</button>`;
+    } else {
+      ubic.innerHTML = `<button class="btn" style="font-size:11px;padding:3px 10px;color:#676879" onclick="abrirSelectorPin('obs','${o.id}')">📍 Asignar ubicación en plano</button>`;
+    }
+  }
   const urlsFotos = (fotos||[]).map(f=>f.url);
   document.getElementById('obsDetalleFotos').innerHTML = urlsFotos.map((u,fi)=>`
     <img src="${u}" class="obs-mini-foto" style="width:80px;height:60px" onclick="abrirLightbox(${escAttr(JSON.stringify(urlsFotos))},${fi})"/>`).join('');
@@ -7031,9 +7103,213 @@ function abrirModalObservacion(planoId=null, pinX=null, pinY=null){
   document.getElementById('obsFotoCamara').value='';
   obsFotosPendientes = [];
   document.getElementById('obsNuevaFotosPreview').innerHTML='';
-  const pinInfo = document.getElementById('obsNuevaPinInfo');
-  pinInfo.textContent = pinX!==null ? `📍 Pin colocado en (${pinX}%, ${pinY}%)` : 'Sin pin — puedes colocarlo desde el visor de planos';
+  cargarPlanosSelectObs(planoId);
+  pintarUbicacionObs();
   document.getElementById('modalObsNueva').classList.add('show');
+}
+
+// Cierre con higiene (Cancelar y ✕): limpia plano/pin para que no quede
+// estado residual de una sesión cancelada
+function cerrarModalObsNueva(){
+  quitarUbicacionObs();
+  cerrarModal('modalObsNueva');
+}
+
+// ── UBICACIÓN EN PLANO DESDE EL MODAL DE OBSERVACIÓN ──
+// Pobla el select de planos del modal y sincroniza el indicador de ubicación
+async function cargarPlanosSelectObs(planoSeleccionado){
+  const sel = document.getElementById('obsPlanoSelect');
+  if(!sel) return;
+  sel.innerHTML = '<option value="">— Sin plano —</option>';
+  if(!currentProyecto) return;
+  const { data: planos } = await sb.from('planos').select('id,nombre,url,tipo').eq('proyecto_id', currentProyecto).order('created_at');
+  window._planosProyecto = planos||[];
+  sel.innerHTML += (planos||[]).map(p=>`<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('');
+  if(planoSeleccionado) sel.value = planoSeleccionado;
+  pintarUbicacionObs();
+}
+
+function pintarUbicacionObs(){
+  const info = document.getElementById('obsNuevaPinInfo');
+  const btnQ = document.getElementById('btnQuitarUbicacionObs');
+  if(!info) return;
+  const pid = window._obsNuevaPlano;
+  const pin = window._obsNuevaPin;
+  if(pid && pin && pin.x!==null && pin.x!==undefined){
+    const nombre = (window._planosProyecto||[]).find(p=>p.id==pid)?.nombre || 'plano';
+    info.innerHTML = `📍 Ubicada en: <b>${escAttr(nombre)}</b> (${pin.x}%, ${pin.y}%)`;
+    if(btnQ) btnQ.style.display='inline-flex';
+  } else if(pid){
+    const nombre = (window._planosProyecto||[]).find(p=>p.id==pid)?.nombre || 'plano';
+    info.innerHTML = `📐 Plano: <b>${escAttr(nombre)}</b> — sin pin (usa "Ubicar en plano" para colocarlo)`;
+    if(btnQ) btnQ.style.display='inline-flex';
+  } else {
+    info.textContent = 'Sin ubicación en plano';
+    if(btnQ) btnQ.style.display='none';
+  }
+}
+
+function cambioPlanoObs(sel){
+  window._obsNuevaPlano = sel.value||null;
+  window._obsNuevaPin = {x:null, y:null}; // cambiar de plano invalida el pin anterior
+  pintarUbicacionObs();
+}
+
+function quitarUbicacionObs(){
+  window._obsNuevaPlano = null;
+  window._obsNuevaPin = {x:null, y:null};
+  const sel = document.getElementById('obsPlanoSelect');
+  if(sel) sel.value = '';
+  pintarUbicacionObs();
+}
+
+// ── SELECTOR DE PIN (modal apilado, reutiliza coordsPinDesdeEvento y pdf.js) ──
+let _selPin = null; // {origen:'nueva'|'obs', obsId, plano, planos, x, y}
+let _selPinPdf = { doc:null, url:null, pagina:1 };
+
+async function abrirSelectorPin(origen, obsId=null){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  const { data: planos } = await sb.from('planos').select('id,nombre,url,tipo').eq('proyecto_id', currentProyecto).order('created_at');
+  if(!planos||!planos.length){ toast('Este proyecto no tiene planos cargados','error'); return; }
+  window._planosProyecto = planos;
+  _selPin = { origen, obsId, planos, plano:null, x:null, y:null };
+  const sel = document.getElementById('selPinPlano');
+  sel.innerHTML = planos.map(p=>`<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('');
+  // Preselección: el plano ya elegido en el modal de observación (flujo 'nueva')
+  if(origen==='nueva'){
+    const pre = document.getElementById('obsPlanoSelect')?.value||'';
+    if(pre) sel.value = pre;
+  }
+  document.getElementById('btnConfirmarSelPin').disabled = true;
+  document.getElementById('modalSelectorPin').classList.add('show');
+  cargarPlanoSelectorPin();
+}
+
+function cargarPlanoSelectorPin(){
+  const id = document.getElementById('selPinPlano').value;
+  const p = (_selPin?.planos||[]).find(x=>String(x.id)===String(id));
+  if(!p) return;
+  _selPin.plano = p; _selPin.x = null; _selPin.y = null;
+  document.getElementById('btnConfirmarSelPin').disabled = true;
+  const visor = document.getElementById('selPinVisor');
+  const esPDF = (p.tipo||'').includes('pdf') || p.nombre.toLowerCase().endsWith('.pdf');
+  if(esPDF){
+    visor.innerHTML = `
+      <div style="width:100%;height:55vh;overflow-y:auto;overflow-x:hidden;border-radius:12px;background:#525659" id="selPinScroll">
+        <div style="position:relative;display:inline-block;width:100%">
+          <canvas id="selPinCanvas" style="display:block;width:100%;height:auto"></canvas>
+          <div id="selPinOverlay" onclick="marcarPuntoSelector(event,this)" style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:5"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:8px;background:#3d3d3d;position:sticky;bottom:0">
+          <button onclick="cambiarPaginaSelPin(-1)" class="btn" style="padding:4px 12px;color:#fff;background:#555;border:none">◀</button>
+          <span id="selPinPageInfo" style="color:#fff;font-size:12px">Cargando…</span>
+          <button onclick="cambiarPaginaSelPin(1)" class="btn" style="padding:4px 12px;color:#fff;background:#555;border:none">▶</button>
+        </div>
+      </div>`;
+    _selPinPdf = { doc:null, url:null, pagina:1 };
+    renderizarPDFSelector(p.url, 1);
+  } else {
+    visor.innerHTML = `
+      <div style="width:100%;max-height:55vh;overflow:auto;border-radius:12px;background:#f5f6f8">
+        <div style="position:relative;display:inline-block;min-width:100%">
+          <img src="${p.url}" style="display:block;width:100%;height:auto;border-radius:12px"/>
+          <div id="selPinOverlay" onclick="marcarPuntoSelector(event,this)" style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:5"></div>
+        </div>
+      </div>`;
+  }
+}
+
+// Render de PDF del selector: estado propio (_selPinPdf) para no interferir
+// con el visor de la pestaña Planos (pdfDoc/pdfPaginaActual quedan intactos)
+async function renderizarPDFSelector(url, pagina){
+  await asegurarPdfJs();
+  try{
+    if(!_selPinPdf.doc || _selPinPdf.url !== url){
+      _selPinPdf.doc = await pdfjsLib.getDocument(url).promise;
+      _selPinPdf.url = url;
+    }
+    const page = await _selPinPdf.doc.getPage(pagina);
+    const canvas = document.getElementById('selPinCanvas');
+    if(!canvas) return;
+    const contW = (document.getElementById('selPinScroll')?.clientWidth || 800) - 4;
+    const vp1 = page.getViewport({scale:1});
+    const vp = page.getViewport({scale: contW / vp1.width});
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({canvasContext: canvas.getContext('2d'), viewport: vp}).promise;
+    _selPinPdf.pagina = pagina;
+    const info = document.getElementById('selPinPageInfo');
+    if(info) info.textContent = `Página ${pagina} de ${_selPinPdf.doc.numPages}`;
+    pintarPinProvisional();
+  }catch(e){
+    console.error('PDF selector:', e);
+    toast('No se pudo mostrar el PDF del plano','error');
+  }
+}
+
+function cambiarPaginaSelPin(delta){
+  if(!_selPinPdf.doc) return;
+  const n = _selPinPdf.pagina + delta;
+  if(n < 1 || n > _selPinPdf.doc.numPages) return;
+  renderizarPDFSelector(_selPinPdf.url, n);
+}
+
+function marcarPuntoSelector(event, overlay){
+  const c = coordsPinDesdeEvento(event, overlay); // mismo cálculo que el modo pin del visor
+  // Si la imagen/canvas aún no tiene dimensiones (cargando), el cálculo da NaN: ignorar el toque
+  if(!isFinite(c.x) || !isFinite(c.y)) return;
+  _selPin.x = c.x; _selPin.y = c.y;
+  document.getElementById('btnConfirmarSelPin').disabled = false;
+  pintarPinProvisional();
+}
+
+function pintarPinProvisional(){
+  const overlay = document.getElementById('selPinOverlay');
+  if(!overlay) return;
+  if(!_selPin || _selPin.x===null){ overlay.innerHTML=''; return; }
+  overlay.innerHTML = `
+    <div style="position:absolute;left:${_selPin.x}%;top:${_selPin.y}%;transform:translate(-50%,-100%);pointer-events:none;z-index:10">
+      <div style="background:#0073ea;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)">📍</div>
+      <div style="width:2px;height:10px;background:#0073ea;margin:0 auto"></div>
+    </div>`;
+}
+
+async function confirmarSelectorPin(){
+  if(!_selPin || _selPin.x===null || !_selPin.plano) return;
+  if(_selPin.origen==='nueva'){
+    // Precarga en el modal de observación (nueva o por voz): guarda al Guardar normal
+    window._obsNuevaPlano = _selPin.plano.id;
+    window._obsNuevaPin = { x:_selPin.x, y:_selPin.y };
+    const selObs = document.getElementById('obsPlanoSelect');
+    if(selObs) selObs.value = _selPin.plano.id;
+    pintarUbicacionObs();
+    cerrarModal('modalSelectorPin');
+  } else {
+    // Asignación a una observación existente: update directo
+    const { error } = await sb.from('observaciones')
+      .update({ plano_id:_selPin.plano.id, pin_x:_selPin.x, pin_y:_selPin.y })
+      .eq('id', _selPin.obsId);
+    if(error){ toast('Error: '+error.message,'error'); return; }
+    toast('Ubicación asignada ✓','success');
+    cerrarModal('modalSelectorPin');
+    if(document.getElementById('modalObsDetalle').classList.contains('show')) verObservacion(_selPin.obsId);
+    if(typeof fiscalTab!=='undefined' && fiscalTab==='observaciones') cargarObservaciones();
+  }
+}
+
+// Navega al visor real de la pestaña Planos con el pin de la observación
+// resaltado y centrado
+async function verObsEnPlano(obsId){
+  const { data: o } = await sb.from('observaciones').select('id,plano_id,pin_x,pin_y').eq('id', obsId).single();
+  if(!o?.plano_id){ toast('La observación no tiene plano asignado','error'); return; }
+  const { data: pl } = await sb.from('planos').select('*').eq('id', o.plano_id).single();
+  if(!pl){ toast('El plano de esta observación ya no existe','error'); return; }
+  cerrarModal('modalObsDetalle');
+  window._resaltarObsId = obsId;
+  if(currentPage!=='fiscalizacion') navTo('fiscalizacion', document.querySelector('.nav-item[onclick*="fiscalizacion"]'));
+  fiscalTab = 'planos';
+  renderFiscalizacionShell();
+  await cargarPlanos();
+  verPlano(pl.id, pl.url, pl.nombre, pl.tipo||'');
 }
 
 let obsFotosPendientes = [];
@@ -7140,6 +7416,9 @@ async function guardarObservacionNueva(){
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalObsNueva');
   if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
+  // Higiene: limpiar plano/pin tras el guardado para que ningún camino futuro
+  // hacia este flujo pueda heredar la ubicación de una observación anterior
+  quitarUbicacionObs();
   // Notificar al residente via DM y por correo
   await notificarResidenteViaDM('observacion', titulo, desc);
   await notificarPorEmail('observacion', titulo, desc, siguienteNumero);
