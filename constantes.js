@@ -205,3 +205,99 @@ const ANEXO1_CHECKLIST = [
   ]},
 ];
 
+// ── MATRIZ DE PERMISOS POR ROL (FASE 1: solo documentación) ──
+// Refleja EXACTAMENTE la realidad actual del código (auditoría en PERMISOS.md,
+// commit aa6757a). Las celdas afectadas por inconsistencias llevan un comentario
+// // I-n que refiere a la sección 5 de PERMISOS.md. NINGÚN chequeo de la app lee
+// esta constante todavía: es solo la fuente del cuadro de la vista "Permisos".
+// Valores por celda: 'gestionar' (edita/crea/elimina algo en la sección),
+// 'ver' (solo lectura), null (sin acceso).
+const PERMISOS = {
+  roles: [
+    { id:'admin',        nombre:'Admin' },
+    { id:'fiscalizador', nombre:'Fiscalizador' },
+    { id:'residente',    nombre:'Residente' },
+    { id:'tecnico_sst',  nombre:'Técnico SST' },
+    { id:'bodeguero',    nombre:'Bodeguero' },
+    { id:'visualizador', nombre:'Visualizador' },
+    { id:'cliente',      nombre:'Cliente' }
+  ],
+  secciones: [
+    // ── PLATAFORMA ──
+    { id:'dashboard', nombre:'Dashboard', ambito:'plataforma', requiereModulo:null,
+      roles:{ admin:'gestionar', fiscalizador:'ver', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:'ver' },
+      nota:'Solo admin edita desde la tabla embebida de proyectos.' },
+    { id:'proyectos', nombre:'Proyectos', ambito:'plataforma', requiereModulo:null,
+      // I-4: fiscalizador puede CREAR proyectos (y definir sus módulos) pero no editarlos ni eliminarlos.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'I-4: fiscalizador crea proyectos pero no puede editarlos; además el creador queda con rol fantasma "director" (I-1).' },
+    { id:'cartera', nombre:'Cartera', ambito:'plataforma', requiereModulo:null,
+      // I-14: el ítem del nav solo se calcula al iniciar sesión; ser fiscalizador en ALGÚN proyecto basta.
+      roles:{ admin:'gestionar', fiscalizador:'ver', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Fiscalizador la ve si lo es en algún proyecto (I-14). "Generar resumen" solo admin.' },
+    { id:'usuarios', nombre:'Usuarios', ambito:'plataforma', requiereModulo:null,
+      // I-11: el gate usa el rol efectivo del proyecto, no el rol global.
+      roles:{ admin:'gestionar', fiscalizador:null, residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'I-11: el gate usa el rol efectivo del proyecto activo, no el rol global.' },
+    { id:'reportesGlobales', nombre:'Reportes Globales', ambito:'plataforma', requiereModulo:null,
+      roles:{ admin:'ver', fiscalizador:null, residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Sección de solo consulta. Mismo gate que Usuarios (I-11).' },
+    // ── POR PROYECTO ──
+    { id:'rubros', nombre:'Rubros (+ Órdenes de Cambio)', ambito:'proyecto', requiereModulo:null,
+      // I-8: la solo-lectura del visualizador la sostiene el CSS de modo-visualizador, no la lógica JS.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Eliminar rubros solo admin; Órdenes de Cambio solo admin/fiscalizador. Visualizador: solo lectura vía CSS (I-8).' },
+    { id:'libro', nombre:'Libro de Obra', ambito:'proyecto', requiereModulo:'libro',
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Aprobar/observar solo admin/fiscalizador; reabrir solo admin. Residente crea (nace pendiente). Visualizador: solo lectura vía CSS (I-8).' },
+    { id:'curvaS', nombre:'Curva S', ambito:'proyecto', requiereModulo:'curvaS',
+      // I-8: cronograma sin gate JS; visualizador y cliente contenidos solo por CSS.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:'ver' },
+      nota:'Crear línea base admin/fiscalizador; activarla solo admin. Visualizador y cliente: solo lectura vía CSS (I-8).' },
+    { id:'fiscalizacion', nombre:'Observaciones', ambito:'proyecto', requiereModulo:'observaciones',
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Los tres roles gestionan sin distinción (planos, pins, estados, eliminación).' },
+    { id:'solicitudes', nombre:'Solicitudes', ambito:'proyecto', requiereModulo:'solicitudes',
+      // I-10: por un ID duplicado, el residente ve "Enviar comentario" y eso mueve la solicitud a en_revision.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Residente crea; aprobar/rechazar admin/fiscalizador; eliminar solo admin. I-10: residente puede comentar y cambiar el estado.' },
+    { id:'planillas', nombre:'Planillas', ambito:'proyecto', requiereModulo:'planillas',
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Flujo por estado: crear los tres; revisar/aprobar admin/fiscalizador; pagar solo admin. La sección mejor cerrada.' },
+    { id:'contrato', nombre:'Contrato', ambito:'proyecto', requiereModulo:null,
+      // I-3: visible para TODOS salvo tecnico_sst (incluso sin membresía); solo-lectura de facto sin aviso.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
+      nota:'I-3: visible para todos salvo Técnico SST, incluso sin rol en el proyecto; solo lectura de facto sin aviso.' },
+    { id:'ensayos', nombre:'Ensayos', ambito:'proyecto', requiereModulo:null,
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
+      nota:'I-3: misma visibilidad anómala que Contrato. Eliminar solo admin.' },
+    { id:'formatosCalidad', nombre:'Formatos de Calidad', ambito:'proyecto', requiereModulo:'formatosCalidad',
+      // I-13: el botón "Revisar/Corregir" no tiene gate de rol.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Plantillas y asignación admin/fiscalizador; residente llena. I-13: "Revisar/Corregir" sin gate.' },
+    { id:'sso', nombre:'SST / SSO', ambito:'proyecto', requiereModulo:'sst',
+      // I-9: el botón "Asistentes" de Capacitaciones escapa al CSS y no tiene gate.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:'gestionar', bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Eliminar admin/fiscalizador; configurar admin/fisc/técnico SST. I-9: visualizador puede editar asistentes de capacitaciones.' },
+    { id:'archivos', nombre:'Archivos', ambito:'proyecto', requiereModulo:null,
+      // I-7: subir no tiene gate; todo rol que ve la sección puede subir (salvo visualizador, contenido por CSS).
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:'gestionar', bodeguero:'gestionar', visualizador:'ver', cliente:null },
+      nota:'I-7: subir sin gate para todo rol con acceso; eliminar solo admin/fiscalizador. Visualizador: solo lectura vía CSS (I-8).' },
+    { id:'subcontratistas', nombre:'Subcontratistas', ambito:'proyecto', requiereModulo:'subcontratistas',
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:null },
+      nota:'Gate coherente en el render (admin/fiscalizador); el resto solo lectura silenciosa.' },
+    { id:'equipos', nombre:'Equipos', ambito:'proyecto', requiereModulo:'equipos',
+      // I-7: el registro de horas no tiene gate, a diferencia del catálogo.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Catálogo admin/fiscalizador; I-7: registro de horas sin gate (residente escribe).' },
+    { id:'materiales', nombre:'Materiales', ambito:'proyecto', requiereModulo:'materiales',
+      // I-7: la sección no tiene un solo chequeo de rol.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:'gestionar', visualizador:null, cliente:null },
+      nota:'I-7: sin ningún chequeo de rol; todo rol con acceso gestiona todo.' },
+    { id:'chat', nombre:'Chat de proyecto', ambito:'proyecto', requiereModulo:null,
+      // I-9: crear canal no tiene gate (el "+" escapa al CSS de visualizador).
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:'gestionar', bodeguero:'gestionar', visualizador:'gestionar', cliente:null },
+      nota:'Participar es la función normal. Eliminar canal solo admin; invitar a privados solo admin. I-9: crear canal sin gate.' }
+  ]
+};
+

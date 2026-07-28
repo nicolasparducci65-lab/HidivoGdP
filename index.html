@@ -562,6 +562,11 @@
       <div class="page" id="page-reportesGlobales">
         <div id="reportesGlobalesContent"><div class="page-loader"><div class="spinner"></div>Cargando reportes...</div></div>
       </div>
+
+      <!-- MATRIZ DE PERMISOS (FASE 1: solo documentación, se renderiza desde PERMISOS) -->
+      <div class="page" id="page-permisos">
+        <div id="permisosContent"><div class="empty-state"><div class="empty-icon">🔐</div><div class="empty-title">Matriz de permisos</div></div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -3094,7 +3099,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   const btnLink = document.getElementById('btnLinkFormulario');
   if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
@@ -3138,6 +3143,7 @@ function navTo(page, btn){
   }
   if(page==='usuarios') cargarUsuarios();
   if(page==='reportesGlobales') cargarReportesGlobales();
+  if(page==='permisos') cargarPermisos();
 
   // Registrar la navegación en el historial del navegador (salvo cuando la
   // propia restauración por popstate está reproduciendo un estado anterior).
@@ -12207,6 +12213,79 @@ async function responderSolicitud(accion){
 }
 
 // ── USUARIOS ──
+// ── MATRIZ DE PERMISOS (FASE 1) ──
+// Renderiza el cuadro desde la constante PERMISOS (constantes.js). Solo
+// documentación: ningún chequeo de la app lee PERMISOS todavía.
+function cargarPermisos(){
+  const content = document.getElementById('permisosContent');
+  if(currentPerfil?.rol !== 'admin'){
+    content.innerHTML = '<div class="empty-state"><div class="empty-icon">🔐</div><div class="empty-title">Solo administradores</div></div>';
+    return;
+  }
+
+  const celda = v =>
+    v==='gestionar' ? '<span title="Gestionar">✏️</span>' :
+    v==='ver'       ? '<span title="Solo ver">👁</span>' :
+                      '<span style="color:#c3c6d4" title="Sin acceso">—</span>';
+
+  const tabla = ambito => {
+    const secciones = PERMISOS.secciones.filter(s=>s.ambito===ambito);
+    const notas = secciones.filter(s=>s.nota);
+    return `
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">${ambito==='plataforma' ? '🏢 Plataforma (sin proyecto)' : '📁 Por proyecto'}</div>
+      <div style="overflow-x:auto">
+        <table style="min-width:${140 + PERMISOS.roles.length*96}px">
+          <thead><tr>
+            <th style="min-width:200px">Sección</th>
+            ${PERMISOS.roles.map(r=>`<th style="text-align:center;white-space:nowrap">${r.nombre}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+          ${secciones.map(s=>`
+            <tr>
+              <td style="white-space:nowrap">
+                <span style="font-weight:600">${s.nombre}</span>
+                ${s.requiereModulo ? `<span title="Requiere el módulo '${s.requiereModulo}' activado en el proyecto" style="background:#e8f4ff;color:#0073ea;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap">🧩 ${s.requiereModulo}</span>` : ''}
+                ${s.nota ? `<span title="${escAttr(s.nota)}" style="cursor:help;margin-left:4px">⚠️</span>` : ''}
+              </td>
+              ${PERMISOS.roles.map(r=>`<td style="text-align:center;font-size:15px">${celda(s.roles[r.id])}</td>`).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${notas.length ? `
+      <div style="padding:10px 16px;border-top:1px solid #e6e9ef;font-size:12px;color:#676879;line-height:1.7">
+        ${notas.map(s=>`<div>⚠️ <b>${s.nombre}:</b> ${s.nota}</div>`).join('')}
+      </div>` : ''}
+    </div>`;
+  };
+
+  content.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#323338">🔐 Matriz de permisos por rol</div>
+      <div style="font-size:13px;color:#676879">Documenta el comportamiento actual de la app (auditoría FASE 1 — ver PERMISOS.md). No es configurable.</div>
+    </div>
+    <button onclick="navTo('usuarios')" class="btn" style="gap:6px">← Volver a Usuarios</button>
+  </div>
+
+  <div style="display:flex;gap:16px;flex-wrap:wrap;background:#f5f6f8;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#323338">
+    <span>✏️ Gestionar</span>
+    <span>👁 Solo ver</span>
+    <span><span style="color:#c3c6d4">—</span> Sin acceso</span>
+    <span><span style="background:#e8f4ff;color:#0073ea;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700">🧩 módulo</span> requiere módulo activado en el proyecto</span>
+    <span>⚠️ tiene nota (pasa el cursor o revisa el pie de la tabla)</span>
+  </div>
+
+  ${tabla('plataforma')}
+  ${tabla('proyecto')}
+
+  <div style="font-size:12px;color:#676879;margin-top:4px">
+    Los roles Admin y Fiscalizador de este cuadro son el <b>rol efectivo</b> en el proyecto activo
+    (un admin global es admin en todos los proyectos). Detalle completo e inconsistencias: PERMISOS.md en el repositorio.
+  </div>`;
+}
+
 async function cargarUsuarios(){
   const { data: perfiles } = await sb.from('perfiles').select('*').order('created_at');
 
@@ -12223,10 +12302,13 @@ async function cargarUsuarios(){
       <div style="font-size:18px;font-weight:700;color:#323338">Usuarios</div>
       <div style="font-size:13px;color:#676879">${perfiles?.length||0} usuarios registrados</div>
     </div>
-    <button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Invitar usuario
-    </button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="navTo('permisos')" class="btn" style="gap:6px">🔐 Matriz de permisos</button>
+      <button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Invitar usuario
+      </button>
+    </div>
   </div>
 
   <!-- Invitaciones pendientes -->
