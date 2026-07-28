@@ -2243,8 +2243,8 @@
           <button onclick="responderSolicitud('correccion')" class="btn" style="background:#856404;color:#fff;border-color:#856404;gap:6px">🔄 Solicitar corrección</button>
           <button onclick="responderSolicitud('comentario')" class="btn primary" style="gap:6px">💬 Comentar</button>
         </div>
-        <!-- Botón residente/visualizador -->
-        <div id="solBotonesAccion" style="display:flex;gap:8px" class="btn-comentar-sol">
+        <!-- Botón residente (comentario sin cambio de estado) -->
+        <div id="solComentarioBox" style="display:none;gap:8px">
           <button onclick="responderSolicitud('comentario')" class="btn primary" style="gap:6px">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             Enviar comentario
@@ -12096,13 +12096,11 @@ async function verSolicitud(id){
     </div>`;
   }).join('') || '<div style="font-size:13px;color:#676879">Sin respuestas aún</div>';
 
-  // Botones de acción para fiscalizador
-  const botonesAccion = document.getElementById('solBotonesAccion');
-  if(esFiscalizador && sol.estado !== 'aprobada'){
-    botonesAccion.style.display='flex';
-  } else {
-    botonesAccion.style.display='none';
-  }
+  // Botones de acción para fiscalizador; el bloque de solo-comentario es para
+  // los demás roles (o para el fiscalizador cuando la solicitud ya está aprobada)
+  const muestraAcciones = esFiscalizador && sol.estado !== 'aprobada';
+  document.getElementById('solBotonesAccion').style.display = muestraAcciones ? 'flex' : 'none';
+  document.getElementById('solComentarioBox').style.display = muestraAcciones ? 'none' : 'flex';
 
   // Botón eliminar para admin — siempre visible
   const btnEliminarSol = document.getElementById('btnEliminarSolicitud');
@@ -12133,6 +12131,10 @@ async function responderSolicitud(accion){
   // Solo comentario requiere texto o archivo
   if(accion==='comentario' && !texto && !archivo){ toast('Escribe una respuesta o adjunta un archivo','error'); return; }
   if(!window._solActiva) return;
+  // Revalidar el rol: solo admin/fiscalizador ejecutan acciones que gestionan
+  // la solicitud; los demás roles solo pueden comentar (PERMISOS.md I-10).
+  const esGestor = ['admin','fiscalizador'].includes(currentPerfil?.rol);
+  if(!esGestor && accion!=='comentario'){ toast('No tienes permisos para esta acción','error'); return; }
 
   let archivoUrl=null, archivoNombre=null;
   if(archivo){
@@ -12154,9 +12156,13 @@ async function responderSolicitud(accion){
     autor_id: currentUser?.id
   });
 
-  // Actualizar estado según acción
-  const nuevoEstado = {aprobar:'aprobada',rechazar:'rechazada',correccion:'correccion',comentario:'en_revision'}[accion];
-  await sb.from('solicitudes').update({estado:nuevoEstado, updated_at:new Date().toISOString()}).eq('id',window._solActiva.id);
+  // Actualizar estado según acción — solo los roles de gestión cambian el
+  // estado, y nunca sobre una solicitud ya aprobada (el comentario de un
+  // residente no debe mover la solicitud a en_revision: PERMISOS.md I-10).
+  if(esGestor && window._solActiva.estado !== 'aprobada'){
+    const nuevoEstado = {aprobar:'aprobada',rechazar:'rechazada',correccion:'correccion',comentario:'en_revision'}[accion];
+    await sb.from('solicitudes').update({estado:nuevoEstado, updated_at:new Date().toISOString()}).eq('id',window._solActiva.id);
+  }
 
   toast('Respuesta enviada ✓','success');
   // Notificar via DM y por correo
