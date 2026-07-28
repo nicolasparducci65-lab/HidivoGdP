@@ -1,4 +1,9 @@
--- PUNTO 5 — PARCHE DE ACCESO ANÓNIMO (para revisar ANTES de ejecutar)
+-- PUNTO 5 — PARCHE DE ACCESO ANÓNIMO
+-- ====================================================================
+-- ESTADO: BLOQUE A EJECUTADO el 2026-07-28 (verificado en pg_policies).
+-- BLOQUE B pendiente: ejecutar cuando registro-obra.html (ya migrado a la
+-- Edge Function registro-obra-publico con token) esté probado con un
+-- registro real de campo.
 -- ====================================================================
 -- Contexto (diagnóstico 2026-07-28): con la publishable key que está en el
 -- HTML, un visitante SIN LOGIN hoy puede:

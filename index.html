@@ -2340,7 +2340,8 @@
         Escanea el QR con el celular para abrir directo 📱
       </div>
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn" onclick="regenerarLinkFormulario()" title="Invalida los links compartidos anteriormente" style="color:#e2445c">♻️ Regenerar link</button>
       <button class="btn" onclick="cerrarModal('modalLinkFormulario')">Cerrar</button>
     </div>
   </div>
@@ -4033,13 +4034,25 @@ async function eliminarRubro(id, descripcion){
   cargarRubros(true);
 }
 
-function mostrarLinkFormulario(){
+async function mostrarLinkFormulario(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
-  const url = `https://nicolasparducci65-lab.github.io/HidivoGdP/registro-obra.html?proyecto=${currentProyecto}`;
+  const { data: proy } = await sb.from('proyectos').select('registro_token').eq('id', currentProyecto).single();
+  if(!proy?.registro_token){ toast('No se pudo obtener el token del formulario','error'); return; }
+  const url = `https://nicolasparducci65-lab.github.io/HidivoGdP/registro-obra.html?t=${proy.registro_token}`;
   document.getElementById('linkFormularioUrl').value = url;
   // QR usando API gratuita
   document.getElementById('linkFormularioQR').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
   document.getElementById('modalLinkFormulario').classList.add('show');
+}
+
+async function regenerarLinkFormulario(){
+  if(!currentProyecto) return;
+  if(!confirm('¿Regenerar el link del formulario?\n\nLos links y QR compartidos anteriormente dejarán de funcionar.')) return;
+  const { error } = await sb.from('proyectos')
+    .update({ registro_token: crypto.randomUUID() }).eq('id', currentProyecto);
+  if(error){ toast('Error al regenerar: '+error.message,'error'); return; }
+  toast('Link regenerado — los anteriores quedaron revocados ✓','success');
+  mostrarLinkFormulario();
 }
 
 function copiarLinkFormulario(){

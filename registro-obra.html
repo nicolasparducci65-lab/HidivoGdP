@@ -4,7 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Registro Diario de Obra — HIDIVO</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#323338;font-size:14px;min-height:100vh}
@@ -296,12 +295,11 @@ select.form-control{appearance:none;background-image:url("data:image/svg+xml,%3C
 </div>
 
 <script>
-const SUPABASE_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA';
-const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Todo el acceso a datos pasa por la Edge Function registro-obra-publico,
+// autenticada con el token del proyecto que viene en el link (?t=...).
+// Este formulario ya no habla directo con las tablas de Supabase.
+const FUNCION_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/registro-obra-publico';
 
-let proyectoId = null;
 let climaSeleccionado = 'Soleado';
 let fotosSeleccionadas = [];
 let equiposSeleccionados = [];
@@ -310,39 +308,60 @@ let archivosSeleccionados = [];
 let rubrosDisponibles = [];
 let rubrosSeleccionados = [];
 
-// Leer proyecto del URL
+// Leer token del URL
 const params = new URLSearchParams(window.location.search);
-proyectoId = params.get('proyecto');
+const registroToken = params.get('t');
+
+async function llamarFuncion(payload){
+  const resp = await fetch(FUNCION_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ token: registroToken, ...payload })
+  });
+  const data = await resp.json().catch(()=>({}));
+  if(!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+  return data;
+}
+
+async function llamarFuncionForm(campos, file){
+  const fd = new FormData();
+  fd.append('token', registroToken);
+  Object.entries(campos).forEach(([k,v])=>fd.append(k, v));
+  fd.append('file', file);
+  const resp = await fetch(FUNCION_URL, { method:'POST', body: fd });
+  const data = await resp.json().catch(()=>({}));
+  if(!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+  return data;
+}
 
 window.addEventListener('DOMContentLoaded', async () => {
-  if(!proyectoId){ mostrarError('No se especificó un proyecto. Verifica el link.'); return; }
+  if(!registroToken){
+    mostrarError(params.get('proyecto')
+      ? 'Este link es de una versión anterior y ya no es válido. Solicita el link actualizado al equipo de fiscalización.'
+      : 'Link incompleto. Solicita el link al equipo de fiscalización.');
+    return;
+  }
 
-  // Cargar info del proyecto
-  const { data: proy, error } = await sb.from('proyectos').select('*').eq('id', proyectoId).single();
-  if(error || !proy){ mostrarError('Proyecto no encontrado. Verifica el link.'); return; }
+  // Cargar contexto del proyecto (valida el token)
+  let ctx;
+  try{ ctx = await llamarFuncion({ action:'contexto' }); }
+  catch(e){ mostrarError(e.message); return; }
 
-  document.getElementById('proyectoNombre').textContent = proy.nombre;
-  document.getElementById('proyectoInfo').textContent = `${proy.contratista||''} · ${proy.ubicacion||''}`;
+  document.getElementById('proyectoNombre').textContent = ctx.proyecto.nombre;
+  document.getElementById('proyectoInfo').textContent = `${ctx.proyecto.contratista||''} · ${ctx.proyecto.ubicacion||''}`;
   const hoy = new Date().toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   document.getElementById('proyectoFecha').textContent = hoy;
 
   // Fecha de hoy
   document.getElementById('lFecha').value = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(new Date());
 
-  // Número de registro
-  const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id', proyectoId);
-  document.getElementById('lNumRegistro').value = (count||0)+1;
-
-  // Cargar catálogo equipos y materiales
-  const { data: catalogoItems } = await sb.from('catalogo_items')
-    .select('*')
-    .or(`es_base.eq.true,proyecto_id.eq.${proyectoId}`)
-    .order('nombre');
+  // Número de registro (informativo; el definitivo lo asigna el servidor)
+  document.getElementById('lNumRegistro').value = ctx.siguienteNumero;
 
   const equipoSel = document.getElementById('equipoSelector');
   const materialSel = document.getElementById('materialSelector');
-  const equipos = (catalogoItems||[]).filter(i=>i.tipo==='equipo');
-  const materiales = (catalogoItems||[]).filter(i=>i.tipo==='material');
+  const equipos = (ctx.catalogo||[]).filter(i=>i.tipo==='equipo');
+  const materiales = (ctx.catalogo||[]).filter(i=>i.tipo==='material');
 
   equipoSel.innerHTML = '<option value="">+ Seleccionar equipo...</option>' +
     equipos.map(i=>`<option value="${i.id}" data-nombre="${i.nombre}" data-unidad="${i.unidad||''}">${i.nombre}${i.unidad?' ('+i.unidad+')':''}</option>`).join('') +
@@ -355,9 +374,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderItemsLista('equipo');
   renderItemsLista('material');
 
-  // Cargar rubros
-  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id', proyectoId).order('orden');
-  rubrosDisponibles = rubros||[];
+  // Rubros del proyecto (vienen en el contexto)
+  rubrosDisponibles = ctx.rubros||[];
   renderRubros();
 
   // Drag & drop fotos
@@ -516,15 +534,6 @@ function renderArchivosLista(){
 
 function eliminarArchivo(i){ archivosSeleccionados.splice(i,1); renderArchivosLista(); }
 
-async function subirFoto(file, registroId, orden){
-  const ext = file.name.split('.').pop()||'jpg';
-  const path = `libro_obra/${registroId}/${Date.now()}_${orden}.${ext}`;
-  const { error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
-  if(error) return null;
-  const { data } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
-  return data.publicUrl;
-}
-
 async function enviarRegistro(){
   const fecha = document.getElementById('lFecha').value;
   const actividades = document.getElementById('lActividades').value.trim();
@@ -534,13 +543,11 @@ async function enviarRegistro(){
   document.getElementById('btnEnviar').disabled = true;
   mostrarLoading('Guardando registro...');
 
-  const payload = {
-    proyecto_id: proyectoId,
+  const registroPayload = {
     residente_nombre: document.getElementById('lResidente').value.trim()||null,
     residente_email: document.getElementById('lEmail').value.trim()||null,
     residente_empresa: document.getElementById('lEmpresa').value.trim()||null,
     fecha,
-    numero_registro: parseInt(document.getElementById('lNumRegistro').value)||null,
     clima: climaSeleccionado,
     temperatura_min: parseFloat(document.getElementById('lTempMin').value)||null,
     temperatura_max: parseFloat(document.getElementById('lTempMax').value)||null,
@@ -552,68 +559,51 @@ async function enviarRegistro(){
     resoluciones: document.getElementById('lResoluciones').value.trim()||null,
   };
 
-  const { data: registro, error } = await sb.from('libro_obra').insert(payload).select().single();
-  if(error){ ocultarLoading(); mostrarErrorBottom('Error al guardar: '+error.message); document.getElementById('btnEnviar').disabled=false; return; }
-
-  // Guardar equipos y materiales en libro_obra_items
-  const todosItems = [...equiposSeleccionados, ...materialesSeleccionados];
-  if(todosItems.length){
-    await sb.from('libro_obra_items').insert(todosItems.map(i=>({
-      registro_id: registro.id,
-      item_id: i.item_id||null,
-      nombre_libre: i.item_id ? null : i.nombre,
-      tipo: i.tipo,
-      cantidad: i.cantidad
-    })));
-  }
-
-  // Guardar rubros
   const rubrosConCantidad = rubrosSeleccionados.filter(r=>r.cantidad>0);
-  if(rubrosConCantidad.length){
-    await sb.from('libro_obra_rubros').insert(rubrosConCantidad.map(r=>({registro_id:registro.id, rubro_id:r.id, cantidad_dia:r.cantidad})));
-    for(const r of rubrosConCantidad){
-      const { data: rub } = await sb.from('rubros').select('cantidad_ejecutada').eq('id',r.id).single();
-      await sb.from('rubros').update({cantidad_ejecutada:(rub?.cantidad_ejecutada||0)+r.cantidad}).eq('id',r.id);
-    }
+
+  let guardado;
+  try{
+    guardado = await llamarFuncion({
+      action:'guardar',
+      registro: registroPayload,
+      items: [...equiposSeleccionados, ...materialesSeleccionados],
+      rubros: rubrosConCantidad
+    });
+  }catch(e){
+    ocultarLoading();
+    mostrarErrorBottom('Error al guardar: '+e.message);
+    document.getElementById('btnEnviar').disabled=false;
+    return;
   }
 
-  // Subir fotos
-  if(fotosSeleccionadas.length){
-    actualizarLoading(`Subiendo ${fotosSeleccionadas.length} foto(s)...`);
-    for(let i=0;i<fotosSeleccionadas.length;i++){
-      actualizarLoading(`Subiendo foto ${i+1} de ${fotosSeleccionadas.length}...`);
-      const url = await subirFoto(fotosSeleccionadas[i].file, registro.id, i+1);
-      if(url) await sb.from('libro_obra_fotos').insert({registro_id:registro.id, url, descripcion:fotosSeleccionadas[i].descripcion||null, orden:i+1});
-    }
+  // Subir fotos (una por petición; la función las registra en la BD)
+  let fotosFallidas = 0;
+  for(let i=0;i<fotosSeleccionadas.length;i++){
+    actualizarLoading(`Subiendo foto ${i+1} de ${fotosSeleccionadas.length}...`);
+    try{
+      await llamarFuncionForm({
+        action:'foto', registro_id: guardado.registro_id,
+        orden: String(i+1), descripcion: fotosSeleccionadas[i].descripcion||''
+      }, fotosSeleccionadas[i].file);
+    }catch(e){ fotosFallidas++; }
   }
 
   // Subir archivos adjuntos
-  if(archivosSeleccionados.length){
-    actualizarLoading(`Subiendo ${archivosSeleccionados.length} archivo(s)...`);
-    for(let i=0;i<archivosSeleccionados.length;i++){
-      const file = archivosSeleccionados[i];
-      actualizarLoading(`Subiendo archivo ${i+1} de ${archivosSeleccionados.length}...`);
-      const path = `libro_obra/${registro.id}/${Date.now()}_${file.name}`;
-      const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:file.type, upsert:true});
-      if(!upErr){
-        const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-        await sb.from('archivos').insert({
-          proyecto_id: proyectoId,
-          modulo: 'libro_obra',
-          referencia_id: registro.id,
-          nombre: file.name,
-          tipo: file.type,
-          url: urlData.publicUrl,
-          tamanio: file.size
-        });
-      }
-    }
+  let archivosFallidos = 0;
+  for(let i=0;i<archivosSeleccionados.length;i++){
+    actualizarLoading(`Subiendo archivo ${i+1} de ${archivosSeleccionados.length}...`);
+    try{
+      await llamarFuncionForm({ action:'adjunto', registro_id: guardado.registro_id }, archivosSeleccionados[i]);
+    }catch(e){ archivosFallidos++; }
   }
 
   ocultarLoading();
+  const avisos = [];
+  if(fotosFallidas) avisos.push(`⚠️ ${fotosFallidas} foto(s) no se pudieron subir`);
+  if(archivosFallidos) avisos.push(`⚠️ ${archivosFallidos} archivo(s) no se pudieron subir`);
   document.getElementById('resumenEnvio').innerHTML = `
-    <strong>Registro N° ${registro.numero_registro||'—'}</strong> · ${new Date(fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long'})}<br/>
-    ${climaSeleccionado} · ${payload.personal_total} personas · ${rubrosConCantidad.length} rubros · ${fotosSeleccionadas.length} foto(s)`;
+    <strong>Registro N° ${guardado.numero_registro||'—'}</strong> · ${new Date(fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long'})}<br/>
+    ${climaSeleccionado} · ${registroPayload.personal_total} personas · ${rubrosConCantidad.length} rubros · ${fotosSeleccionadas.length-fotosFallidas} foto(s)${avisos.length?'<br/><span style="color:#b8860b">'+avisos.join(' · ')+'</span>':''}`;
   document.getElementById('formContent').style.display='none';
   document.getElementById('successScreen').style.display='block';
   window.scrollTo(0,0);
