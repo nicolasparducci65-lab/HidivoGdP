@@ -47,37 +47,8 @@
       <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="login()">Ingresar</button>
       <div class="auth-divider">o</div>
     </div>
-    <div id="registerForm" style="display:none">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Nombre</label>
-          <input type="text" class="form-control" id="regNombre" placeholder="Nicolás"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Apellido</label>
-          <input type="text" class="form-control" id="regApellido" placeholder="Parducci"/>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Correo electrónico</label>
-        <input type="email" class="form-control" id="regEmail" placeholder="tu@hidivo.com"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Contraseña</label>
-        <div style="position:relative">
-          <input type="password" class="form-control" id="regPassword" placeholder="Mínimo 6 caracteres" style="padding-right:40px"/>
-          <span onclick="togglePasswordVisibility('regPassword', this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:#676879;display:flex;align-items:center" title="Mostrar/ocultar contraseña">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Empresa</label>
-        <input type="text" class="form-control" id="regEmpresa" placeholder="HIDIVO S.A.S." value="HIDIVO S.A.S."/>
-      </div>
-      <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="register()">Crear cuenta</button>
-      <div class="auth-divider">o</div>
-      <button class="btn" style="width:100%;justify-content:center;padding:10px" onclick="showLogin()">Ya tengo cuenta</button>
+    <div style="text-align:center;font-size:13px;color:#676879;padding:4px 0">
+      ¿No tienes cuenta? Solicita acceso al administrador de HIDIVO.
     </div>
     <div class="auth-footer">Al ingresar aceptas los términos de uso de HIDIVO</div>
   </div>
@@ -2467,22 +2438,6 @@ async function login(){
   mostrarApp();
 }
 
-async function register(){
-  const nombre = document.getElementById('regNombre').value.trim();
-  const apellido = document.getElementById('regApellido').value.trim();
-  const email = document.getElementById('regEmail').value.trim();
-  const pass = document.getElementById('regPassword').value;
-  const empresa = document.getElementById('regEmpresa').value.trim();
-  if(!nombre||!apellido||!email||!pass){ showAuthError('Completa todos los campos'); return; }
-  const { data, error } = await sb.auth.signUp({ email, password: pass });
-  if(error){ showAuthError(error.message); return; }
-  // Crear empresa y perfil
-  const { data: emp } = await sb.from('empresas').insert({ nombre: empresa }).select().single();
-  await sb.from('perfiles').insert({ id: data.user.id, nombre, apellido, empresa_id: emp?.id, rol: 'admin' });
-  showAuthSuccess('Cuenta creada. Revisa tu email para confirmar.');
-  setTimeout(()=>showLogin(), 2000);
-}
-
 async function logout(){
   await sb.auth.signOut();
   currentUser = null; currentPerfil = null;
@@ -2662,8 +2617,6 @@ async function guardarCompletarPerfil(){
 }
 
 function showAuthError(msg){ const el=document.getElementById('authError'); el.textContent=msg; el.style.display='block'; document.getElementById('authSuccess').style.display='none'; }
-function showAuthSuccess(msg){ const el=document.getElementById('authSuccess'); el.textContent=msg; el.style.display='block'; document.getElementById('authError').style.display='none'; }
-function showLogin(){ document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; }
 
 function togglePasswordVisibility(inputId, iconEl){
   const input = document.getElementById(inputId);
