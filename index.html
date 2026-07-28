@@ -3706,10 +3706,13 @@ async function guardarProyecto(){
       .single();
     error = errIns;
     if(!error && nuevo){
+      // 'fiscalizador' es el rol de proyecto más alto que existe en los mapas
+      // de acceso; el antiguo 'director' no existía en ellos y dejaba al
+      // creador solo con Dashboard (PERMISOS.md I-1).
       await sb.from('proyecto_miembros').insert({
         proyecto_id: nuevo.id,
         usuario_id: currentUser.id,
-        rol: 'director'
+        rol: 'fiscalizador'
       });
     }
   }
