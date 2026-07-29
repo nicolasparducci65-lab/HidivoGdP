@@ -5,7 +5,13 @@
 > distinción por columna/transición va aquí. No ejecutar nada de esto sin
 > revisión propia (misma disciplina que la Ola 1: mapeo → SQL → aprobación).
 
-## 1. 🔴 PRIORIDAD ALTA — Trigger de columnas para residente en `rubros` (D3)
+## 1. ✅ HECHO (2026-07-29) — Trigger de columnas para residente en `rubros` (D3)
+Aplicado en `sql/rls-ola1-5-trigger-rubros.sql` (merge d22dcc5). Verificado por
+REST y supabase-js: residente suma avance ok, cambio de precio/descripcion
+bloqueado (check_violation 23514); fiscalizador y service role sin afectar.
+El texto original queda abajo como referencia.
+
+### (original)
 La Ola 1 da al residente UPDATE completo de `rubros` porque el Libro de Obra
 escribe `cantidad_ejecutada` (guardar/editar/eliminar registro + sincronización
 offline). Pero `cantidad_ejecutada` alimenta las planillas y el residente puede
