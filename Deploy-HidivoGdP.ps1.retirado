@@ -1,0 +1,55 @@
+# ===== Deploy-HidivoGdP.ps1 =====
+# Copia el index.html mas reciente desde Descargas al repo, verifica el hash
+# esperado, y hace commit + push SOLO si todo coincide.
+#
+# USO: Nunca edites este archivo. Claude te va a dar la linea completa para
+# ejecutar cada vez, por ejemplo:
+#
+#   .\Deploy-HidivoGdP.ps1 -HashEsperado "9AA00520F6357221CA90299CF208F0C414F6342674A8934320FC096716015A81"
+#
+# Solo copia esa linea completa en PowerShell y presiona Enter.
+
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$HashEsperado
+)
+
+$rutaRepo      = "C:\Users\nicol\Documents\HidivoGdP\index.html"
+$rutaDescargas = "$env:USERPROFILE\Downloads"
+
+Write-Host "`n=== 1. Buscando index.html mas reciente en Descargas ===" -ForegroundColor Cyan
+$origen = Get-ChildItem -Path $rutaDescargas -Filter "index*.html" |
+          Sort-Object LastWriteTime -Descending |
+          Select-Object -First 1
+
+if (-not $origen) {
+    Write-Host "ERROR: No se encontro ningun index.html en Descargas." -ForegroundColor Red
+    return
+}
+
+Write-Host "Encontrado: $($origen.FullName)"
+Write-Host "Tamano: $($origen.Length) bytes | Modificado: $($origen.LastWriteTime)"
+
+Write-Host "`n=== 2. Copiando al repo ===" -ForegroundColor Cyan
+Copy-Item $origen.FullName $rutaRepo -Force
+Write-Host "Copiado a: $rutaRepo"
+
+Write-Host "`n=== 3. Verificando hash ===" -ForegroundColor Cyan
+$hashReal = (Get-FileHash $rutaRepo -Algorithm SHA256).Hash
+
+if ($hashReal -ne $HashEsperado.ToUpper()) {
+    Write-Host "HASH NO COINCIDE. No se hara commit." -ForegroundColor Red
+    Write-Host "Esperado: $($HashEsperado.ToUpper())"
+    Write-Host "Obtenido: $hashReal"
+    return
+}
+
+Write-Host "Hash OK: coincide con el esperado." -ForegroundColor Green
+
+Write-Host "`n=== 4. Commit y push ===" -ForegroundColor Cyan
+Set-Location "C:\Users\nicol\Documents\HidivoGdP"
+git add index.html
+git commit -m "Actualizacion index.html"
+git push origin main:master --force
+
+Write-Host "`n=== LISTO ===" -ForegroundColor Green

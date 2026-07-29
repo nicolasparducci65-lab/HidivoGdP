@@ -1,9 +1,22 @@
 -- PUNTO 5 — PARCHE DE ACCESO ANÓNIMO
 -- ====================================================================
--- ESTADO: BLOQUE A EJECUTADO el 2026-07-28 (verificado en pg_policies).
--- BLOQUE B pendiente: ejecutar cuando registro-obra.html (ya migrado a la
--- Edge Function registro-obra-publico con token) esté probado con un
--- registro real de campo.
+-- ESTADO FINAL (2026-07-29): AMBOS BLOQUES EJECUTADOS.
+--   · Bloque A ejecutado el 2026-07-28.
+--   · Bloque B ejecutado el 2026-07-29, AJUSTADO: el formulario público
+--     registro-obra.html fue RETIRADO por completo (nunca se usó), junto
+--     con la Edge Function registro-obra-publico y la columna
+--     proyectos.registro_token. Además de lo listado en B1-B5 se
+--     eliminaron/recrearon como authenticated: "Insercion publica libro
+--     obra" (libro_obra), "Insercion publica libro obra rubros"
+--     (libro_obra_rubros), "Insertar items libro" (libro_obra_items) e
+--     "Insertar fotos publico" (libro_obra_fotos).
+-- VERIFICADO en pg_policies: ninguna política de `public` es satisfacible
+-- sin sesión. Solo quedan, a propósito, las dos de lectura pública de
+-- Storage ("Leer archivos publicos" / "Leer fotos publico") porque la app
+-- depende de getPublicUrl. Prueba REST con la publishable key sin sesión:
+-- SELECT proyectos → 0 filas; UPDATE rubros → HTTP 401.
+-- Este archivo queda como registro histórico; el análisis de flujos del
+-- formulario que sigue ya no aplica (el formulario no existe).
 -- ====================================================================
 -- Contexto (diagnóstico 2026-07-28): con la publishable key que está en el
 -- HTML, un visitante SIN LOGIN hoy puede:

@@ -274,10 +274,6 @@
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           Limpiar rubros
         </button>
-        <button id="btnLinkFormulario" style="display:none" class="btn" onclick="mostrarLinkFormulario()" title="Link formulario público">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          Link formulario
-        </button>
         <button class="btn primary" id="btnAccionPrincipal" style="display:none" onclick="accionPrincipal()">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span id="btnAccionTexto">Nuevo</span>
@@ -2319,34 +2315,6 @@
   </div>
 </div>
 
-<!-- MODAL LINK FORMULARIO -->
-<div class="modal-overlay" id="modalLinkFormulario">
-  <div class="modal" style="width:440px;max-width:98vw">
-    <div class="modal-header">
-      <div class="modal-title">🔗 Link formulario público</div>
-      <button class="btn" onclick="cerrarModal('modalLinkFormulario')" style="padding:6px 10px">✕</button>
-    </div>
-    <div class="modal-body" style="text-align:center">
-      <div style="font-size:12px;color:#676879;margin-bottom:12px">Comparte este link con el residente para que registre las actividades diarias</div>
-      <img id="linkFormularioQR" src="" alt="QR" style="width:180px;height:180px;border-radius:12px;border:1px solid #e6e9ef;margin-bottom:16px"/>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="text" id="linkFormularioUrl" readonly class="form-control" style="font-size:11px;color:#676879"/>
-        <button onclick="copiarLinkFormulario()" class="btn primary" style="flex-shrink:0;gap:6px">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copiar
-        </button>
-      </div>
-      <div style="margin-top:12px;font-size:11px;color:#676879">
-        Escanea el QR con el celular para abrir directo 📱
-      </div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn" onclick="regenerarLinkFormulario()" title="Invalida los links compartidos anteriormente" style="color:#e2445c">♻️ Regenerar link</button>
-      <button class="btn" onclick="cerrarModal('modalLinkFormulario')">Cerrar</button>
-    </div>
-  </div>
-</div>
-
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -3055,8 +3023,6 @@ function navTo(page, btn){
   currentPage = page;
   const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
-  const btnLink = document.getElementById('btnLinkFormulario');
-  if(btnLink) btnLink.style.display = (page==='libro' && currentProyecto) ? 'flex' : 'none';
   const btnImportar = document.getElementById('btnImportarRubros');
   if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto) ? 'flex' : 'none';
   const btnPlantilla = document.getElementById('btnDescargarPlantilla');
@@ -4032,32 +3998,6 @@ async function eliminarRubro(id, descripcion){
   }
   toast('Rubro eliminado','success');
   cargarRubros(true);
-}
-
-async function mostrarLinkFormulario(){
-  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
-  const { data: proy } = await sb.from('proyectos').select('registro_token').eq('id', currentProyecto).single();
-  if(!proy?.registro_token){ toast('No se pudo obtener el token del formulario','error'); return; }
-  const url = `https://nicolasparducci65-lab.github.io/HidivoGdP/registro-obra.html?t=${proy.registro_token}`;
-  document.getElementById('linkFormularioUrl').value = url;
-  // QR usando API gratuita
-  document.getElementById('linkFormularioQR').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
-  document.getElementById('modalLinkFormulario').classList.add('show');
-}
-
-async function regenerarLinkFormulario(){
-  if(!currentProyecto) return;
-  if(!confirm('¿Regenerar el link del formulario?\n\nLos links y QR compartidos anteriormente dejarán de funcionar.')) return;
-  const { error } = await sb.from('proyectos')
-    .update({ registro_token: crypto.randomUUID() }).eq('id', currentProyecto);
-  if(error){ toast('Error al regenerar: '+error.message,'error'); return; }
-  toast('Link regenerado — los anteriores quedaron revocados ✓','success');
-  mostrarLinkFormulario();
-}
-
-function copiarLinkFormulario(){
-  const url = document.getElementById('linkFormularioUrl').value;
-  navigator.clipboard.writeText(url).then(()=>toast('Link copiado al portapapeles ✓','success'));
 }
 
 // ── LIBRO DE OBRA ──

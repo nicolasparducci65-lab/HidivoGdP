@@ -23,7 +23,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .sidebar.open{transform:translateX(0)}
   .btn-hamburguesa{display:flex}
   .content{padding:16px}
-  .topbar{padding:10px 16px}
+  /* En pantallas angostas los botones de acción bajan a una segunda fila
+     en lugar de salirse por el borde derecho */
+  .topbar{padding:10px 16px;flex-wrap:wrap}
   .metrics{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
   .metric-card{padding:14px;gap:10px}
   .metric-value{font-size:22px}
@@ -218,7 +220,6 @@ body.modo-visualizador button[onclick*="verReportePantalla"]{display:none!import
 body.modo-visualizador button[onclick*="subirArchivos"]{display:none!important}
 body.modo-visualizador button[onclick*="cargarArchivos"]{display:none!important}
 body.modo-visualizador .archivos-panel .btn{display:none!important}
-body.modo-visualizador #btnLinkFormulario{display:none!important}
 body.modo-visualizador #btnImportarRubros{display:none!important}
 body.modo-cliente button[onclick*="abrirModalProyecto"]{display:none!important}
 body.modo-cliente #filtroContratante{display:none!important}
@@ -227,7 +228,6 @@ body.modo-cliente #btnDescargarPlantilla{display:none!important}
 body.modo-cliente #btnEliminarRubros{display:none!important}
 body.modo-cliente button[onclick*="abrirModalNuevoRubro"]{display:none!important}
 body.modo-cliente label[style*="cursor:pointer"]{display:none!important}
-body.modo-cliente #btnLinkFormulario{display:none!important}
 body.modo-cliente button[onclick*="abrirModalCronograma"]{display:none!important}
 body.modo-cliente #btnImportarCronograma{display:none!important}
 body.modo-cliente label[onclick*="importarCronograma"]{display:none!important}
