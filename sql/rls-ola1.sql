@@ -74,8 +74,15 @@ DROP POLICY "Creador puede eliminar su proyecto" ON public.proyectos;
 
 -- PERMISOS[dashboard/proyectos/cartera]: todo miembro ve sus proyectos;
 -- admin global ve todos (Cartera/Reportes/Usuarios del admin dependen de esto).
+-- La cláusula created_by es imprescindible para el bootstrap de creación:
+-- guardarProyecto hace INSERT ... RETURNING (.select().single()) cuando el
+-- creador AÚN no tiene membresía, y la política de proyecto_miembros del
+-- Bloque A ("admin o creador agrega miembros") consulta proyectos bajo RLS
+-- para validar al creador. Sin este OR, ambos pasos fallan.
 CREATE POLICY "ola1_select" ON public.proyectos FOR SELECT TO authenticated
-  USING ( (SELECT sst_es_admin_global()) OR sst_rol_en_proyecto(id) IS NOT NULL );
+  USING ( (SELECT sst_es_admin_global())
+          OR sst_rol_en_proyecto(id) IS NOT NULL
+          OR created_by = (SELECT auth.uid()) );
 
 -- PERMISOS[proyectos]: admin y fiscalizador gestionan (D1/I-4: fiscalizador
 -- crea; exige created_by propio y ser fiscalizador en ALGÚN proyecto).
