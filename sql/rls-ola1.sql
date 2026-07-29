@@ -236,9 +236,13 @@ DROP POLICY "acceso" ON public.planillas_pago;
 CREATE POLICY "ola1_select" ON public.planillas_pago FOR SELECT TO authenticated
   USING ( (SELECT sst_es_admin_global()) OR sst_rol_en_proyecto(proyecto_id) IS NOT NULL );
 
+-- El residente crea en 'borrador' o directamente en 'enviada' (envío directo
+-- de guardarPlanilla), pero no puede insertar una planilla ya aprobada/pagada.
 CREATE POLICY "ola1_insert" ON public.planillas_pago FOR INSERT TO authenticated
   WITH CHECK ( (SELECT sst_es_admin_global())
-               OR sst_rol_en_proyecto(proyecto_id) IN ('admin','fiscalizador','residente') );
+               OR sst_rol_en_proyecto(proyecto_id) IN ('admin','fiscalizador')
+               OR ( sst_rol_en_proyecto(proyecto_id) = 'residente'
+                    AND estado IN ('borrador','enviada') ) );
 
 -- D5: el residente solo toca borradores y solo puede llevarlos a 'enviada';
 -- admin/fiscalizador mueven el resto de estados. "Pagar solo admin global"
