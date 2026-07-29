@@ -4279,7 +4279,8 @@ async function rechazarOC(id){
 
 async function eliminarOC(id){
   if(!confirm('¿Eliminar esta orden de cambio en borrador?')) return;
-  await sb.from('ordenes_cambio').delete().eq('id', id);
+  const { data: oc } = await sb.from('ordenes_cambio').select('archivo_url').eq('id', id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, oc?.archivo_url, 'ordenes_cambio', id)) return;
   toast('Orden eliminada','success');
   renderListaOCs();
 }
@@ -4656,7 +4657,8 @@ async function crearObsDesdeEnsayo(id){
 
 async function eliminarEnsayo(id){
   if(!confirm('¿Eliminar este ensayo?')) return;
-  await sb.from('ensayos').delete().eq('id', id);
+  const { data: e } = await sb.from('ensayos').select('archivo_url').eq('id', id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, e?.archivo_url, 'ensayos', id)) return;
   cargarEnsayos();
 }
 
@@ -6876,6 +6878,12 @@ async function cambiarEstadoObs(id, estadoActual){
 
 async function eliminarObservacion(id){
   if(!confirm('¿Eliminar esta observación?')) return;
+  // Objetos de fotos y adjuntos de respuestas — antes de que caigan las filas
+  const [{ data: fotosObs }, { data: respsObs }] = await Promise.all([
+    sb.from('observacion_fotos').select('url').eq('observacion_id',id),
+    sb.from('observacion_respuestas').select('archivo_url').eq('observacion_id',id)
+  ]);
+  await eliminarObjetosStorage([...(fotosObs||[]).map(f=>f.url), ...(respsObs||[]).map(r=>r.archivo_url)]);
   await sb.from('observacion_fotos').delete().eq('observacion_id',id);
   await sb.from('observacion_respuestas').delete().eq('observacion_id',id);
   await sb.from('observaciones').delete().eq('id',id);
@@ -7569,6 +7577,44 @@ async function cargarArchivosGlobal(){
 }
 
 
+// ── HIGIENE DE STORAGE ──
+// Borra el objeto de Storage referenciado y luego la fila que lo apunta.
+// - bucket: 'hidivo-fotos' | 'hidivo-archivos' | null (se infiere de la URL)
+// - urlOPath: URL pública (getPublicUrl) o path interno del bucket; vacío = solo fila
+// - tabla / filaId: fila a borrar después del objeto; tabla null = solo objeto
+// Si el objeto ya no existe, se continúa con la fila; si falla el borrado de
+// la fila, se reporta con toast y devuelve false.
+async function eliminarArchivoCompleto(bucket, urlOPath, tabla, filaId){
+  if(urlOPath){
+    let b = bucket, path = urlOPath;
+    const m = String(urlOPath).match(/\/object\/public\/([^/]+)\/(.+)$/);
+    if(m){ b = b||m[1]; path = m[2]; }
+    if(b && path){
+      try{ await sb.storage.from(b).remove([decodeURIComponent(path.split('?')[0])]); }
+      catch(e){ console.warn('Storage remove:', e); } // objeto inexistente o sin permiso: continuar con la fila
+    }
+  }
+  if(tabla && filaId){
+    const { error } = await sb.from(tabla).delete().eq('id', filaId);
+    if(error){ toast('Error al eliminar: '+error.message,'error'); return false; }
+  }
+  return true;
+}
+
+// Variante para cascadas: borra solo los objetos de una lista de URLs públicas
+// (agrupados por bucket), sin tocar filas. Ignora nulos y URLs no reconocidas.
+async function eliminarObjetosStorage(urls){
+  const porBucket = {};
+  (urls||[]).filter(Boolean).forEach(u=>{
+    const m = String(u).match(/\/object\/public\/([^/]+)\/(.+)$/);
+    if(m) (porBucket[m[1]] = porBucket[m[1]]||[]).push(decodeURIComponent(m[2].split('?')[0]));
+  });
+  for(const b of Object.keys(porBucket)){
+    try{ await sb.storage.from(b).remove(porBucket[b]); }
+    catch(e){ console.warn('Storage remove:', e); }
+  }
+}
+
 async function eliminarArchivoGlobal(id, url, modulo){
   if(!confirm('¿Eliminar este archivo?')) return;
   // Eliminar del storage
@@ -8211,6 +8257,12 @@ async function eliminarPlantillaCalidad(){
   const id = document.getElementById('plantillaCalidadId').value;
   if(!id) return;
   if(!confirm('¿Eliminar esta plantilla? Se eliminarán también sus asignaciones y respuestas registradas.')) return;
+  // Objetos de las fotos de todas las respuestas de la plantilla (las filas caen en cascada)
+  const { data: respsPl } = await sb.from('formatos_calidad_respuestas').select('id').eq('plantilla_id', id);
+  if(respsPl?.length){
+    const { data: fotosPl } = await sb.from('formatos_calidad_fotos').select('url').in('respuesta_id', respsPl.map(r=>r.id));
+    await eliminarObjetosStorage((fotosPl||[]).map(f=>f.url));
+  }
   const { error } = await sb.from('formatos_calidad_plantillas').delete().eq('id',id);
   if(error){ toast('Error: '+error.message,'error'); return; }
   toast('Plantilla eliminada','success');
@@ -10083,8 +10135,8 @@ async function subirContratoPDF(input){
 
 async function eliminarContratoPDF(id){
   if(!confirm('¿Quitar este contrato de la lista? (no borra los datos ya guardados)')) return;
-  const { error } = await sb.from('archivos').delete().eq('id', id);
-  if(error){ toast('Error: '+error.message,'error'); return; }
+  const { data: a } = await sb.from('archivos').select('url').eq('id', id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, a?.url, 'archivos', id)) return;
   toast('Contrato quitado','success');
   cargarContrato();
 }
@@ -10431,7 +10483,8 @@ async function guardarGarantia(){
 
 async function eliminarGarantia(id){
   if(!confirm('¿Eliminar esta garantía?')) return;
-  await sb.from('garantias').delete().eq('id', id);
+  const { data: g } = await sb.from('garantias').select('archivo_url').eq('id', id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, g?.archivo_url, 'garantias', id)) return;
   toast('Garantía eliminada','success');
   cargarContrato();
 }
@@ -10980,6 +11033,8 @@ async function confirmarAccionPlanilla(){
 
 async function eliminarPlanilla(id){
   if(!confirm('¿Eliminar esta planilla? Esta acción no se puede deshacer.')) return;
+  const { data: archsPl } = await sb.from('planilla_archivos').select('url').eq('planilla_id',id);
+  await eliminarObjetosStorage((archsPl||[]).map(a=>a.url));
   await sb.from('planilla_rubros').delete().eq('planilla_id',id);
   await sb.from('planilla_archivos').delete().eq('planilla_id',id);
   await sb.from('planilla_historial').delete().eq('planilla_id',id);
@@ -11220,6 +11275,9 @@ async function abrirCanal(id, nombre, tipo, dmUsuarioId, descripcion){
 async function eliminarCanalActivo(){
   if(!chatCanalActivo) return;
   if(!confirm(`¿Eliminar el canal #${chatCanalActivo.nombre}? Se eliminarán todos los mensajes.`)) return;
+  const { data: msgsArch } = await sb.from('mensajes_chat').select('archivo_url')
+    .eq('canal_id', chatCanalActivo.id).not('archivo_url','is',null);
+  await eliminarObjetosStorage((msgsArch||[]).map(m=>m.archivo_url));
   await sb.from('canal_miembros').delete().eq('canal_id', chatCanalActivo.id);
   await sb.from('mensajes_chat').delete().eq('canal_id', chatCanalActivo.id);
   await sb.from('canales_chat').delete().eq('id', chatCanalActivo.id);
@@ -11495,7 +11553,8 @@ async function enviarMensajeHilo(){
 }
 
 async function eliminarMensaje(id){
-  await sb.from('mensajes_chat').delete().eq('id',id);
+  const { data: m } = await sb.from('mensajes_chat').select('archivo_url').eq('id',id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, m?.archivo_url, 'mensajes_chat', id)) return;
   cargarMensajes(chatCanalActivo.id, chatHiloActivo);
 }
 
@@ -12067,6 +12126,11 @@ async function verSolicitud(id){
 
 async function eliminarSolicitud(id){
   if(!confirm('¿Eliminar esta solicitud? Esta acción no se puede deshacer.')) return;
+  const [{ data: archsSol }, { data: respsSol }] = await Promise.all([
+    sb.from('solicitud_archivos').select('url').eq('solicitud_id',id),
+    sb.from('solicitud_respuestas').select('archivo_url').eq('solicitud_id',id)
+  ]);
+  await eliminarObjetosStorage([...(archsSol||[]).map(a=>a.url), ...(respsSol||[]).map(r=>r.archivo_url)]);
   await sb.from('solicitud_archivos').delete().eq('solicitud_id',id);
   await sb.from('solicitud_respuestas').delete().eq('solicitud_id',id);
   await sb.from('solicitudes').delete().eq('id',id);
@@ -13524,7 +13588,8 @@ async function abrirEditarRegistro(id){
 
 async function eliminarFotoExistente(fotoId, registroId){
   if(!confirm('¿Eliminar esta foto?')) return;
-  await sb.from('libro_obra_fotos').delete().eq('id', fotoId);
+  const { data: f } = await sb.from('libro_obra_fotos').select('url').eq('id', fotoId).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, f?.url, 'libro_obra_fotos', fotoId)) return;
   abrirEditarRegistro(registroId);
 }
 
@@ -13632,6 +13697,10 @@ async function confirmarEliminarRegistro(id, num){
     return;
   }
   if(!confirm(`¿Eliminar el Registro N° ${num||id}?\n\nEsta acción no se puede deshacer.`)) return;
+
+  // Objetos de las fotos del registro: las filas caen por CASCADE, los objetos no
+  const { data: fotosReg } = await sb.from('libro_obra_fotos').select('url').eq('registro_id', id);
+  await eliminarObjetosStorage((fotosReg||[]).map(f=>f.url));
 
   // Obtener rubros afectados antes de eliminar
   const { data: rubrosAfectados } = await sb.from('libro_obra_rubros')
@@ -14278,8 +14347,8 @@ async function guardarEPPEntrega(){
 }
 async function eliminarEPPEntrega(id){
   if(!confirm('¿Eliminar este registro de entrega?')) return;
-  const {error} = await sb.from('sst_epp_entregas').delete().eq('id',id);
-  if(error){ toast('Error: '+error.message,'error'); return; }
+  const { data: ent } = await sb.from('sst_epp_entregas').select('foto_url').eq('id',id).maybeSingle();
+  if(!await eliminarArchivoCompleto(null, ent?.foto_url, 'sst_epp_entregas', id)) return;
   toast('Eliminado','success'); cargarEPPEntregas();
 }
 
@@ -14354,6 +14423,8 @@ async function guardarCapacitacion(){
 }
 async function eliminarCapacitacion(id){
   if(!confirm('¿Eliminar esta capacitación y su lista de asistentes?')) return;
+  const { data: cap } = await sb.from('sst_capacitaciones').select('material_url').eq('id',id).maybeSingle();
+  await eliminarObjetosStorage([cap?.material_url]);
   await sb.from('sst_capacitacion_asistentes').delete().eq('capacitacion_id',id);
   const {error} = await sb.from('sst_capacitaciones').delete().eq('id',id);
   if(error){ toast('Error: '+error.message,'error'); return; }
@@ -14517,6 +14588,8 @@ async function guardarIncidente(){
 }
 async function eliminarIncidente(id){
   if(!confirm('¿Eliminar este registro? Recuerda que es un documento vinculante para posibles inspecciones — asegúrate de conservar respaldo externo si ya fue reportado.')) return;
+  const { data: inc } = await sb.from('sst_incidentes').select('foto_url').eq('id',id).maybeSingle();
+  await eliminarObjetosStorage([inc?.foto_url]);
   const {error} = await sb.from('sst_incidentes').delete().eq('id',id);
   if(error){ toast('Error: '+error.message,'error'); return; }
   toast('Eliminado','success'); cargarIncidentes();
