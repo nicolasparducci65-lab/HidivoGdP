@@ -1,6 +1,9 @@
 -- ============================================================================
 -- RLS OLA 1 — Blindaje a nivel de datos del núcleo financiero (15 tablas)
 -- ============================================================================
+-- ESTADO: APLICADO el 2026-07-29 (43 políticas ola1_*, 0 USING(true)
+-- restantes, verificado en pg_policies). Pruebas: PRUEBAS-RLS-OLA1.md (9/9).
+-- ============================================================================
 -- Especificación: matriz PERMISOS (constantes.js) + PERMISOS.md.
 -- Decisiones del mapeo (2026-07-29): D1 fiscalizador puede crear proyectos;
 -- D2 UPDATE completo de proyectos para fiscalizador (trigger de columnas →
