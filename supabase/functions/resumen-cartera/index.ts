@@ -113,20 +113,22 @@ Deno.serve(async (req) => {
     const cron = (cronR.data || []).filter(c => !c.linea_base_id || setLBs.has(c.linea_base_id));
 
     type Ind = {
-      nombre: string; estado: string; vigente: number; ejecutado: number; plan: number;
+      nombre: string; estado: string; vigente: number; ejecutado: number; plan: number; ev: number;
       garVencidas: number; garPorVencer: number; obs: number; obsDiasMax: number;
       planillasRev: number; sol: number;
     };
     const porP: Record<string, Ind> = {};
     activos.forEach(p => porP[p.id] = {
-      nombre: p.nombre || 'Proyecto', estado: p.estado || '', vigente: 0, ejecutado: 0, plan: 0,
+      nombre: p.nombre || 'Proyecto', estado: p.estado || '', vigente: 0, ejecutado: 0, plan: 0, ev: 0,
       garVencidas: 0, garPorVencer: 0, obs: 0, obsDiasMax: 0, planillasRev: 0, sol: 0
     });
     const montoRubro: Record<string, number> = {};
+    const produccionRubro: Record<string, number> = {};
     (rubR.data || []).forEach(r => {
       const p = porP[r.proyecto_id]; if (!p) return;
       p.vigente += (r.monto_contrato || 0); p.ejecutado += (r.total_produccion || 0);
       montoRubro[r.id] = r.monto_contrato || 0;
+      produccionRubro[r.id] = r.total_produccion || 0;
     });
     cron.forEach(c => {
       const p = porP[c.proyecto_id]; if (!p || !c.fecha_inicio || !c.fecha_fin) return;
@@ -135,6 +137,10 @@ Deno.serve(async (req) => {
       const frac = fin <= ini ? (hoyMs >= fin ? 1 : 0) : Math.max(0, Math.min(1, (hoyMs - ini) / (fin - ini)));
       const peso = p.vigente > 0 ? ((montoRubro[c.rubro_id] || 0) / p.vigente * 100) : 0;
       p.plan += peso * frac;
+      // EV del SPI: mismo universo que el núcleo EVM de la app — solo los
+      // rubros con cronograma en la línea base activa (p.ejecutado, que suma
+      // todos los rubros, se sigue usando para el texto de avance real).
+      p.ev += p.vigente > 0 ? (produccionRubro[c.rubro_id] || 0) / p.vigente * 100 : 0;
     });
     (planR.data || []).forEach(pl => { if (porP[pl.proyecto_id]) porP[pl.proyecto_id].planillasRev++; });
     (garR.data || []).forEach(g => {
@@ -156,7 +162,7 @@ Deno.serve(async (req) => {
     const lineaProyecto = (pid: string): string => {
       const d = porP[pid];
       const real = d.vigente > 0 ? d.ejecutado / d.vigente * 100 : 0;
-      const spi = d.plan > 0.5 ? (real / d.plan) : null;
+      const spi = d.plan > 0.5 ? (d.ev / d.plan) : null;
       let atraso = 0;
       if (spi && spi < 1) {
         const crons = cron.filter(c => c.proyecto_id === pid && c.fecha_inicio);

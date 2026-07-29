@@ -5662,13 +5662,8 @@ function renderCurvaS(proy){
     return;
   }
 
-  const totalMonto = cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
-
-  // Ponderación por costo: el peso de cada rubro es su monto vs. el total del proyecto
-  const rubrosConPeso = cronogramaData.map(r=>({
-    ...r,
-    pesoEfectivo: (r.monto_contrato||0)/totalMonto*100
-  }));
+  // Ponderación por costo (núcleo EVM compartido)
+  const rubrosConPeso = rubrosConPesoEfectivo(cronogramaData);
 
   // Verificar si hay cronograma ingresado
   const tienenFechas = rubrosConPeso.filter(r=>r.fecha_inicio&&r.fecha_fin);
@@ -5839,25 +5834,40 @@ function calcularProyeccionesEVM(rubros, proy, SPI_externo, BCWP_externo, BCWS_e
   </div>`;
 }
 
+// ── NÚCLEO EVM COMPARTIDO ──
+// Única fuente de PV/EV para tarjetas, proyecciones, gráfico y reporte PDF.
+// Cualquier cambio de fórmula debe hacerse SOLO aquí.
+
+// Pesos por costo: el peso de cada rubro es su monto vs. el total del proyecto.
+function rubrosConPesoEfectivo(data){
+  const totalMonto = data.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
+  return data.map(r=>({ ...r, pesoEfectivo: (r.monto_contrato||0)/totalMonto*100 }));
+}
+
+// Fracción planificada (0..1) de un rubro a una fecha dada, interpolación lineal.
+function fraccionPlanRubro(r, fecha){
+  const ini = new Date(r.fecha_inicio+'T00:00:00');
+  const fin = new Date(r.fecha_fin+'T00:00:00');
+  const duracion = (fin-ini)||1;
+  return Math.min(Math.max(fecha-ini,0)/duracion, 1);
+}
+
+// PV (BCWS) y EV (BCWP) acumulados a una fecha, sobre los rubros con cronograma,
+// ponderados por costo contra el universo completo del proyecto.
+function calcularEVMEnFecha(rubros, fecha){
+  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
+  let BCWP=0, BCWS=0;
+  conFechas.forEach(r=>{
+    BCWP += (r.avance_real/100)*r.pesoEfectivo;
+    BCWS += fraccionPlanRubro(r, fecha)*r.pesoEfectivo;
+  });
+  const SPI = BCWS>0 ? BCWP/BCWS : null;
+  return { BCWP, BCWS, SPI, conFechas };
+}
+
 function calcularIndicadores(rubros, proy){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
-
-  // BCWP = avance real × peso (valor ganado)
-  // BCWS = avance planificado × peso (valor planificado a hoy)
-  let BCWP=0, BCWS=0, totalPeso=0;
-  conFechas.forEach(r=>{
-    const inicio=new Date(r.fecha_inicio+'T00:00:00');
-    const fin=new Date(r.fecha_fin+'T00:00:00');
-    const duracion=(fin-inicio)||1;
-    const transcurrido=Math.min(Math.max(hoy-inicio,0),duracion);
-    const pctPlan=Math.min((transcurrido/duracion)*100,100);
-    BCWP += (r.avance_real/100)*r.pesoEfectivo;
-    BCWS += (pctPlan/100)*r.pesoEfectivo;
-    totalPeso += r.pesoEfectivo;
-  });
-
-  const SPI = BCWS>0 ? BCWP/BCWS : null;
+  const { BCWP, BCWS, SPI, conFechas } = calcularEVMEnFecha(rubros, hoy);
   const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
 
   // Calcular directamente desde BD — igual que en sección Rubros
@@ -5895,20 +5905,7 @@ function calcularIndicadores(rubros, proy){
 // Requiere que cronogramaData ya esté poblado (llamar antes a cargarCurvaS para el proyecto actual).
 function calcularIndicadoresPuro(rubros, proy){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const conFechas = rubros.filter(r=>r.fecha_inicio&&r.fecha_fin);
-
-  let BCWP=0, BCWS=0;
-  conFechas.forEach(r=>{
-    const inicio=new Date(r.fecha_inicio+'T00:00:00');
-    const fin=new Date(r.fecha_fin+'T00:00:00');
-    const duracion=(fin-inicio)||1;
-    const transcurrido=Math.min(Math.max(hoy-inicio,0),duracion);
-    const pctPlan=Math.min((transcurrido/duracion)*100,100);
-    BCWP += (r.avance_real/100)*r.pesoEfectivo;
-    BCWS += (pctPlan/100)*r.pesoEfectivo;
-  });
-
-  const SPI = BCWS>0 ? BCWP/BCWS : null;
+  const { BCWP, BCWS, SPI } = calcularEVMEnFecha(rubros, hoy);
   const atrasados = rubros.filter(r=>calcularAtraso(r)==='atrasado').length;
 
   const totalProduccion = cronogramaData.reduce((s,r)=>s+(r.total_produccion||0),0);
@@ -6050,22 +6047,25 @@ function calcularDatosGraficoCurvaS(rubros, modo){
       : new Date(p.getFullYear(),p.getMonth()+1,0);
     finPeriodos.push(finPeriodo);
 
-    // La curva real se evalúa hasta HOY: los periodos pasados usan su fin de
-    // periodo y el periodo en curso usa la fecha de hoy (avance al día).
+    // Ambas curvas se cortan en la MISMA fecha dentro de cada periodo: los
+    // periodos pasados usan su fin de periodo, el periodo en curso usa HOY
+    // (para plan y real por igual — así el último punto Real se compara contra
+    // el BCWS de hoy, el mismo de las tarjetas SPI/SV) y los futuros solo
+    // tienen plan, evaluado a fin de periodo.
     const fechaCorte = finPeriodo<=hoy ? finPeriodo : (p<=hoy ? hoy : null);
+    const fechaPlan = fechaCorte || finPeriodo;
 
     let acumPlan=0, acumReal=0;
     conFechas.forEach(r=>{
-      const ini=new Date(r.fecha_inicio+'T00:00:00');
-      const fin=new Date(r.fecha_fin+'T00:00:00');
-      const duracion=(fin-ini)||1;
-      const tPlan=Math.min(Math.max(finPeriodo-ini,0),duracion);
-      acumPlan += Math.min(tPlan/duracion,1)*r.pesoEfectivo;
+      acumPlan += fraccionPlanRubro(r, fechaPlan)*r.pesoEfectivo;
       if(fechaCorte){
         // El dato conocido es el avance real acumulado HOY. Para reconstruir la
         // historia se interpola linealmente desde el inicio del rubro hasta hoy,
         // de modo que el último punto de la curva coincide con el avance actual
         // (el mismo que muestran la tabla y el BCWP).
+        const ini=new Date(r.fecha_inicio+'T00:00:00');
+        const fin=new Date(r.fecha_fin+'T00:00:00');
+        const duracion=(fin-ini)||1;
         const transcurridoHoy = Math.min(Math.max(hoy-ini,0),duracion);
         const tReal = Math.min(Math.max(fechaCorte-ini,0),transcurridoHoy);
         const factor = transcurridoHoy>0 ? Math.min(tReal/transcurridoHoy,1) : (fechaCorte>=hoy?1:0);
@@ -6180,13 +6180,10 @@ function setCurvaSModo(modo){
   document.getElementById('btnSemanas').className='btn'+(modo==='semanas'?' primary':'');
   document.getElementById('btnMeses').className='btn'+(modo==='meses'?' primary':'');
   const proy=proyectos.find(p=>p.id===currentProyecto)||{};
-  const totalMonto=cronogramaData.reduce((s,r)=>s+r.monto_contrato,0)||1;
-  const pesosDefinidos=cronogramaData.filter(r=>r.peso!==null);
-  const sumaPesosDefinidos=pesosDefinidos.reduce((s,r)=>s+r.peso,0);
-  const sinPeso=cronogramaData.filter(r=>r.peso===null);
-  const pesoAuto=sinPeso.length>0?Math.max(0,(100-sumaPesosDefinidos)/sinPeso.length):0;
-  const rubrosConPeso=cronogramaData.map(r=>({...r,pesoEfectivo:r.peso!==null?r.peso:pesoAuto}));
-  dibujarGraficoCurvaS(rubrosConPeso,proy);
+  // Misma ponderación por costo que el render inicial (rubrosConPesoEfectivo);
+  // antes este toggle recalculaba pesos desde peso_pct y el gráfico cambiaba
+  // de universo al alternar Semanas/Meses.
+  dibujarGraficoCurvaS(rubrosConPesoEfectivo(cronogramaData),proy);
 }
 
 // ── MODAL CRONOGRAMA ──
