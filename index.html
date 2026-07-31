@@ -3614,6 +3614,40 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modalProyecto').classList.add('show');
 }
 
+// Reúne y borra del Storage todos los objetos de un proyecto ANTES del cascade
+// de la BD (que borra las filas pero dejaría los objetos huérfanos). Best-effort:
+// cubre las tablas con archivo del proyecto; si algo falla no bloquea el borrado.
+async function eliminarStorageDeProyecto(id){
+  const urls = [];
+  const push = arr => (arr||[]).forEach(r => { const u = r.url||r.archivo_url||r.foto_url||r.material_url; if(u) urls.push(u); });
+  try{
+    // Tablas con proyecto_id directo
+    for(const [tabla,col] of [['archivos','url'],['planos','url'],['ensayos','archivo_url'],
+        ['ordenes_cambio','archivo_url'],['garantias','archivo_url'],['actas_recepcion','archivo_url'],
+        ['sst_epp_entregas','foto_url'],['sst_capacitaciones','material_url'],['sst_incidentes','foto_url']]){
+      const { data } = await sb.from(tabla).select(col).eq('proyecto_id', id).not(col,'is',null);
+      push(data);
+    }
+    // Tablas hijas: primero los ids del padre en el proyecto
+    const idsDe = async (tabla) => ((await sb.from(tabla).select('id').eq('proyecto_id', id)).data||[]).map(r=>r.id);
+    const [regs, obs, plans, sols, canales] = await Promise.all([
+      idsDe('libro_obra'), idsDe('observaciones'), idsDe('planillas_pago'), idsDe('solicitudes'),
+      ((await sb.from('canales_chat').select('id').eq('proyecto_id', id)).data||[]).map(r=>r.id)
+    ]);
+    const enHijo = async (tabla, col, fk, ids) => { if(ids.length) push((await sb.from(tabla).select(col).in(fk, ids).not(col,'is',null)).data); };
+    await Promise.all([
+      enHijo('libro_obra_fotos','url','registro_id',regs),
+      enHijo('observacion_fotos','url','observacion_id',obs),
+      enHijo('observacion_respuestas','archivo_url','observacion_id',obs),
+      enHijo('planilla_archivos','url','planilla_id',plans),
+      enHijo('solicitud_archivos','url','solicitud_id',sols),
+      enHijo('solicitud_respuestas','archivo_url','solicitud_id',sols),
+      enHijo('mensajes_chat','archivo_url','canal_id',canales)
+    ]);
+  }catch(e){ console.warn('recolección de storage del proyecto:', e); }
+  await eliminarObjetosStorage(urls);
+}
+
 async function eliminarProyecto(){
   const id = document.getElementById('editProyectoId').value;
   if(!id) return;
@@ -3622,6 +3656,10 @@ async function eliminarProyecto(){
 
   const btn = document.getElementById('btnEliminarProyecto');
   btn.disabled=true; btn.textContent='Eliminando...';
+
+  // Borrar los objetos de Storage del proyecto ANTES del cascade (si no, quedan
+  // huérfanos: el CASCADE de la BD borra las filas pero no los objetos).
+  await eliminarStorageDeProyecto(id);
 
   // Eliminar en cascada — Supabase ON DELETE CASCADE se encarga de la mayoría
   const { error } = await sb.from('proyectos').delete().eq('id',id);
