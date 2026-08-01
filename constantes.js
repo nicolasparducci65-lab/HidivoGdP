@@ -225,9 +225,8 @@ const PERMISOS = {
   secciones: [
     // ── PLATAFORMA ──
     { id:'dashboard', nombre:'Dashboard', ambito:'plataforma', requiereModulo:null,
-      // Residente y visualizador lo necesitan como página de retorno tras entrar a un proyecto.
-      roles:{ admin:'gestionar', fiscalizador:'ver', residente:'ver', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:'ver' },
-      nota:'Solo admin edita desde la tabla embebida de proyectos. Bodeguero y Técnico SST no lo tienen (entran directo a su módulo).' },
+      roles:{ admin:'gestionar', fiscalizador:'ver', residente:null, tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:'ver' },
+      nota:'Solo admin edita desde la tabla embebida de proyectos. Residente, Técnico SST y Bodeguero no lo tienen: aterrizan en su primera sección permitida (Proyectos / Materiales).' },
     { id:'proyectos', nombre:'Proyectos', ambito:'plataforma', requiereModulo:null,
       // I-4: fiscalizador puede CREAR proyectos (y definir sus módulos) pero no editarlos ni eliminarlos.
       // Residente, técnico SST y visualizador ven la lista de SUS proyectos en solo lectura.

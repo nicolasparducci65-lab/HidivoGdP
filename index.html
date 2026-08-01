@@ -320,7 +320,7 @@
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 Reporte PDF
               </button>
-              <button class="btn primary" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
+              <button id="btnNuevoProyectoDash" class="btn primary" style="display:none" onclick="navTo('proyectos',null);setTimeout(()=>abrirModalProyecto(),100)">
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Nuevo proyecto
               </button>
@@ -2925,22 +2925,33 @@ function puedeGestionarRubros(){ return ['admin','fiscalizador'].includes(curren
 function puedeGestionarProyectos(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
 function puedeEditarProyecto(){ return currentPerfil?.rol === 'admin'; }
 
+// Página de aterrizaje = PRIMERA sección permitida para el rol (el orden de
+// cada lista del mapa `accesos` define la landing). Antes era una tabla fija
+// que apuntaba a 'dashboard' o a secciones que el rol podía no tener, y dejaba
+// al usuario en una página que desaparecía al resolverse su rol en el proyecto.
+function primeraSeccionPermitida(permitidos){
+  return (permitidos && permitidos.length) ? permitidos[0] : 'dashboard';
+}
+
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['dashboard','proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    residente:    ['proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     tecnico_sst:  ['proyectos','sso','archivos','chat'],
     visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
 
-  // Sin rol asignado en el proyecto actual: solo Dashboard (para seleccionar un proyecto desde ahí).
-  // 'proyectos' solo se agrega si el usuario es admin global (gestiona todos los proyectos).
+  // Sin rol asignado todavía (sesión recién iniciada, ningún proyecto elegido):
+  // el rol efectivo es por proyecto, así que aún no se conoce. Se aterriza en
+  // Proyectos, que es justamente la pantalla para elegir uno; al elegirlo se
+  // resuelve el rol y se redirige a su primera sección permitida. Antes se
+  // aterrizaba en Dashboard, que para varios roles desaparecía acto seguido.
   const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
-  const permitidos = rol ? (accesos[rol] || ['dashboard']) : (esAdminGlobal ? ['dashboard','proyectos'] : ['dashboard']);
+  const permitidos = rol ? (accesos[rol] || ['dashboard']) : (esAdminGlobal ? ['dashboard','proyectos'] : ['proyectos']);
 
   // Aplicar modo visualizador
   if(rol === 'visualizador'){
@@ -2999,6 +3010,11 @@ function aplicarAccesosPorRol(rol){
     if(btnAccion) btnAccion.style.display='none';
   }
 
+  // "Nuevo proyecto" del Dashboard: gate por ROL (antes era HTML estático que
+  // solo tapaba la capa CSS de modo-visualizador/modo-cliente).
+  const btnNuevoProyDash = document.getElementById('btnNuevoProyectoDash');
+  if(btnNuevoProyDash) btnNuevoProyDash.style.display = puedeGestionarProyectos() ? 'flex' : 'none';
+
   // Redirigir al dashboard si están en una página no permitida.
   // Contrato, Ensayos y Cartera están fuera del mapa de accesos (visibles por
   // defecto, salvo Técnico SST): se consideran permitidas para no expulsar al
@@ -3007,7 +3023,7 @@ function aplicarAccesosPorRol(rol){
     || (currentPage==='contrato' && rol!=='tecnico_sst')
     || (currentPage==='ensayos'  && !['tecnico_sst','cliente'].includes(rol));
   if(!permitidos.includes(currentPage) && !fueraDelMapa){
-    const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : rol==='tecnico_sst' ? 'sso' : 'dashboard';
+    const paginaInicio = primeraSeccionPermitida(permitidos);
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
@@ -3545,7 +3561,7 @@ function aplicarModulosProyecto(modulos){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['dashboard','proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    residente:    ['proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     tecnico_sst:  ['proyectos','sso','archivos','chat'],
     visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
@@ -3593,7 +3609,7 @@ function aplicarModulosProyecto(modulos){
   if(currentPage && navItems[currentPage] && navItems[currentPage].style.display==='none'){
     const NOMBRES_PAGINA = { curvaS:'Curva S', libro:'Libro de Obra', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Equipos', materiales:'Materiales', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST/SSO' };
     toast(`Este proyecto no tiene el módulo ${NOMBRES_PAGINA[currentPage]||currentPage}`,'info');
-    const paginaInicio = rol==='residente'?'fiscalizacion':rol==='visualizador'?'rubros':rol==='bodeguero'?'materiales':rol==='tecnico_sst'?'sso':rol==='cliente'?'dashboard':'dashboard';
+    const paginaInicio = primeraSeccionPermitida(permitidos);
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
   }
 }
