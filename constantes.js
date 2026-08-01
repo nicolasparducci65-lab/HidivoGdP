@@ -225,12 +225,14 @@ const PERMISOS = {
   secciones: [
     // ── PLATAFORMA ──
     { id:'dashboard', nombre:'Dashboard', ambito:'plataforma', requiereModulo:null,
-      roles:{ admin:'gestionar', fiscalizador:'ver', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:'ver' },
-      nota:'Solo admin edita desde la tabla embebida de proyectos.' },
+      // Residente y visualizador lo necesitan como página de retorno tras entrar a un proyecto.
+      roles:{ admin:'gestionar', fiscalizador:'ver', residente:'ver', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:'ver' },
+      nota:'Solo admin edita desde la tabla embebida de proyectos. Bodeguero y Técnico SST no lo tienen (entran directo a su módulo).' },
     { id:'proyectos', nombre:'Proyectos', ambito:'plataforma', requiereModulo:null,
       // I-4: fiscalizador puede CREAR proyectos (y definir sus módulos) pero no editarlos ni eliminarlos.
-      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
-      nota:'I-4: fiscalizador crea proyectos pero no puede editarlos; además el creador queda con rol fantasma "director" (I-1).' },
+      // Residente, técnico SST y visualizador ven la lista de SUS proyectos en solo lectura.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:'ver', bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Editar solo admin; crear admin/fiscalizador (I-4). Residente, técnico SST y visualizador: solo lectura de sus proyectos (respaldado por RLS ola1_update/delete).' },
     { id:'cartera', nombre:'Cartera', ambito:'plataforma', requiereModulo:null,
       // I-14: el ítem del nav solo se calcula al iniciar sesión; ser fiscalizador en ALGÚN proyecto basta.
       roles:{ admin:'gestionar', fiscalizador:'ver', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
@@ -244,9 +246,8 @@ const PERMISOS = {
       nota:'Sección de solo consulta. Mismo gate que Usuarios (I-11).' },
     // ── POR PROYECTO ──
     { id:'rubros', nombre:'Rubros (+ Órdenes de Cambio)', ambito:'proyecto', requiereModulo:null,
-      // I-8: la solo-lectura del visualizador la sostiene el CSS de modo-visualizador, no la lógica JS.
-      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
-      nota:'Eliminar rubros solo admin; Órdenes de Cambio solo admin/fiscalizador. Visualizador: solo lectura vía CSS (I-8).' },
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Órdenes de Cambio y "Eliminar todos" solo admin/fiscalizador. Residente y visualizador: solo lectura por gate de ROL (ya no por CSS, cierra I-8). Ojo: por API el residente aún puede cambiar cantidad_ejecutada y estado (lo exige el Libro de Obra).' },
     { id:'libro', nombre:'Libro de Obra', ambito:'proyecto', requiereModulo:'libro',
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
       nota:'Aprobar/observar solo admin/fiscalizador; reabrir solo admin. Residente crea (nace pendiente). Visualizador: solo lectura vía CSS (I-8).' },
@@ -269,16 +270,17 @@ const PERMISOS = {
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
       nota:'I-3: visible para todos salvo Técnico SST, incluso sin rol en el proyecto; solo lectura de facto sin aviso.' },
     { id:'ensayos', nombre:'Ensayos', ambito:'proyecto', requiereModulo:null,
-      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
-      nota:'I-3: misma visibilidad anómala que Contrato. Eliminar solo admin.' },
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:null },
+      nota:'Oculto para Técnico SST y Cliente. Eliminar solo admin. Los no-miembros ya no ven datos (RLS Ola 1).' },
     { id:'formatosCalidad', nombre:'Formatos de Calidad', ambito:'proyecto', requiereModulo:'formatosCalidad',
       // I-13: el botón "Revisar/Corregir" no tiene gate de rol.
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
       nota:'Plantillas y asignación admin/fiscalizador; residente llena. I-13: "Revisar/Corregir" sin gate.' },
     { id:'sso', nombre:'SST / SSO', ambito:'proyecto', requiereModulo:'sst',
       // I-9: el botón "Asistentes" de Capacitaciones escapa al CSS y no tiene gate.
-      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:'gestionar', bodeguero:null, visualizador:'ver', cliente:null },
-      nota:'Eliminar admin/fiscalizador; configurar admin/fisc/técnico SST. I-9: visualizador puede editar asistentes de capacitaciones.' },
+      // Residente SIN acceso a la sección (pendiente cerrarlo también en RLS → Ola 2).
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:'gestionar', bodeguero:null, visualizador:'ver', cliente:null },
+      nota:'Residente sin acceso a la sección (RLS sst_* aún lo permite escribir → Ola 2). Eliminar admin/fiscalizador; configurar admin/fisc/técnico SST. I-9: visualizador puede editar asistentes de capacitaciones.' },
     { id:'archivos', nombre:'Archivos', ambito:'proyecto', requiereModulo:null,
       // I-7: subir no tiene gate; todo rol que ve la sección puede subir (salvo visualizador, contenido por CSS).
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:'gestionar', bodeguero:'gestionar', visualizador:'ver', cliente:null },

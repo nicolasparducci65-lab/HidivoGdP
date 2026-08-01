@@ -2917,15 +2917,23 @@ async function actualizarRolEfectivo(proyectoId){
   return rolEfectivo;
 }
 
+// ── HELPERS DE ROL ──
+// Gates de escritura por ROL, para no depender de la capa CSS de
+// body.modo-visualizador / modo-cliente (frágil: solo tapa botones cuyo
+// onclick coincide con un patrón — ver PERMISOS.md I-8/I-9).
+function puedeGestionarRubros(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
+function puedeGestionarProyectos(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
+function puedeEditarProyecto(){ return currentPerfil?.rol === 'admin'; }
+
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['dashboard','proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
-    tecnico_sst:  ['sso','archivos','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
+    tecnico_sst:  ['proyectos','sso','archivos','chat'],
+    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
 
@@ -2978,11 +2986,12 @@ function aplicarAccesosPorRol(rol){
   });
 
   // Contrato y Ensayos no están en el mapa de accesos (visibles para todos por
-  // defecto), pero el Técnico SST no debe ver información financiera de la obra.
+  // defecto), pero el Técnico SST no debe ver información financiera de la obra
+  // y el Cliente no debe ver los Ensayos de laboratorio.
   const navContrato = document.querySelector('.nav-item[onclick*="contrato"]');
   const navEnsayos = document.querySelector('.nav-item[onclick*="ensayos"]');
   if(navContrato) navContrato.style.display = rol==='tecnico_sst' ? 'none' : 'flex';
-  if(navEnsayos) navEnsayos.style.display = rol==='tecnico_sst' ? 'none' : 'flex';
+  if(navEnsayos) navEnsayos.style.display = ['tecnico_sst','cliente'].includes(rol) ? 'none' : 'flex';
 
   // Ocultar botón de acción principal para roles sin permisos de creación
   if(rol==='residente'||rol==='visualizador'){
@@ -2994,7 +3003,9 @@ function aplicarAccesosPorRol(rol){
   // Contrato, Ensayos y Cartera están fuera del mapa de accesos (visibles por
   // defecto, salvo Técnico SST): se consideran permitidas para no expulsar al
   // usuario de ellas al cambiar de proyecto.
-  const fueraDelMapa = currentPage==='cartera' || ((currentPage==='contrato'||currentPage==='ensayos') && rol!=='tecnico_sst');
+  const fueraDelMapa = currentPage==='cartera'
+    || (currentPage==='contrato' && rol!=='tecnico_sst')
+    || (currentPage==='ensayos'  && !['tecnico_sst','cliente'].includes(rol));
   if(!permitidos.includes(currentPage) && !fueraDelMapa){
     const paginaInicio = !rol ? 'dashboard' : rol==='residente' ? 'fiscalizacion' : rol==='visualizador' ? 'rubros' : rol==='bodeguero' ? 'materiales' : rol==='tecnico_sst' ? 'sso' : 'dashboard';
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
@@ -3023,10 +3034,13 @@ function navTo(page, btn){
   currentPage = page;
   const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
+  // Importar Excel y su plantilla son acciones de escritura: solo gestores de
+  // rubros (admin/fiscalizador). El residente y el visualizador ven Rubros en
+  // modo lectura.
   const btnImportar = document.getElementById('btnImportarRubros');
-  if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto) ? 'flex' : 'none';
+  if(btnImportar) btnImportar.style.display = (page==='rubros' && currentProyecto && puedeGestionarRubros()) ? 'flex' : 'none';
   const btnPlantilla = document.getElementById('btnDescargarPlantilla');
-  if(btnPlantilla) btnPlantilla.style.display = page==='rubros' ? 'flex' : 'none';
+  if(btnPlantilla) btnPlantilla.style.display = (page==='rubros' && puedeGestionarRubros()) ? 'flex' : 'none';
   const btnEliminarRubros = document.getElementById('btnEliminarRubros');
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const btnOC = document.getElementById('btnOrdenesCambio');
@@ -3035,7 +3049,15 @@ function navTo(page, btn){
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
-  const acciones = { proyectos:{show:true,texto:'Nuevo proyecto'}, rubros:{show:true,texto:'Nuevo rubro'}, libro:{show:!esVisualizador,texto:'Nuevo registro'} };
+  // Gate por ROL del botón de acción principal. Antes era show:true para
+  // proyectos y rubros, así que cualquier rol que llegara a esas páginas veía
+  // "Nuevo proyecto"/"Nuevo rubro" (y anulaba el ocultamiento que hace
+  // aplicarAccesosPorRol al cambiar de proyecto).
+  const acciones = {
+    proyectos: { show: puedeGestionarProyectos(), texto:'Nuevo proyecto' },
+    rubros:    { show: puedeGestionarRubros(),    texto:'Nuevo rubro' },
+    libro:     { show: !esVisualizador,           texto:'Nuevo registro' }
+  };
   const accion = acciones[page];
   document.getElementById('btnAccionPrincipal').style.display = accion?.show ? 'flex' : 'none';
   if(accion) document.getElementById('btnAccionTexto').textContent = accion.texto;
@@ -3296,13 +3318,14 @@ function etiquetaTiempoPorSPI(spi){
 async function renderProyectosTabla(containerId, lista){
   const container = document.getElementById(containerId);
   if(!lista||!lista.length){
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">Crea tu primer proyecto para comenzar</div><button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">${puedeGestionarProyectos()?'Crea tu primer proyecto para comenzar':'No tienes proyectos asignados'}</div>${puedeGestionarProyectos()?'<button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button>':''}</div>`;
     return;
   }
   const { avances, spiEstados, montosReales } = await calcularEstadosProyectos(lista);
 
-  const rol = currentPerfil?.rol;
-  const puedeEditar = rol==='admin';
+  // Solo el admin edita proyectos desde la tabla. Residente, técnico SST y
+  // visualizador ven la lista de SUS proyectos en modo lectura (pueden abrirlos).
+  const puedeEditar = puedeEditarProyecto();
   container.innerHTML = `<table>
     <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
@@ -3522,10 +3545,10 @@ function aplicarModulosProyecto(modulos){
   const accesos = {
     admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
     fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['dashboard','proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
-    tecnico_sst:  ['sso','archivos','chat'],
-    visualizador: ['rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
+    tecnico_sst:  ['proyectos','sso','archivos','chat'],
+    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
   const permitidos = accesos[rol]||['dashboard'];
@@ -3757,6 +3780,9 @@ async function cargarRubros(mantener){
 }
 
 function renderRubros(rubros){
+  // Residente y visualizador ven Rubros en SOLO LECTURA: sin crear, editar,
+  // eliminar, cambiar estado ni recalcular (gate por rol, no por CSS).
+  const gestionaRubros = puedeGestionarRubros();
   const totalContrato = rubros.reduce((s,r)=>s+(r.monto_contrato||0),0);
   const totalProd = rubros.reduce((s,r)=>s+(r.total_produccion||0),0);
   const avanceGeneral = totalContrato>0 ? (totalProd/totalContrato*100) : 0;
@@ -3771,7 +3797,7 @@ function renderRubros(rubros){
       <div class="metric-card"><div class="metric-icon ${rubrosOC.length?'orange':'green'}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div><div><div class="metric-value">${formatoK(totalOC)}</div><div class="metric-label">🔄 Total Órdenes de Cambio (${rubrosOC.length})</div></div></div>
     </div>
     <div class="card">
-      <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div><button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button></div>
+      <div class="card-header"><div><div class="card-title">Rubros y cantidades</div><div class="card-subtitle">Detalle del contrato por ítem</div></div>${gestionaRubros?`<button class="btn" onclick="recalcularRubros()" title="Recalcular cantidades ejecutadas desde el Libro de Obra" style="gap:6px"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Recalcular</button>`:''}</div>
       ${rubros.length ? `<table style="table-layout:fixed;width:100%"><thead><tr><th style="width:8%">Código</th><th style="width:19%">Descripción</th><th style="width:6%">Unidad</th><th style="width:8%">Cantidad</th><th style="width:8%">P. Unitario</th><th style="width:9%">Contratado</th><th style="width:8%">Ejecutado</th><th style="width:9%">Total Prod.</th><th style="width:7%">% Rubro</th><th style="width:8%">Estado</th><th style="width:6%"></th></tr></thead><tbody>
         ${rubros.map(r=>{
           const pct = r.cantidad_contrato>0 ? (r.cantidad_ejecutada||0)/r.cantidad_contrato*100 : 0;
@@ -3788,19 +3814,20 @@ function renderRubros(rubros){
             <td style="text-align:right;white-space:nowrap">$${Number(r.total_produccion||0).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
             <td><span style="font-size:12px;font-weight:600;color:${color}">${pct.toFixed(1)}%${pct>100?' ⚠️':''}</span><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${color}"></div></div></td>
             <td>
-              <select onchange="cambiarEstadoRubro('${r.id}',this.value)" style="font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid #c5c7d4;cursor:pointer;background:${r.estado==='terminado'?'#e8f5e9':r.estado==='trabajando'?'#e8f4ff':r.estado==='suspendido'?'#fff3e0':'#f5f6f8'};color:${r.estado==='terminado'?'#2e7d32':r.estado==='trabajando'?'#0060c0':r.estado==='suspendido'?'#e65100':'#676879'};font-weight:600;max-width:100%">
+              ${gestionaRubros ? `<select onchange="cambiarEstadoRubro('${r.id}',this.value)" style="font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid #c5c7d4;cursor:pointer;background:${r.estado==='terminado'?'#e8f5e9':r.estado==='trabajando'?'#e8f4ff':r.estado==='suspendido'?'#fff3e0':'#f5f6f8'};color:${r.estado==='terminado'?'#2e7d32':r.estado==='trabajando'?'#0060c0':r.estado==='suspendido'?'#e65100':'#676879'};font-weight:600;max-width:100%">
                 <option value="planificado" ${r.estado==='planificado'?'selected':''}>📋 Planificado</option>
                 <option value="trabajando" ${r.estado==='trabajando'?'selected':''}>🔨 Trabajando</option>
                 <option value="terminado" ${r.estado==='terminado'?'selected':''}>✅ Terminado</option>
                 <option value="suspendido" ${r.estado==='suspendido'?'selected':''}>⏸️ Suspendido</option>
-              </select>
+              </select>`
+              : `<span style="font-size:11px;padding:4px 8px;border-radius:6px;font-weight:600;white-space:nowrap;background:${r.estado==='terminado'?'#e8f5e9':r.estado==='trabajando'?'#e8f4ff':r.estado==='suspendido'?'#fff3e0':'#f5f6f8'};color:${r.estado==='terminado'?'#2e7d32':r.estado==='trabajando'?'#0060c0':r.estado==='suspendido'?'#e65100':'#676879'}">${r.estado==='terminado'?'✅ Terminado':r.estado==='trabajando'?'🔨 Trabajando':r.estado==='suspendido'?'⏸️ Suspendido':'📋 Planificado'}</span>`}
             </td>
             <td style="white-space:nowrap">
-              <button onclick="abrirModalNuevoRubro(${JSON.stringify(r).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 8px;font-size:11px" title="Editar">✏️</button>
-              <button onclick="eliminarRubro('${r.id}','${escaparParaAtributo(r.descripcion.substring(0,20))}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>
+              ${gestionaRubros ? `<button onclick="abrirModalNuevoRubro(${JSON.stringify(r).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 8px;font-size:11px" title="Editar">✏️</button>
+              <button onclick="eliminarRubro('${r.id}','${escaparParaAtributo(r.descripcion.substring(0,20))}')" class="btn" style="padding:4px 8px;font-size:11px;color:#e2445c" title="Eliminar">🗑</button>` : ''}
             </td>
           </tr>`;}).join('')}
-      </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">Usa el botón "Nuevo rubro" arriba para agregar</div></div>`}
+      </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin rubros</div><div class="empty-sub">${gestionaRubros?'Usa el botón "Nuevo rubro" arriba para agregar':'Este proyecto aún no tiene rubros cargados'}</div></div>`}
     </div>`;
 }
 
