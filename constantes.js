@@ -256,7 +256,7 @@ const PERMISOS = {
       nota:'Crear línea base admin/fiscalizador; activarla solo admin. Visualizador y cliente: solo lectura vía CSS (I-8).' },
     { id:'fiscalizacion', nombre:'Observaciones', ambito:'proyecto', requiereModulo:'observaciones',
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
-      nota:'Los tres roles gestionan sin distinción (planos, pins, estados, eliminación).' },
+      nota:'El residente RESPONDE pero no RESUELVE: no puede cambiar el estado a mano y su respuesta mueve la observación de "abierta" a "en proceso" (si ya estaba resuelta, no la reabre). Solo admin/fiscalizador marcan "resuelta". Gate de UI; a nivel de datos observaciones sigue con USING(true) → Ola 2.' },
     { id:'solicitudes', nombre:'Solicitudes', ambito:'proyecto', requiereModulo:'solicitudes',
       // I-10: por un ID duplicado, el residente ve "Enviar comentario" y eso mueve la solicitud a en_revision.
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'gestionar', tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },

@@ -1284,11 +1284,14 @@
     <div class="modal-body" style="overflow-y:auto;flex:1">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <label class="form-label" style="margin:0">Estado:</label>
+        <!-- Selector solo para quien puede resolver (admin/fiscalizador) -->
         <select id="obsDetalleEstado" class="form-control" style="width:160px">
           <option value="abierta">🔴 Abierta</option>
           <option value="en_proceso">🟡 En proceso</option>
           <option value="resuelta">✅ Resuelta</option>
         </select>
+        <!-- Para el residente: estado en modo lectura -->
+        <span id="obsDetalleEstadoTexto" style="display:none;font-size:13px;font-weight:600"></span>
       </div>
       <div id="obsDetalleDesc" style="font-size:13px;color:#323338;margin-bottom:16px;line-height:1.6"></div>
       <div id="obsDetalleUbicacion" style="font-size:12px;color:#676879;margin-bottom:16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>
@@ -2924,6 +2927,9 @@ async function actualizarRolEfectivo(proyectoId){
 function puedeGestionarRubros(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
 function puedeGestionarProyectos(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
 function puedeEditarProyecto(){ return currentPerfil?.rol === 'admin'; }
+// Observaciones: solo admin/fiscalizador cambian el estado y marcan "resuelta".
+// El residente responde, y su respuesta mueve la observación a "en proceso".
+function puedeResolverObs(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
 
 // Página de aterrizaje = PRIMERA sección permitida para el rol (el orden de
 // cada lista del mapa `accesos` define la landing). Antes era una tabla fija
@@ -6837,7 +6843,7 @@ async function cargarObservaciones(){
           </div>`:''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button onclick="event.stopPropagation();cambiarEstadoObs('${o.id}','${o.estado}')" class="btn" style="padding:5px 10px;font-size:12px">Estado</button>
+          ${puedeResolverObs()?`<button onclick="event.stopPropagation();cambiarEstadoObs('${o.id}','${o.estado}')" class="btn" style="padding:5px 10px;font-size:12px">Estado</button>`:''}
           <button onclick="event.stopPropagation();eliminarObservacion('${o.id}')" class="btn" style="padding:5px 10px;font-size:12px;color:#e2445c">🗑</button>
         </div>
       </div>
@@ -6858,7 +6864,18 @@ async function verObservacion(id){
   const { data: resps } = await sb.from('observacion_respuestas').select('*').eq('observacion_id',id).order('created_at');
   window._obsActiva = o;
   document.getElementById('obsDetalleId').textContent = (o.numero?`N°${o.numero} — `:'')+o.titulo;
-  document.getElementById('obsDetalleEstado').value = o.estado;
+  // Solo admin/fiscalizador eligen el estado; el residente lo ve en lectura.
+  // Al responder, su observación pasa sola a "en proceso" (ver guardarRespuesta).
+  const puedeEstado = puedeResolverObs();
+  const selEstado = document.getElementById('obsDetalleEstado');
+  const txtEstado = document.getElementById('obsDetalleEstadoTexto');
+  selEstado.value = o.estado;
+  selEstado.style.display = puedeEstado ? '' : 'none';
+  if(txtEstado){
+    txtEstado.style.display = puedeEstado ? 'none' : '';
+    txtEstado.textContent = estadoObsLabel(o.estado);
+    txtEstado.style.color = estadoObsColor(o.estado);
+  }
   document.getElementById('obsDetalleDesc').textContent = o.descripcion||'';
   // Ubicación en plano: ver el pin o asignar una ubicación si no tiene
   const ubic = document.getElementById('obsDetalleUbicacion');
@@ -6914,9 +6931,19 @@ async function guardarRespuesta(){
     archivoNombre = archivo.name;
   }
 
-  // Actualizar estado si cambió
-  const nuevoEstado = document.getElementById('obsDetalleEstado').value;
-  if(nuevoEstado !== window._obsActiva.estado){
+  // Estado tras responder:
+  //  · admin/fiscalizador: el que hayan elegido en el selector.
+  //  · residente: transición AUTOMÁTICA abierta → en_proceso. Nunca resuelve, y
+  //    si ya estaba resuelta NO la reabre (eso desharía el cierre del
+  //    fiscalizador); la respuesta igual queda registrada y se le notifica.
+  const estadoPrevio = window._obsActiva.estado;
+  let nuevoEstado = estadoPrevio;
+  if(puedeResolverObs()){
+    nuevoEstado = document.getElementById('obsDetalleEstado').value;
+  } else if(estadoPrevio === 'abierta'){
+    nuevoEstado = 'en_proceso';
+  }
+  if(nuevoEstado !== estadoPrevio){
     await sb.from('observaciones').update({estado: nuevoEstado}).eq('id', window._obsActiva.id);
   }
 
@@ -6941,6 +6968,9 @@ async function guardarRespuesta(){
 }
 
 async function cambiarEstadoObs(id, estadoActual){
+  // Revalidar el rol: el botón ya no se pinta para el residente, pero la
+  // función es alcanzable por consola/onclick.
+  if(!puedeResolverObs()){ toast('Solo admin y fiscalizador cambian el estado de una observación','error'); return; }
   const estados = ['abierta','en_proceso','resuelta'];
   const idx = estados.indexOf(estadoActual);
   const nuevo = estados[(idx+1)%3];
