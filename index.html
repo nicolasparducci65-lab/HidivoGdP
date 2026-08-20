@@ -4886,7 +4886,7 @@ async function cargarCartera(){
   });
   (planR.data||[]).forEach(pl=>{
     const p = porP[pl.proyecto_id]; if(!p) return;
-    if(['aprobada','pagada'].includes(pl.estado)){
+    if(PLANILLAS_COMPROMETIDAS.includes(pl.estado)){
       p.planillado += (pl.total_monto||0);
       p.amortizado += (pl.amortizacion_anticipo||0);
       if(pl.estado==='aprobada') p.liquidoPend += (pl.total_liquido ?? pl.total_monto ?? 0);
@@ -9805,6 +9805,37 @@ function semaforoGarantia(g){
   return { color:'#00854d', bg:'#e6f4ee', label:`Vigente · ${dias} días` };
 }
 
+// ── NÚCLEO DE PLANILLAS ──
+// Universo canónico de toda cifra de dinero comprometido del contrato: solo las
+// planillas aprobadas o pagadas. Antes cada consumidor filtraba por su cuenta
+// (tarjetas de Contrato con estado!=='rechazada', liquidación y cartera con
+// aprobada/pagada, y el reporte PDF sin filtro), así que el mismo proyecto
+// mostraba tres cifras distintas de retención acumulada. Una sola fuente.
+const PLANILLAS_COMPROMETIDAS = ['aprobada','pagada'];
+
+function agregarPlanillas(plans){
+  const pv = (plans||[]).filter(p=>PLANILLAS_COMPROMETIDAS.includes(p.estado));
+  const suma = f => pv.reduce((s,p)=>s+(f(p)||0), 0);
+  return {
+    n: pv.length,
+    planillado: suma(p=>p.total_monto),
+    reajustes:  suma(p=>p.reajuste_monto),
+    amortizado: suma(p=>p.amortizacion_anticipo),
+    retenido:   suma(p=>p.retencion_garantia),
+    multas:     suma(p=>p.multa_monto),
+    liquido:    suma(p=>p.total_liquido ?? p.total_monto)
+  };
+}
+
+// Retención y líquido de una planilla con un % dado. Fuente única de la fórmula.
+function retencionDePlanilla(p, pct){
+  return (p.total_monto||0) * (pct||0) / 100;
+}
+function liquidoDePlanilla(p, retencion){
+  return (p.total_monto||0) + (p.reajuste_monto||0)
+       - (p.amortizacion_anticipo||0) - retencion - (p.multa_monto||0);
+}
+
 async function obtenerMontoContratoProyecto(){
   const { data } = await sb.from('rubros').select('monto_contrato').eq('proyecto_id', currentProyecto);
   return (data||[]).reduce((s,r)=>s+(r.monto_contrato||0), 0);
@@ -9823,13 +9854,19 @@ async function cargarContrato(){
     sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle(),
     sb.from('garantias').select('*').eq('proyecto_id', currentProyecto).order('vigencia_hasta'),
     obtenerMontoContratoProyecto(),
-    sb.from('planillas_pago').select('amortizacion_anticipo,retencion_garantia,estado').eq('proyecto_id', currentProyecto),
+    sb.from('planillas_pago').select('total_monto,amortizacion_anticipo,retencion_garantia,estado').eq('proyecto_id', currentProyecto),
     sb.from('archivos').select('id,nombre,url').eq('proyecto_id', currentProyecto).eq('modulo','contratos').order('id',{ascending:false})
   ]);
 
-  const plansValidas = (plans||[]).filter(p=>p.estado!=='rechazada');
-  const amortizado = plansValidas.reduce((s,p)=>s+(p.amortizacion_anticipo||0), 0);
-  const retenido   = plansValidas.reduce((s,p)=>s+(p.retencion_garantia||0), 0);
+  const agg = agregarPlanillas(plans);
+  const amortizado = agg.amortizado;
+  const retenido   = agg.retenido;
+  // Planillas cuya retención guardada no cuadra con el % vigente del contrato.
+  // El % no varía durante un contrato, así que cualquier diferencia es un
+  // descuadre que hay que corregir de forma deliberada.
+  const pctRetVigente = ant?.retencion_pct||0;
+  const desalineadas = (plans||[]).filter(p=>p.estado!=='rechazada'
+    && Math.abs((p.retencion_garantia||0) - retencionDePlanilla(p, pctRetVigente)) > 0.01).length;
   const montoAnt   = ant?.monto || 0;
   const saldoAnt   = Math.max(0, montoAnt - amortizado);
   const pctAnt     = montoContrato > 0 && montoAnt > 0 ? (montoAnt/montoContrato*100) : 0;
@@ -9892,6 +9929,15 @@ async function cargarContrato(){
       <div style="background:${saldoAnt>0?'#fdf6e3':'#e6f4ee'};border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">SALDO POR AMORTIZAR</div><div style="font-size:18px;font-weight:700;color:${saldoAnt>0?'#b8860b':'#00854d'}">${fmt(saldoAnt)}</div></div>
       <div style="background:#f5f0ff;border-radius:8px;padding:12px;text-align:center"><div style="font-size:11px;color:#676879">RETENCIÓN ACUMULADA</div><div style="font-size:18px;font-weight:700;color:#7b68ee">${fmt(retenido)}</div></div>
     </div>
+    ${desalineadas ? `
+    <div style="margin-top:14px;padding:12px 14px;background:#fdf6e3;border:1px solid #f0d98c;border-radius:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:18px">⚠️</span>
+      <div style="flex:1;min-width:220px;font-size:13px;color:#7a5c00">
+        <b>${desalineadas} planilla(s)</b> tienen una retención que no cuadra con el ${pctRetVigente}% del contrato.
+        ${puedeEditar?'Corrige el % arriba o resincroniza con el valor actual.':'Avisa a fiscalización para que lo corrija.'}
+      </div>
+      ${puedeEditar?`<button class="btn primary" style="font-size:12px;padding:6px 12px" onclick="recalcularRetencionContrato()">Recalcular al ${pctRetVigente}%</button>`:''}
+    </div>` : ''}
   </div>
 
   <div class="card">
@@ -10043,7 +10089,7 @@ async function generarLiquidacion(){
     sb.from('contrato_anticipo').select('*').eq('proyecto_id', currentProyecto).maybeSingle()
   ]);
 
-  const pv = (plans||[]).filter(p=>['aprobada','pagada'].includes(p.estado));
+  const agg = agregarPlanillas(plans);
   const montoOCs = (ocs||[]).reduce((s,o)=>s+(o.monto_total||0),0);
   const montoVigente = (rubros||[]).reduce((s,r)=>s+(r.monto_contrato||0),0);
   const datos = {
@@ -10051,13 +10097,13 @@ async function generarLiquidacion(){
     monto_ocs_aprobadas: montoOCs,
     monto_contrato_vigente: montoVigente,
     total_ejecutado: (rubros||[]).reduce((s,r)=>s+(r.total_produccion||0),0),
-    total_planillado: pv.reduce((s,p)=>s+(p.total_monto||0),0),
-    total_reajustes: pv.reduce((s,p)=>s+(p.reajuste_monto||0),0),
+    total_planillado: agg.planillado,
+    total_reajustes: agg.reajustes,
     anticipo_entregado: ant?.monto||0,
-    anticipo_amortizado: pv.reduce((s,p)=>s+(p.amortizacion_anticipo||0),0),
-    retenciones_acumuladas: pv.reduce((s,p)=>s+(p.retencion_garantia||0),0),
-    multas: pv.reduce((s,p)=>s+(p.multa_monto||0),0),
-    liquido_pagado: pv.reduce((s,p)=>s+(p.total_liquido??p.total_monto??0),0)
+    anticipo_amortizado: agg.amortizado,
+    retenciones_acumuladas: agg.retenido,
+    multas: agg.multas,
+    liquido_pagado: agg.liquido
   };
   datos.anticipo_por_amortizar = Math.max(0, datos.anticipo_entregado - datos.anticipo_amortizado);
   // Saldo final a favor del contratista: retenciones que se devuelven, menos anticipo no amortizado
@@ -10204,17 +10250,118 @@ async function guardarTerminosReajuste(){
   cargarTerminosReajuste(true);
 }
 
+// Resumen y confirmación del recálculo masivo de retención.
+// Devuelve true si el usuario confirma.
+function confirmarRecalculoRetencion(plans, pctPrevio, pctNuevo){
+  const f = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const d = v => (v>=0?'+':'−')+f(Math.abs(v));
+  const firmes  = plans.filter(p=>PLANILLAS_COMPROMETIDAS.includes(p.estado));
+  const pagadas = plans.filter(p=>p.estado==='pagada');
+  const rechaz  = plans.filter(p=>p.estado==='rechazada');
+  const sumaAntes   = ps => ps.reduce((s,p)=>s+(p.retencion_garantia||0), 0);
+  const sumaDespues = ps => ps.reduce((s,p)=>s+retencionDePlanilla(p, pctNuevo), 0);
+
+  let msg = (pctPrevio === pctNuevo)
+      ? `Resincronizar la retención con el ${pctNuevo}% del contrato.\n\n`
+      : `Corrección del % de retención: ${pctPrevio}% → ${pctNuevo}%\n\n`;
+  msg += `Esto recalculará la retención de ${plans.length} planilla(s), `
+    + `incluidas ${firmes.length} aprobada(s)/pagada(s).\n\n`
+    + `RETENCIÓN ACUMULADA (aprobadas y pagadas)\n`
+    + `   ${f(sumaAntes(firmes))} → ${f(sumaDespues(firmes))}   (${d(sumaDespues(firmes)-sumaAntes(firmes))})\n`;
+
+  if(pagadas.length){
+    msg += `\n⚠ ${pagadas.length} planilla(s) YA PAGADA(S)\n`
+        +  `   ${f(sumaAntes(pagadas))} → ${f(sumaDespues(pagadas))}   (${d(sumaDespues(pagadas)-sumaAntes(pagadas))})\n`
+        +  `   Ese diferencial debe ajustarse en la siguiente planilla o en la liquidación.\n`;
+  }
+  if(rechaz.length){
+    msg += `\n(${rechaz.length} rechazada(s) también se recalculan, pero no suman en ninguna cifra.)\n`;
+  }
+  return confirm(msg + `\n¿Confirmas la corrección?`);
+}
+
+// Resincroniza las planillas cuando su retención no cuadra con el % vigente.
+// Hace falta porque guardar el mismo % no cuenta como cambio: si los datos ya
+// estaban descuadrados, no habría forma de arreglarlos desde la UI.
+async function recalcularRetencionContrato(){
+  const { data: ant } = await sb.from('contrato_anticipo')
+    .select('retencion_pct').eq('proyecto_id', currentProyecto).maybeSingle();
+  const pct = ant?.retencion_pct||0;
+  const { data: plans } = await sb.from('planillas_pago')
+    .select('id,numero,estado,total_monto,reajuste_monto,amortizacion_anticipo,retencion_garantia,multa_monto')
+    .eq('proyecto_id', currentProyecto).order('numero');
+  if(!plans || !plans.length){ toast('Este proyecto no tiene planillas','info'); return; }
+  if(!confirmarRecalculoRetencion(plans, pct, pct)) return;
+  toast(`Recalculando ${plans.length} planilla(s)...`,'info');
+  const fallos = await recalcularRetencionPlanillas(plans, pct);
+  if(fallos.length) toast(`Fallaron las planillas N° ${fallos.join(', ')}`,'error');
+  else toast(`Retención recalculada en ${plans.length} planilla(s) ✓`,'success');
+  cargarContrato();
+}
+
+// Reescribe retención y líquido de cada planilla con el % corregido.
+// Devuelve los números de planilla que fallaron.
+async function recalcularRetencionPlanillas(plans, pct){
+  const fallos = [];
+  for(const p of plans){
+    const retencion = retencionDePlanilla(p, pct);
+    const { error } = await sb.from('planillas_pago').update({
+      retencion_garantia: retencion,
+      total_liquido: liquidoDePlanilla(p, retencion),
+      updated_at: new Date().toISOString()
+    }).eq('id', p.id);
+    if(error) fallos.push(p.numero);
+  }
+  return fallos;
+}
+
 async function guardarAnticipo(){
+  const pctNuevo = parseFloat(document.getElementById('antRetPct').value)||0;
   const payload = {
     proyecto_id: currentProyecto,
     monto: parseFloat(document.getElementById('antMonto').value)||0,
     fecha_entrega: document.getElementById('antFecha').value||null,
     modo_amortizacion: document.getElementById('antModo').value,
-    retencion_pct: parseFloat(document.getElementById('antRetPct').value)||0,
+    retencion_pct: pctNuevo,
     iva_pct: parseFloat(document.getElementById('antIvaPct').value)||0
   };
+
+  // El % de retención no varía durante un contrato: si cambia, es la corrección
+  // de un error de captura y TODAS las planillas quedan mal, incluidas las
+  // aprobadas y pagadas. Se recalculan con el % corregido, previa confirmación
+  // explícita — nunca en silencio.
+  const { data: antPrevio } = await sb.from('contrato_anticipo')
+    .select('retencion_pct').eq('proyecto_id', currentProyecto).maybeSingle();
+  const pctPrevio = antPrevio?.retencion_pct;
+  const cambioPct = pctPrevio != null && Math.abs(pctPrevio - pctNuevo) > 1e-9;
+
+  let porRecalcular = null;
+  if(cambioPct){
+    const { data: plans } = await sb.from('planillas_pago')
+      .select('id,numero,estado,total_monto,reajuste_monto,amortizacion_anticipo,retencion_garantia,multa_monto')
+      .eq('proyecto_id', currentProyecto).order('numero');
+    if(plans && plans.length){
+      if(!confirmarRecalculoRetencion(plans, pctPrevio, pctNuevo)) return;
+      porRecalcular = plans;
+    }
+  }
+
   const { error } = await sb.from('contrato_anticipo').upsert(payload, {onConflict:'proyecto_id'});
   if(error){ toast('Error al guardar: '+error.message,'error'); return; }
+
+  if(porRecalcular){
+    toast(`Recalculando ${porRecalcular.length} planilla(s)...`,'info');
+    const fallos = await recalcularRetencionPlanillas(porRecalcular, pctNuevo);
+    if(fallos.length){
+      toast(`Retención recalculada, pero fallaron las planillas N° ${fallos.join(', ')}`,'error');
+      cargarContrato();
+      return;
+    }
+    toast(`Retención recalculada en ${porRecalcular.length} planilla(s) ✓`,'success');
+    cargarContrato();
+    return;
+  }
+
   toast('Configuración del anticipo guardada ✓','success');
   cargarContrato();
 }
@@ -13557,9 +13704,9 @@ ${incPlanillas && planillas.length ? `
     </tbody>
     <tfoot>
       <tr style="background:#1a1a2e">
-        <td colspan="3" style="text-align:right;font-weight:700;color:#fff;padding:8px">TOTAL PLANILLADO</td>
+        <td colspan="3" style="text-align:right;font-weight:700;color:#fff;padding:8px">TOTAL PLANILLADO (aprobadas y pagadas)</td>
         <td style="text-align:right;font-weight:800;color:#00c2ff;padding:8px;font-size:12px">
-          $${planillas.reduce((s,p)=>s+(p.total_monto||0),0).toLocaleString('es-EC',{minimumFractionDigits:2})}
+          $${agregarPlanillas(planillas).planillado.toLocaleString('es-EC',{minimumFractionDigits:2})}
         </td>
       </tr>
     </tfoot>
