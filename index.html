@@ -342,6 +342,9 @@
           <select id="filtroContratistaProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
             <option value="">— Todos los contratistas —</option>
           </select>
+          <select id="filtroEstadoProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+            <option value="">— Todos los estados —</option>
+          </select>
         </div>
         <div id="proyectosList">
           <div class="page-loader"><div class="spinner"></div>Cargando...</div>
@@ -3388,18 +3391,22 @@ async function renderProyectosTabla(containerId, lista){
   </table>`;
 }
 
-// Lista de proyectos según los filtros activos del Dashboard (AND entre los
-// tres). Fuente única: la usan la pantalla y el reporte PDF, para que ambos
-// muestren siempre el mismo universo.
-function proyectosFiltradosDashboard(){
-  const contratante = document.getElementById('filtroContratante')?.value||'';
-  const contratista = document.getElementById('filtroContratista')?.value||'';
-  const estado      = document.getElementById('filtroEstado')?.value||'';
+// Filtro compartido de proyectos por contratante/contratista/estado (AND).
+// Cada sección tiene sus propios selects, la lógica es una sola: la usan el
+// Dashboard, el reporte PDF y la sección Proyectos.
+function filtrarProyectosPorSelects(idContratante, idContratista, idEstado){
+  const contratante = document.getElementById(idContratante)?.value||'';
+  const contratista = document.getElementById(idContratista)?.value||'';
+  const estado      = document.getElementById(idEstado)?.value||'';
   let filtrados = proyectos;
   if(contratante) filtrados = filtrados.filter(p=>p.contratante===contratante);
   if(contratista) filtrados = filtrados.filter(p=>p.contratista===contratista);
   if(estado)      filtrados = filtrados.filter(p=>(p.estado||'ejecucion')===estado);
   return filtrados;
+}
+
+function proyectosFiltradosDashboard(){
+  return filtrarProyectosPorSelects('filtroContratante','filtroContratista','filtroEstado');
 }
 
 async function filtrarProyectosDashboard(){
@@ -3449,15 +3456,24 @@ async function cargarProyectosLista(){
     if(valorActualC) selCta.value = valorActualC;
   }
 
+  // Poblar filtro de estados (mismo criterio que el Dashboard: proyectos.estado,
+  // sin estado definido cuenta como 'ejecucion')
+  const estadosProy = [...new Set(proyectos.map(p=>p.estado||'ejecucion'))]
+    .sort((a,b)=>estadoLabel(a).localeCompare(estadoLabel(b)));
+  const selEst = document.getElementById('filtroEstadoProyectos');
+  if(selEst){
+    const valorActualE = selEst.value;
+    selEst.innerHTML = '<option value="">— Todos los estados —</option>' +
+      estadosProy.map(e=>`<option value="${e}">${estadoLabel(e)}</option>`).join('');
+    if(valorActualE) selEst.value = valorActualE;
+  }
+
   renderProyectosTabla('proyectosList', proyectos);
 }
 
 async function filtrarProyectosLista(){
-  const contratante = document.getElementById('filtroContratanteProyectos')?.value||'';
-  const contratista = document.getElementById('filtroContratistaProyectos')?.value||'';
-  let filtrados = proyectos;
-  if(contratante) filtrados = filtrados.filter(p=>p.contratante===contratante);
-  if(contratista) filtrados = filtrados.filter(p=>p.contratista===contratista);
+  const filtrados = filtrarProyectosPorSelects(
+    'filtroContratanteProyectos','filtroContratistaProyectos','filtroEstadoProyectos');
   renderProyectosTabla('proyectosList', filtrados);
 }
 
