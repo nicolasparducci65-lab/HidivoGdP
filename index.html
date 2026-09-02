@@ -4134,6 +4134,9 @@ let libroFotosSeleccionadas = [];
 let libroEquiposSeleccionados = [];
 let libroMaterialesSeleccionados = [];
 let libroRubrosSeleccionados = [];
+// Cantidades ya guardadas en el registro que se está editando (rubro_id → cantidad).
+// Permite que marcar/desmarcar un rubro restaure su valor en vez de dejarlo en 0.
+let libroRubrosGuardados = {};
 
 async function cargarLibroObra(){
   if(!currentProyecto) return;
@@ -5491,6 +5494,7 @@ async function abrirModalLibro(){
   if(!currentProyecto){ toast('Selecciona un proyecto primero','error'); return; }
   libroFotosSeleccionadas = [];
   libroRubrosSeleccionados = [];
+  libroRubrosGuardados = {};
 
   // Número de registro
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
@@ -5554,12 +5558,13 @@ function escAttr(texto){
 function renderRubrosLibroModal(rubros){
   if(!rubros.length){ document.getElementById('libroRubrosLista').innerHTML='<div style="color:#676879;font-size:13px">No hay rubros en este proyecto</div>'; return; }
   document.getElementById('libroRubrosLista').innerHTML = rubros.map(r=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8" id="rubro-row-${r.id}">
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8;flex-wrap:wrap" id="rubro-row-${r.id}">
       <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${escaparParaAtributo(r.codigo)}','${escaparParaAtributo(r.descripcion)}','${escaparParaAtributo(r.unidad)}')" style="width:16px;height:16px;cursor:pointer"/>
       <span style="font-size:12px;color:#676879;min-width:30px">${escAttr(r.codigo)}</span>
       <span style="font-size:13px;flex:1">${escAttr(r.descripcion)}</span>
       <span style="font-size:11px;color:#676879">${r.unidad||''}</span>
       <input type="number" id="qty-${r.id}" placeholder="0" step="0.01" min="0" style="width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;display:none" onchange="actualizarCantidadRubro('${r.id}',this.value)"/>
+      <span id="ref-${r.id}" style="flex-basis:100%;font-size:11px;color:#676879;display:none;padding-left:26px"></span>
     </div>`).join('');
 }
 
@@ -5570,7 +5575,11 @@ function toggleRubroLibro(id, codigo, descripcion, unidad){
     libroRubrosSeleccionados = libroRubrosSeleccionados.filter(r=>r.id!==id);
     qtyEl.style.display='none'; qtyEl.value='';
   } else {
-    libroRubrosSeleccionados.push({id, codigo, descripcion, unidad, cantidad:0});
+    // Si el registro en edición ya tenía cantidad para este rubro, restaurarla
+    // en vez de arrancar en 0 (antes se perdía al desmarcar/re-marcar).
+    const guardada = libroRubrosGuardados[id] || 0;
+    libroRubrosSeleccionados.push({id, codigo, descripcion, unidad, cantidad: guardada});
+    if(guardada) qtyEl.value = guardada;
     qtyEl.style.display='block'; qtyEl.focus();
   }
 }
@@ -13798,8 +13807,10 @@ ${incFiscalizacion && observaciones.length ? `
 }
 
 async function abrirEditarRegistro(id){
+  if(bloquearSiCerrado()) return;
   cerrarModal('modalDetalleLibro');
   const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
+  if(!r){ toast('No se pudo cargar el registro (¿sin conexión?)','error'); return; }
   if(r?.estado_aprobacion === 'aprobado'){
     toast('Este registro está aprobado y sellado. Un administrador debe reabrirlo (🔓) antes de editar.','error');
     return;
@@ -13855,10 +13866,14 @@ async function abrirEditarRegistro(id){
   }, 150);
 
   // Cargar rubros y marcar los que ya están en el registro
-  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id',currentProyecto).order('orden');
+  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad,cantidad_ejecutada,cantidad_contrato').eq('proyecto_id',currentProyecto).order('orden');
   const { data: rubrosExistentes } = await sb.from('libro_obra_rubros').select('rubro_id, cantidad_dia').eq('registro_id', id);
-  
-  // Pre-cargar rubros existentes en libroRubrosSeleccionados
+
+  // Pre-cargar rubros existentes en libroRubrosSeleccionados y guardar el
+  // snapshot de cantidades de ESTE registro (lo usa toggleRubroLibro para
+  // restaurar el valor si el usuario desmarca y vuelve a marcar).
+  libroRubrosGuardados = {};
+  (rubrosExistentes||[]).forEach(r=>{ libroRubrosGuardados[r.rubro_id] = parseFloat(r.cantidad_dia)||0; });
   libroRubrosSeleccionados = (rubrosExistentes||[]).map(r=>({
     id: r.rubro_id,
     cantidad: parseFloat(r.cantidad_dia)||0
@@ -13866,13 +13881,25 @@ async function abrirEditarRegistro(id){
 
   renderRubrosLibroModal(rubros||[]);
 
-  // Marcar checkboxes y cantidades de rubros existentes después del render
+  // Marcar checkboxes y cantidades de rubros existentes después del render.
+  const rubroPorId = {};
+  (rubros||[]).forEach(r=>{ rubroPorId[r.id] = r; });
   setTimeout(()=>{
     (rubrosExistentes||[]).forEach(r=>{
       const chk = document.getElementById('chk-'+r.rubro_id);
       const qty = document.getElementById('qty-'+r.rubro_id);
+      const ref = document.getElementById('ref-'+r.rubro_id);
       if(chk){ chk.checked = true; }
-      if(qty){ qty.classList.add('visible'); qty.value = r.cantidad_dia||0; }
+      // El input se muestra con style.display, igual que toggleRubroLibro:
+      // antes se usaba una clase .visible que no existe en el CSS y el input
+      // quedaba oculto con la cantidad invisible.
+      if(qty){ qty.style.display = 'block'; qty.value = r.cantidad_dia||0; }
+      const info = rubroPorId[r.rubro_id];
+      if(ref && info){
+        const u = info.unidad||'';
+        ref.textContent = `Guardado en este registro: ${r.cantidad_dia||0} ${u} · Acumulado del rubro: ${info.cantidad_ejecutada||0} ${u} · Contrato: ${info.cantidad_contrato||0} ${u}`;
+        ref.style.display = 'block';
+      }
     });
   }, 100);
 
