@@ -894,6 +894,21 @@
   </div>
 </div>
 
+<!-- MODAL VISTA PREVIA IMPORTACIÓN DE RUBROS -->
+<div class="modal-overlay" id="modalImportRubros">
+  <div class="modal" style="width:760px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📥 Vista previa de la importación</div>
+      <button class="btn" onclick="cerrarModal('modalImportRubros')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" id="importRubrosBody" style="max-height:65vh;overflow:auto"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalImportRubros')">Cancelar</button>
+      <button class="btn primary" id="btnAplicarImportRubros" onclick="aplicarImportacionRubros()">Aplicar importación</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CONFIGURACIÓN REPORTE DASHBOARD -->
 <div class="modal-overlay" id="modalReporteDashboard">
   <div class="modal" style="width:420px;max-width:98vw">
@@ -3569,6 +3584,11 @@ async function cambiarProyecto(id){
   chatHiloActivo = null;
   if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico = null; }
   cronogramaData = [];
+  // Línea base cacheada: si sobrevive al cambio de proyecto, asegurarLineaBaseActiva()
+  // devuelve la LB del proyecto anterior y el cronograma se escribe con esa LB
+  // (así quedaron 89 filas de Hospitalización colgando de la LB-1 de Parqueadero).
+  window._lbActiva = null;
+  window._lineasBase = null;
   _ensayosFiltro = {estado:'todos', espec:''};
   planoActivo = null;
   pinModo = false;
@@ -3972,12 +3992,6 @@ async function importarRubrosExcel(input){
 
       if(!dataRows.length){ toast('No se encontraron rubros en el Excel','error'); return; }
 
-      // Confirmar importación
-      if(!confirm(`Se importarán ${dataRows.length} rubros al proyecto.\n\n¿Deseas reemplazar los rubros existentes o agregar a los existentes?\n\nAceptar = Reemplazar\nCancelar = Cancelar importación`)){ return; }
-
-      // Eliminar rubros existentes
-      await sb.from('rubros').delete().eq('proyecto_id', currentProyecto);
-
       // Función para parsear fecha Excel (número de serie o string)
       function parseFechaExcel(val){
         if(!val) return null;
@@ -3993,52 +4007,41 @@ async function importarRubrosExcel(input){
         return null;
       }
 
-      const payload = dataRows.map((r,i)=>{
-        const cantidad = parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0;
-        const precio = parseFloat(String(r[colIdx.precio]).replace(',','.'))||0;
-        return {
-          proyecto_id: currentProyecto,
-          orden: i+1,
-          codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
-          descripcion: String(r[colIdx.descrip]).trim(),
-          unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
-          cantidad_contrato: cantidad,
-          precio_unitario: precio,
-          fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
-          fecha_fin: parseFechaExcel(r[colIdx.fechaFin]),
-          estado: 'planificado',
-          cantidad_ejecutada: 0
-        };
+      // Filas normalizadas. filaExcel es el número de fila real de la hoja,
+      // para que los rechazos señalen exactamente dónde está el problema.
+      const filas = dataRows.map((r,i)=>({
+        filaExcel: rows.indexOf(r)+1,
+        orden: i+1,
+        codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
+        descripcion: String(r[colIdx.descrip]).trim(),
+        unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
+        cantidad_contrato: parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0,
+        precio_unitario: parseFloat(String(r[colIdx.precio]).replace(',','.'))||0,
+        fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
+        fecha_fin: parseFechaExcel(r[colIdx.fechaFin])
+      }));
+
+      // RECHAZOS: la clave natural es (proyecto, código). Sin código no hay
+      // forma de saber si un rubro ya existe; con código repetido, tampoco.
+      const sinCodigo = filas.filter(f=>!f.codigo);
+      if(sinCodigo.length){
+        alert(`🛑 IMPORTACIÓN RECHAZADA\n\n${sinCodigo.length} fila(s) sin código. Cada rubro necesita un código único dentro del proyecto.\n\nFilas del Excel: ${sinCodigo.map(f=>f.filaExcel).join(', ')}`);
+        return;
+      }
+      const primeraFila = {}; const repetidos = [];
+      filas.forEach(f=>{
+        if(primeraFila[f.codigo]) repetidos.push(`"${f.codigo}" (filas ${primeraFila[f.codigo]} y ${f.filaExcel})`);
+        else primeraFila[f.codigo] = f.filaExcel;
       });
-
-      const { error } = await sb.from('rubros').insert(payload);
-      if(error){ toast('Error importando: '+error.message,'error'); return; }
-
-      // Sincronizar fechas con cronograma_rubros para la Curva S
-      const { data: rubrosInsertados } = await sb.from('rubros')
-        .select('id,orden,fecha_inicio,fecha_fin,monto_contrato')
-        .eq('proyecto_id', currentProyecto).order('orden');
-
-      const totalMonto = rubrosInsertados.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
-
-      const cronPayload = rubrosInsertados
-        .filter(r=>r.fecha_inicio||r.fecha_fin)
-        .map(r=>({
-          proyecto_id: currentProyecto,
-          rubro_id: r.id,
-          fecha_inicio: r.fecha_inicio,
-          fecha_fin: r.fecha_fin,
-          peso_pct: totalMonto>0 ? ((r.monto_contrato||0)/totalMonto*100) : 0
-        }));
-
-      if(cronPayload.length){
-        const lb = await asegurarLineaBaseActiva();
-        await sb.from('cronograma_rubros').delete().eq('proyecto_id', currentProyecto).eq('linea_base_id', lb.id);
-        await sb.from('cronograma_rubros').insert(cronPayload.map(c=>({...c, linea_base_id: lb.id})));
+      if(repetidos.length){
+        alert(`🛑 IMPORTACIÓN RECHAZADA\n\nCódigo repetido dentro del Excel:\n• ${repetidos.join('\n• ')}`);
+        return;
       }
 
-      toast(`✅ ${payload.length} rubros importados correctamente`,'success');
-      cargarRubros();
+      // VISTA PREVIA: nada se escribe hasta que el usuario confirma.
+      const plan = await construirPlanImportacion(filas);
+      if(!plan) return;
+      renderPreviewImportacion(plan);
 
     } catch(err){
       console.error(err);
@@ -4046,6 +4049,179 @@ async function importarRubrosExcel(input){
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ── IMPORTACIÓN DE RUBROS: UPSERT POR (proyecto_id, codigo) ──
+// La importación NUNCA borra rubros. Compara el Excel contra los existentes
+// por código, actualiza los que cambian, inserta los nuevos y conserva los
+// ausentes. Antes hacía delete-all + insert: el delete fallaba por las FK del
+// libro de obra, el error se ignoraba y el insert duplicaba todo el proyecto.
+
+const CAMPOS_IMPORT_RUBRO = [
+  ['descripcion','Descripción'], ['unidad','Unidad'],
+  ['cantidad_contrato','Cantidad'], ['precio_unitario','P.U.'],
+  ['fecha_inicio','Inicio'], ['fecha_fin','Fin']
+];
+
+function importValorIgual(campo, a, b){
+  if(campo==='cantidad_contrato' || campo==='precio_unitario'){
+    return (Number(a)||0).toFixed(4) === (Number(b)||0).toFixed(4);
+  }
+  return String(a??'').trim() === String(b??'').trim();
+}
+
+// Construye el plan: qué se actualiza (y qué cambia), qué es nuevo, qué se
+// conserva por estar ausente del Excel, y qué merece advertencia.
+async function construirPlanImportacion(filas){
+  const { data: existentes, error: e1 } = await sb.from('rubros').select('*')
+    .eq('proyecto_id', currentProyecto);
+  if(e1){ toast('No se pudieron leer los rubros actuales: '+e1.message,'error'); return null; }
+
+  // Señales de ejecución: cantidad trabajada, planillas aprobadas/pagadas con
+  // cantidad, u órdenes de cambio aprobadas. Un cambio de precio o cantidad
+  // en esos rubros normalmente va por orden de cambio, no por importación.
+  const { data: enPlan, error: e2 } = await sb.from('planilla_rubros')
+    .select('rubro_id,cantidad_acumulada,planillas_pago!inner(estado,proyecto_id)')
+    .eq('planillas_pago.proyecto_id', currentProyecto)
+    .in('planillas_pago.estado', PLANILLAS_COMPROMETIDAS);
+  if(e2){ toast('No se pudieron leer las planillas: '+e2.message,'error'); return null; }
+  const { data: enOC, error: e3 } = await sb.from('orden_cambio_items')
+    .select('rubro_id,ordenes_cambio!inner(estado,proyecto_id)')
+    .eq('ordenes_cambio.proyecto_id', currentProyecto)
+    .eq('ordenes_cambio.estado', 'aprobada');
+  if(e3){ toast('No se pudieron leer las órdenes de cambio: '+e3.message,'error'); return null; }
+  const conPlanilla = new Set((enPlan||[]).filter(p=>(p.cantidad_acumulada||0)>0).map(p=>p.rubro_id));
+  const conOC = new Set((enOC||[]).map(o=>o.rubro_id));
+
+  const porCodigo = {};
+  (existentes||[]).forEach(r=>{ if(r.codigo) porCodigo[r.codigo] = r; });
+
+  const actualizar = [], nuevos = []; let sinCambios = 0;
+  filas.forEach(f=>{
+    const ex = porCodigo[f.codigo];
+    if(!ex){ nuevos.push(f); return; }
+    const cambios = CAMPOS_IMPORT_RUBRO
+      .filter(([k])=>!importValorIgual(k, ex[k], f[k]))
+      .map(([k,label])=>({campo:k, label, antes:ex[k], despues:f[k]}));
+    if(!cambios.length && ex.orden === f.orden){ sinCambios++; return; }
+    const tieneEjecucion = (ex.cantidad_ejecutada||0)>0 || conPlanilla.has(ex.id) || conOC.has(ex.id);
+    const tocaDinero = cambios.some(c=>c.campo==='cantidad_contrato'||c.campo==='precio_unitario');
+    actualizar.push({ ex, f, cambios, advertencia: tieneEjecucion && tocaDinero,
+      motivo: tieneEjecucion ? [
+        (ex.cantidad_ejecutada||0)>0 ? `${ex.cantidad_ejecutada} ${ex.unidad||''} ejecutados` : null,
+        conPlanilla.has(ex.id) ? 'en planilla aprobada/pagada' : null,
+        conOC.has(ex.id) ? 'en orden de cambio aprobada' : null
+      ].filter(Boolean).join(', ') : '' });
+  });
+  const codigosExcel = new Set(filas.map(f=>f.codigo));
+  const ausentes = (existentes||[]).filter(r=>!r.codigo || !codigosExcel.has(r.codigo));
+
+  return { filas, existentes: existentes||[], actualizar, nuevos, ausentes, sinCambios };
+}
+
+function renderPreviewImportacion(plan){
+  window._planImportRubros = plan;
+  const fmtV = (k,v)=> v==null||v==='' ? '∅'
+    : (k==='cantidad_contrato'||k==='precio_unitario') ? Number(v).toLocaleString('es-EC',{maximumFractionDigits:4})
+    : escAttr(String(v).length>60 ? String(v).slice(0,57)+'…' : String(v));
+  const conAdv = plan.actualizar.filter(a=>a.advertencia).length;
+  const soloOrden = plan.actualizar.filter(a=>!a.cambios.length).length;
+
+  const tarjeta = (n,label,color)=>`<div style="background:${color};border-radius:8px;padding:10px 12px;text-align:center;min-width:110px"><div style="font-size:20px;font-weight:800">${n}</div><div style="font-size:11px;color:#676879">${label}</div></div>`;
+  let html = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      ${tarjeta(plan.actualizar.length,'a actualizar','#f0f7ff')}
+      ${tarjeta(plan.nuevos.length,'nuevos','#e6f4ee')}
+      ${tarjeta(plan.ausentes.length,'en la tabla, no en el Excel (se conservan)','#f5f6f8')}
+      ${tarjeta(plan.sinCambios,'sin cambios','#f5f6f8')}
+      ${conAdv ? tarjeta(conAdv,'con advertencia','#fdf6e3') : ''}
+    </div>
+    <div style="font-size:12px;color:#676879;margin-bottom:12px">Nada se escribe hasta que pulses <b>Aplicar importación</b>. La importación nunca borra rubros.</div>`;
+
+  if(conAdv){
+    html += `<div style="background:#fdf6e3;border:1px solid #f0d98c;border-radius:8px;padding:10px 12px;font-size:12px;color:#7a5c00;margin-bottom:12px">
+      ⚠️ <b>${conAdv} rubro(s) con ejecución</b> cambian de precio o cantidad. Un cambio de precio en un rubro ejecutado normalmente va por <b>orden de cambio</b>, no por importación. Revísalos antes de aplicar.</div>`;
+  }
+
+  if(plan.actualizar.length){
+    html += `<h4 style="margin:12px 0 6px;font-size:13px">✏️ A actualizar (${plan.actualizar.length}${soloOrden?`, ${soloOrden} solo cambian de orden`:''})</h4>
+      <div style="display:flex;flex-direction:column;gap:6px">` +
+      plan.actualizar.filter(a=>a.cambios.length).map(a=>`
+      <div style="border:1px solid ${a.advertencia?'#f0d98c':'#e6e9ef'};background:${a.advertencia?'#fffbf0':'#fff'};border-radius:6px;padding:8px 10px;font-size:12px">
+        <div><b>[${escAttr(a.ex.codigo)}]</b> ${escAttr(String(a.ex.descripcion).slice(0,70))}${a.advertencia?` <span style="color:#b8860b;font-weight:600">⚠️ ${escAttr(a.motivo)}</span>`:''}</div>
+        <div style="color:#676879;margin-top:3px">${a.cambios.map(c=>`${c.label}: ${fmtV(c.campo,c.antes)} → <b style="color:#1a1a2e">${fmtV(c.campo,c.despues)}</b>`).join(' · ')}</div>
+      </div>`).join('') + `</div>`;
+  }
+  if(plan.nuevos.length){
+    html += `<h4 style="margin:14px 0 6px;font-size:13px">➕ Nuevos (${plan.nuevos.length})</h4>
+      <div style="font-size:12px;color:#1a1a2e;line-height:1.7">` +
+      plan.nuevos.map(f=>`<div><b>[${escAttr(f.codigo)}]</b> ${escAttr(String(f.descripcion).slice(0,70))} · ${escAttr(f.unidad||'')} · cant ${fmtV('cantidad_contrato',f.cantidad_contrato)} · P.U. ${fmtV('precio_unitario',f.precio_unitario)}</div>`).join('') + `</div>`;
+  }
+  if(plan.ausentes.length){
+    html += `<h4 style="margin:14px 0 6px;font-size:13px">📌 En la tabla y no en el Excel — se conservan (${plan.ausentes.length})</h4>
+      <div style="font-size:12px;color:#676879;line-height:1.7">` +
+      plan.ausentes.map(r=>`<div><b>[${escAttr(r.codigo||'∅')}]</b> ${escAttr(String(r.descripcion).slice(0,70))}${(r.cantidad_ejecutada||0)>0?` · ${r.cantidad_ejecutada} ejecutados`:''}</div>`).join('') + `</div>`;
+  }
+  if(!plan.actualizar.length && !plan.nuevos.length){
+    html += `<div style="text-align:center;color:#676879;padding:18px">El Excel no trae ningún cambio respecto a la tabla actual.</div>`;
+  }
+
+  document.getElementById('importRubrosBody').innerHTML = html;
+  const btn = document.getElementById('btnAplicarImportRubros');
+  btn.disabled = !plan.actualizar.length && !plan.nuevos.length;
+  btn.textContent = 'Aplicar importación';
+  document.getElementById('modalImportRubros').classList.add('show');
+}
+
+// Aplica el plan. Cada llamada comprueba su error; al primer fallo se detiene
+// e informa cuánto alcanzó a aplicarse (PostgREST no ofrece transacción).
+async function aplicarImportacionRubros(){
+  const plan = window._planImportRubros;
+  if(!plan) return;
+  if(!puedeGestionarRubros()){ toast('Solo admin o fiscalizador pueden importar rubros','error'); return; }
+  if(bloquearSiCerrado()) return;
+  const btn = document.getElementById('btnAplicarImportRubros');
+  btn.disabled = true; btn.textContent = 'Aplicando...';
+  const fallo = (msg)=>{ toast(msg,'error'); btn.disabled=false; btn.textContent='Aplicar importación'; };
+
+  // 1) Actualizaciones, una a una (para poder señalar la que falle)
+  let actualizados = 0;
+  for(const a of plan.actualizar){
+    const payload = { orden: a.f.orden, updated_at: new Date().toISOString() };
+    a.cambios.forEach(c=>{ payload[c.campo] = a.f[c.campo]; });
+    const { error } = await sb.from('rubros').update(payload).eq('id', a.ex.id);
+    if(error){ fallo(`Error actualizando [${a.ex.codigo}]: ${error.message}. Aplicados ${actualizados} de ${plan.actualizar.length}; ningún nuevo insertado.`); cargarRubros(); return; }
+    actualizados++;
+  }
+
+  // 2) Nuevos, en un solo insert
+  if(plan.nuevos.length){
+    const { error } = await sb.from('rubros').insert(plan.nuevos.map(f=>({
+      proyecto_id: currentProyecto, orden: f.orden, codigo: f.codigo, descripcion: f.descripcion,
+      unidad: f.unidad, cantidad_contrato: f.cantidad_contrato, precio_unitario: f.precio_unitario,
+      fecha_inicio: f.fecha_inicio, fecha_fin: f.fecha_fin, estado: 'planificado', cantidad_ejecutada: 0
+    })));
+    if(error){ fallo(`Actualizados ${actualizados}, pero falló el alta de los ${plan.nuevos.length} nuevos: ${error.message}`); cargarRubros(); return; }
+  }
+
+  // 3) Cronograma de la línea base ACTIVA: upsert por (rubro, LB), sin borrar
+  //    nada, y peso recomputado sobre todos los rubros del proyecto.
+  const lb = await asegurarLineaBaseActiva();
+  const { data: todos, error: e4 } = await sb.from('rubros')
+    .select('id,fecha_inicio,fecha_fin,monto_contrato').eq('proyecto_id', currentProyecto);
+  if(e4){ fallo('Rubros aplicados, pero no se pudo recalcular el cronograma: '+e4.message); cargarRubros(); return; }
+  const total = (todos||[]).reduce((s,r)=>s+(r.monto_contrato||0),0);
+  const { error: e5 } = await sb.from('cronograma_rubros').upsert((todos||[]).map(r=>({
+    rubro_id: r.id, proyecto_id: currentProyecto, linea_base_id: lb.id,
+    fecha_inicio: r.fecha_inicio, fecha_fin: r.fecha_fin,
+    peso_pct: total>0 ? Math.round((r.monto_contrato||0)/total*10000)/100 : 0
+  })), {onConflict:'rubro_id,linea_base_id'});
+  if(e5){ fallo('Rubros aplicados, pero falló el cronograma de la LB-'+lb.numero+': '+e5.message); cargarRubros(); return; }
+
+  window._planImportRubros = null;
+  cerrarModal('modalImportRubros');
+  toast(`✅ Importación aplicada: ${actualizados} actualizados, ${plan.nuevos.length} nuevos, ${plan.ausentes.length} conservados · cronograma LB-${lb.numero}`,'success');
+  cargarRubros();
 }
 
 function actualizarMontoRubro(){
