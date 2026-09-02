@@ -102,15 +102,23 @@ Deno.serve(async (req) => {
     const [rubR, cronR, lbR, planR, garR, obsR, solR] = await Promise.all([
       sb.from('rubros').select('id,proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
       sb.from('cronograma_rubros').select('proyecto_id,rubro_id,fecha_inicio,fecha_fin,linea_base_id').in('proyecto_id', ids),
-      sb.from('lineas_base').select('id').eq('activa', true).in('proyecto_id', ids),
+      sb.from('lineas_base').select('id,proyecto_id').eq('activa', true).in('proyecto_id', ids),
       sb.from('planillas_pago').select('proyecto_id,estado').in('estado', ['enviada', 'en_revision']).in('proyecto_id', ids),
       sb.from('garantias').select('proyecto_id,vigencia_hasta').eq('estado', 'vigente').in('proyecto_id', ids),
       sb.from('observaciones').select('proyecto_id,created_at').eq('estado', 'abierta').in('proyecto_id', ids),
       sb.from('solicitudes').select('proyecto_id').in('estado', ['pendiente', 'en_revision']).in('proyecto_id', ids)
     ]);
 
-    const setLBs = new Set((lbR.data || []).map(l => l.id));
-    const cron = (cronR.data || []).filter(c => !c.linea_base_id || setLBs.has(c.linea_base_id));
+    // Una fila de cronograma cuenta solo si su LB es la activa DEL PROYECTO de la
+    // fila (igual que Curva S y Dashboard). Antes bastaba con que fuera cualquier
+    // LB activa de la cartera: 89 filas de Hospitalización colgadas de la LB de
+    // Parqueadero se sumaban dos veces. Sin LB activa, se leen todas (como en la app).
+    const lbPorProyecto: Record<string, string> = {};
+    (lbR.data || []).forEach(l => { lbPorProyecto[l.proyecto_id] = l.id; });
+    const cron = (cronR.data || []).filter(c => {
+      const lbActiva = lbPorProyecto[c.proyecto_id];
+      return lbActiva ? c.linea_base_id === lbActiva : true;
+    });
 
     type Ind = {
       nombre: string; estado: string; vigente: number; ejecutado: number; plan: number; ev: number;
