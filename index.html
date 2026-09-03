@@ -2036,6 +2036,9 @@
         </button>
       </div>
 
+      <!-- Aviso: ítems cuyo precio vigente difiere del guardado (solo en edición) -->
+      <div id="planPreciosAviso" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#7a4b00"></div>
+
       <!-- Tabla de rubros -->
       <div style="overflow-x:auto;margin-bottom:16px">
         <table>
@@ -3592,6 +3595,7 @@ async function cambiarProyecto(id){
   _ensayosFiltro = {estado:'todos', espec:''};
   planoActivo = null;
   pinModo = false;
+  limpiarEstadoProyecto();
   // Recalcular rol efectivo para este proyecto
   await actualizarRolEfectivo(id);
   // Recargar proyecto desde BD para tener módulos frescos
@@ -3622,6 +3626,41 @@ async function cambiarProyecto(id){
   // de modo que "atrás" regresa a la misma sección del proyecto anterior.
   // Si hubo redirección (accesos/módulos), navTo ya registró la entrada.
   if(!_restaurandoHistorial && currentPage===paginaAntes) registrarNavegacion(currentPage);
+}
+
+// Todo global que se llena POR PROYECTO se limpia aquí, explícitamente, al
+// cambiar de proyecto. No se confía en que cada módulo lo resetee al abrirse:
+// un caché que sobrevive al cambio termina escribiendo datos de un proyecto
+// en otro (caso _lbActiva). Lo que es estado de UI (pestañas, filtros) o
+// global del usuario (proyectos, notiDatos, _resumenesCartera) NO va aquí.
+function limpiarEstadoProyecto(){
+  // Curva S
+  window._curvaGhostRows = null; window._curvaGhostNum = null;
+  // Planillas de pago
+  window._antCfg = null; window._editandoPlanillaId = null; window._planillaNumero = null;
+  window._planillaActiva = null; window._planillaAccion = null; window._planillaPreciosGuardados = null;
+  // Contrato: reajuste, extracción de PDF, garantías, actas
+  window._reajusteTerminos = []; window._extraccion = null; window._editandoGarantiaId = null; window._actaTipo = null;
+  // Observaciones y planos
+  window._obsActiva = null; window._resaltarObsId = null; window._obsNuevaPlano = null; window._obsNuevaPin = {x:null, y:null};
+  window._planosProyecto = []; _selPin = null; _selPinPdf = {doc:null, url:null, pagina:1};
+  pdfDoc = null; pdfPaginaActual = 1; obsFotosPendientes = [];
+  // Solicitudes, ensayos, importador de rubros, archivos, chat, miembros
+  window._solActiva = null; window._reensayoDe = null; _ensayoTipos = []; _ensayoEspecs = [];
+  window._planImportRubros = null; window._editDescripcionId = null; window._invitarCanalId = null; window._miembroProyectoId = null;
+  // Libro de obra
+  window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
+  libroRubrosGuardados = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
+  // Órdenes de cambio
+  _ocItems = []; _ocEditando = null; _ocRubros = [];
+  // Formatos de calidad (editor de plantilla y llenado)
+  _camposPlantillaActual = []; _plantillaLlenadoActual = null; _respuestaLlenadoId = null; _valoresLlenado = {}; _fotosLlenadoNuevas = {};
+  window._fotosLlenadoExistentes = []; window._residenteLlenadoNombre = null;
+  // Materiales
+  window._editStockId = null;
+  // SST
+  sstConfigActual = null; sstChecklistRespuestasCache = {};
+  sstCache = { riesgos:[], eppMatriz:[], eppEntregas:[], capacitaciones:[], incidentes:[], ptes:[], examMatriz:[], examRegistros:[] };
 }
 
 function aplicarModulosProyecto(modulos){
@@ -11047,6 +11086,7 @@ async function cargarPlanillas(){
 async function abrirModalNuevaPlanilla(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   window._editandoPlanillaId = null;
+  window._planillaPreciosGuardados = null;
   // Esperar a que el modal esté en el DOM
   await new Promise(r=>setTimeout(r,0));
   const modal = document.getElementById('modalNuevaPlanilla');
@@ -11215,16 +11255,29 @@ async function cargarRubrosPlanilla(){
     (libroItems||[]).forEach(i=>{ prodPeriodo[i.rubro_id] = (prodPeriodo[i.rubro_id]||0) + (i.cantidad_dia||0); });
   }
 
+  // Precio por ítem — regla de snapshot:
+  //  · EDICIÓN: se conserva el precio_unitario guardado en planilla_rubros. El
+  //    precio vigente de rubros solo se muestra como referencia y se aplica
+  //    únicamente con el botón explícito (por ítem o por planilla), que queda
+  //    registrado en planilla_historial al guardar.
+  //  · PLANILLA NUEVA (o rubro sin fila guardada): toma el precio vigente.
+  //  Retención y anticipo no dependen de esto: se calculan sobre el total con
+  //  las constantes del contrato (ver recalcularLiquidoPlanilla / retencionDePlanilla).
+  const guardados = window._editandoPlanillaId ? (window._planillaPreciosGuardados||{}) : null;
+
   // Renderizar tabla
   let total = 0;
   const rows = rubros.map(r=>{
     const cantAnterior = cantAnt[r.id]||0;
     const cantPeriodo = prodPeriodo[r.id]||0;
     const cantAcumulada = cantAnterior + cantPeriodo;
-    const montoPeriodo = cantPeriodo * (r.precio_unitario||0);
+    const precioVigente = Number(r.precio_unitario)||0;
+    const precioGuardado = (guardados && guardados[r.id]!=null) ? Number(guardados[r.id]) : null;
+    const precio = precioGuardado ?? precioVigente;
+    const montoPeriodo = cantPeriodo * precio;
     total += montoPeriodo;
     const pct = r.cantidad_contrato>0 ? Math.min(cantAcumulada/r.cantidad_contrato*100,100) : 0;
-    return `<tr data-rubro-id="${r.id}" data-precio="${r.precio_unitario||0}" data-cant-ant="${cantAnterior}">
+    return `<tr data-rubro-id="${r.id}" data-codigo="${escAttr(r.codigo||'')}" data-precio="${precio}" data-precio-vigente="${precioVigente}" data-precio-guardado="${precioGuardado ?? ''}" data-cant-ant="${cantAnterior}">
       <td style="font-size:11px;white-space:nowrap;color:#676879">${r.codigo||'—'}</td>
       <td style="font-size:11px;max-width:160px">${escAttr(r.descripcion)}</td>
       <td style="text-align:center">${r.unidad||'—'}</td>
@@ -11233,24 +11286,30 @@ async function cargarRubrosPlanilla(){
       <td style="text-align:center">
         <input type="number" value="${cantPeriodo.toFixed(3)}" min="0" step="0.001"
           style="width:90px;padding:4px;border:1px solid #c5c7d4;border-radius:6px;font-size:11px;text-align:right"
-          onchange="recalcularFilaPlanilla(this,'${r.id}',${r.precio_unitario||0})"/>
+          onchange="recalcularFilaPlanilla(this,'${r.id}')"/>
       </td>
       <td style="text-align:right">${Number(cantAcumulada).toLocaleString('es-EC',{maximumFractionDigits:3})}</td>
-      <td style="text-align:right;font-weight:600;color:#0073ea" id="monto-${r.id}">$${Number(montoPeriodo).toLocaleString('es-EC',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;font-weight:600;color:#0073ea"><span id="monto-${r.id}">$${Number(montoPeriodo).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><div class="precio-ref" style="font-size:10px;font-weight:400;white-space:nowrap"></div></td>
     </tr>`;
   }).join('');
 
   document.getElementById('planRubrosTabla').innerHTML = rows;
-  document.getElementById('planTotal').textContent = '$'+total.toLocaleString('es-EC',{minimumFractionDigits:2});
+  document.getElementById('planTotal').textContent = '$'+total.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]').forEach(renderRefPrecioPlanilla);
+  actualizarAvisoPreciosPlanilla();
   btn.disabled=false; btn.textContent='Cargar rubros';
 }
 
-function recalcularFilaPlanilla(input, rubroId, precio){
+function recalcularFilaPlanilla(input, rubroId){
   const cant = parseFloat(input.value)||0;
+  // El precio vive en la fila (data-precio): guardado en edición, vigente en nueva,
+  // o el vigente si el usuario lo aplicó explícitamente.
+  const precio = parseFloat(input.closest('tr')?.dataset.precio)||0;
   const monto = cant * precio;
-  document.getElementById('monto-'+rubroId).textContent = '$'+monto.toLocaleString('es-EC',{minimumFractionDigits:2});
+  document.getElementById('monto-'+rubroId).textContent = '$'+monto.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
   // Recalcular total SIEMPRE desde los datos (cantidad × precio), nunca desde texto formateado
-  document.getElementById('planTotal').textContent = '$'+calcularTotalPlanilla().toLocaleString('es-EC',{minimumFractionDigits:2});
+  document.getElementById('planTotal').textContent = '$'+calcularTotalPlanilla().toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  renderRefPrecioPlanilla(input.closest('tr'));
   recalcularLiquidoPlanilla();
 }
 
@@ -11262,6 +11321,77 @@ function calcularTotalPlanilla(){
     total += cant * precio;
   });
   return total;
+}
+
+// ── Precio guardado vs. vigente (solo en edición) ──
+const fmtPU = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:4});
+// Precio efectivo con el que se valoró una fila guardada. La columna
+// planilla_rubros.precio_unitario se almacena con 2 decimales, pero monto_periodo
+// se calculó con el precio completo (rubros.precio_unitario tiene 4): con cantidad,
+// el cociente recupera ese precio; sin cantidad, solo queda la columna.
+function precioGuardadoPlanillaRubro(r){
+  const cant = Number(r.cantidad_periodo)||0, monto = Number(r.monto_periodo);
+  if(cant && Number.isFinite(monto)) return monto / cant;
+  return Number(r.precio_unitario)||0;
+}
+function filaPlanilla(rubroId){ return document.querySelector(`#planRubrosTabla tr[data-rubro-id="${rubroId}"]`); }
+// true si la fila tiene precio guardado y difiere del vigente
+function precioDifierePlanilla(row){
+  if(!row || row.dataset.precioGuardado==='' || row.dataset.precioGuardado==null) return false;
+  return Math.abs(parseFloat(row.dataset.precioGuardado) - parseFloat(row.dataset.precioVigente)) > 5e-5;
+}
+function renderRefPrecioPlanilla(row){
+  const el = row.querySelector('.precio-ref');
+  if(!el) return;
+  if(!precioDifierePlanilla(row)){ el.innerHTML=''; return; }
+  const id = row.dataset.rubroId;
+  const g = fmtPU(row.dataset.precioGuardado), v = fmtPU(row.dataset.precioVigente);
+  el.innerHTML = row.dataset.precioActualizado==='1'
+    ? `<span style="color:#00854d">P.U. ${v} (actualizado; guardado: ${g})</span> <button type="button" class="btn" style="padding:1px 6px;font-size:10px" onclick="restaurarPrecioGuardadoPlanilla('${id}')">deshacer</button>`
+    : `<span style="color:#676879">P.U. ${g}</span> · <span style="color:#e2445c">vigente: ${v}</span> <button type="button" class="btn" style="padding:1px 6px;font-size:10px" onclick="aplicarPrecioVigentePlanilla('${id}')">Actualizar</button>`;
+}
+function aplicarPrecioVigentePlanilla(rubroId){
+  const row = filaPlanilla(rubroId);
+  if(!precioDifierePlanilla(row)) return;
+  row.dataset.precio = row.dataset.precioVigente;
+  row.dataset.precioActualizado = '1';
+  recalcularFilaPlanilla(row.querySelector('input'), rubroId);
+  actualizarAvisoPreciosPlanilla();
+}
+function restaurarPrecioGuardadoPlanilla(rubroId){
+  const row = filaPlanilla(rubroId);
+  if(!precioDifierePlanilla(row)) return;
+  row.dataset.precio = row.dataset.precioGuardado;
+  delete row.dataset.precioActualizado;
+  recalcularFilaPlanilla(row.querySelector('input'), rubroId);
+  actualizarAvisoPreciosPlanilla();
+}
+function actualizarPreciosVigentesPlanilla(){
+  document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]').forEach(row=>{
+    if(precioDifierePlanilla(row) && row.dataset.precioActualizado!=='1') aplicarPrecioVigentePlanilla(row.dataset.rubroId);
+  });
+}
+function restaurarPreciosGuardadosPlanilla(){
+  document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]').forEach(row=>{
+    if(row.dataset.precioActualizado==='1') restaurarPrecioGuardadoPlanilla(row.dataset.rubroId);
+  });
+}
+// Filas con precio actualizado al vigente en esta edición: [{codigo, anterior, nuevo}]
+function preciosActualizadosPlanilla(){
+  return [...document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]')]
+    .filter(row=>row.dataset.precioActualizado==='1')
+    .map(row=>({codigo:row.dataset.codigo||'', anterior:parseFloat(row.dataset.precioGuardado), nuevo:parseFloat(row.dataset.precioVigente)}));
+}
+function actualizarAvisoPreciosPlanilla(){
+  const av = document.getElementById('planPreciosAviso');
+  if(!av) return;
+  const filas = [...document.querySelectorAll('#planRubrosTabla tr[data-rubro-id]')].filter(precioDifierePlanilla);
+  const pend = filas.filter(r=>r.dataset.precioActualizado!=='1');
+  if(!filas.length){ av.style.display='none'; av.innerHTML=''; return; }
+  av.style.display='flex';
+  av.innerHTML = `<span>⚠ ${filas.length} ítem(s) con precio vigente distinto al guardado en esta planilla. Se conservan los precios guardados${pend.length<filas.length?` (${filas.length-pend.length} actualizado(s) al vigente)`:''}.</span>
+    <button type="button" class="btn" style="padding:3px 10px;font-size:12px" onclick="actualizarPreciosVigentesPlanilla()" ${pend.length?'':'disabled'}>Actualizar todos al vigente</button>
+    ${pend.length<filas.length?`<button type="button" class="btn" style="padding:3px 10px;font-size:12px" onclick="restaurarPreciosGuardadosPlanilla()">Volver a los guardados</button>`:''}`;
 }
 
 async function editarPlanilla(id){
@@ -11284,13 +11414,16 @@ async function editarPlanilla(id){
   document.querySelector('#modalNuevaPlanilla .modal-title').textContent = `✏️ Editar Planilla N° ${p.numero}`;
   cerrarModal('modalVerPlanilla');
   document.getElementById('modalNuevaPlanilla').classList.add('show');
-  // Cargar rubros existentes
+  // Snapshot de precios: lo guardado en planilla_rubros manda en edición
+  const { data: rubrosGuardados } = await sb.from('planilla_rubros').select('*').eq('planilla_id',id);
+  window._planillaPreciosGuardados = {};
+  (rubrosGuardados||[]).forEach(r=>{ window._planillaPreciosGuardados[r.rubro_id] = precioGuardadoPlanillaRubro(r); });
+  // Cargar rubros existentes (con los precios guardados)
   await cargarRubrosPlanilla();
   // Sobrescribir cantidades con las guardadas
-  const { data: rubrosGuardados } = await sb.from('planilla_rubros').select('*').eq('planilla_id',id);
   (rubrosGuardados||[]).forEach(r=>{
     const input = document.querySelector(`#planRubrosTabla tr[data-rubro-id="${r.rubro_id}"] input`);
-    if(input){ input.value = r.cantidad_periodo; recalcularFilaPlanilla(input, r.rubro_id, r.precio_unitario); }
+    if(input){ input.value = r.cantidad_periodo; recalcularFilaPlanilla(input, r.rubro_id); }
   });
   // Restaurar amortización guardada si el modo es manual
   if(window._antCfg?.modo === 'manual' && p.amortizacion_anticipo > 0){
@@ -11350,9 +11483,20 @@ async function guardarPlanilla(estado){
     });
     if(rubrosPayload2.length) await sb.from('planilla_rubros').insert(rubrosPayload2);
     await sb.from('planilla_historial').insert({planilla_id:window._editandoPlanillaId,accion:'Planilla editada',autor_id:currentUser?.id});
+    // Registro explícito de los ítems cuyo precio se actualizó al vigente
+    const preciosAct = preciosActualizadosPlanilla();
+    if(preciosAct.length){
+      await sb.from('planilla_historial').insert({
+        planilla_id: window._editandoPlanillaId,
+        accion: `Precio unitario actualizado al vigente en ${preciosAct.length} ítem(s)`,
+        comentario: preciosAct.map(a=>`${a.codigo||'—'}: ${fmtPU(a.anterior)} → ${fmtPU(a.nuevo)}`).join(' · '),
+        autor_id: currentUser?.id
+      });
+    }
     toast('Planilla actualizada ✓','success');
     btn.disabled=false; btn.textContent='Guardar';
     window._editandoPlanillaId=null;
+    window._planillaPreciosGuardados=null;
     document.querySelector('#modalNuevaPlanilla .modal-title').textContent='📊 Nueva Planilla de Pago — N° ';
     cerrarModal('modalNuevaPlanilla');
     cargarPlanillas();
