@@ -5929,7 +5929,9 @@ async function cargarCurvaS(){
     const previas = (lbs||[]).filter(l=>l.numero < window._lbActiva.numero);
     if(previas.length){
       const lbPrev = previas[previas.length-1];
-      const { data: prevRows } = await sb.from('cronograma_rubros').select('fecha_inicio,fecha_fin,peso_pct')
+      // Solo fechas + rubro: la curva previa pondera por costo en vivo (monto_contrato
+      // del rubro / total), NUNCA por peso_pct almacenado, que puede venir NULL.
+      const { data: prevRows } = await sb.from('cronograma_rubros').select('rubro_id,fecha_inicio,fecha_fin')
         .eq('proyecto_id', currentProyecto).eq('linea_base_id', lbPrev.id);
       if(prevRows&&prevRows.length){ window._curvaGhostRows = prevRows; window._curvaGhostNum = lbPrev.numero; }
     }
@@ -6356,7 +6358,7 @@ function calcularDatosGraficoCurvaS(rubros, modo){
     return p.toLocaleDateString('es-EC',{month:'short',year:'2-digit'});
   });
 
-  const planArr=[], realArr=[], finPeriodos=[];
+  const planArr=[], realArr=[], finPeriodos=[], fechasPlan=[];
   periodos.forEach(p=>{
     const finPeriodo = modo==='semanas'
       ? new Date(p.getTime()+6*86400000)
@@ -6370,6 +6372,7 @@ function calcularDatosGraficoCurvaS(rubros, modo){
     // tienen plan, evaluado a fin de periodo.
     const fechaCorte = finPeriodo<=hoy ? finPeriodo : (p<=hoy ? hoy : null);
     const fechaPlan = fechaCorte || finPeriodo;
+    fechasPlan.push(fechaPlan);
 
     let acumPlan=0, acumReal=0;
     conFechas.forEach(r=>{
@@ -6392,21 +6395,32 @@ function calcularDatosGraficoCurvaS(rubros, modo){
     realArr.push(fechaCorte ? parseFloat(Math.min(acumReal,100).toFixed(2)) : null);
   });
 
-  return { labels, planArr, realArr, sinCronograma:false, finPeriodos };
+  return { labels, planArr, realArr, sinCronograma:false, finPeriodos, fechasPlan };
 }
 
-// Plan % acumulado de un conjunto de filas de cronograma en una fecha dada (para la línea fantasma)
-function planLBEnFecha(filas, fecha){
+// Plan % acumulado de una línea base anterior en una fecha dada (curva fantasma).
+// Misma regla que el núcleo EVM: ponderación por costo en vivo (pesoEfectivo del
+// rubro sobre el total del proyecto) y la misma interpolación (fraccionPlanRubro).
+// Antes usaba cronograma_rubros.peso_pct almacenado: con NULL (LB-1 de Parqueadero
+// restaurada del backup) la curva salía plana en 0.
+function planLBEnFecha(filas, fecha, pesoPorRubro){
   let acum = 0;
   filas.forEach(c=>{
     if(!c.fecha_inicio||!c.fecha_fin) return;
-    const ini = new Date(c.fecha_inicio+'T00:00:00');
-    const fin = new Date(c.fecha_fin+'T00:00:00');
-    const dur = (fin-ini)||1;
-    const t = Math.min(Math.max(fecha-ini,0),dur);
-    acum += Math.min(t/dur,1)*(c.peso_pct||0);
+    acum += fraccionPlanRubro(c, fecha) * (pesoPorRubro[c.rubro_id]||0);
   });
   return parseFloat(Math.min(acum,100).toFixed(2));
+}
+
+// Serie de la curva previa evaluada en las mismas fechas de corte que la activa.
+// La usan la pantalla y la imagen del PDF, para que ambas dibujen lo mismo.
+function calcularCurvaPrevia(rubros, fechasPlan){
+  const filas = window._curvaGhostRows;
+  if(!filas || !fechasPlan || !fechasPlan.length) return null;
+  // cronogramaData expone el id del rubro como rubro_id (no id).
+  const pesoPorRubro = {};
+  rubros.forEach(r=>{ pesoPorRubro[r.rubro_id] = r.pesoEfectivo||0; });
+  return fechasPlan.map(f=>planLBEnFecha(filas, f, pesoPorRubro));
 }
 
 function dibujarGraficoCurvaS(rubros, proy){
@@ -6414,8 +6428,8 @@ function dibujarGraficoCurvaS(rubros, proy){
   if(!canvasEl) return; // El canvas no está en el DOM (ej. se llamó desde otra pantalla, como el reporte PDF de Libro de Obra)
   if(curvaSGrafico){ curvaSGrafico.destroy(); curvaSGrafico=null; }
 
-  const { labels, planArr, realArr, sinCronograma, finPeriodos } = calcularDatosGraficoCurvaS(rubros, curvaSModo);
-  const ghostArr = (window._curvaGhostRows && finPeriodos) ? finPeriodos.map(f=>planLBEnFecha(window._curvaGhostRows, f)) : null;
+  const { labels, planArr, realArr, sinCronograma, fechasPlan } = calcularDatosGraficoCurvaS(rubros, curvaSModo);
+  const ghostArr = calcularCurvaPrevia(rubros, fechasPlan);
 
   if(sinCronograma){
     curvaSGrafico = new Chart(canvasEl,{
@@ -6448,8 +6462,9 @@ function dibujarGraficoCurvaS(rubros, proy){
 // Genera el gráfico de Curva S como imagen PNG (data URL), usando un canvas oculto temporal.
 // Pensado para insertarse en el HTML del reporte PDF de Libro de Obra, donde no hay un canvas visible en pantalla.
 async function generarImagenGraficoCurvaS(rubros, modo){
-  const { labels, planArr, realArr, sinCronograma } = calcularDatosGraficoCurvaS(rubros, modo);
+  const { labels, planArr, realArr, sinCronograma, fechasPlan } = calcularDatosGraficoCurvaS(rubros, modo);
   if(!labels.length) return null;
+  const ghostArr = sinCronograma ? null : calcularCurvaPrevia(rubros, fechasPlan);
 
   const canvasTemp = document.createElement('canvas');
   canvasTemp.width = 760;
@@ -6461,7 +6476,8 @@ async function generarImagenGraficoCurvaS(rubros, modo){
   const datasets = sinCronograma
     ? [{label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:3}]
     : [
-        {label:'Planificado (%)',data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:2,borderDash:[6,3]},
+        ...(ghostArr ? [{label:`Plan LB-${window._curvaGhostNum} (anterior)`,data:ghostArr,borderColor:'#9aa0b5',fill:false,tension:.4,pointRadius:0,borderDash:[3,3],borderWidth:1.5}] : []),
+        {label:`Planificado (%)${window._lbActiva&&window._lbActiva.numero>1?' · LB-'+window._lbActiva.numero:''}`,data:planArr,borderColor:'#e2445c',backgroundColor:'rgba(226,68,92,.08)',fill:true,tension:.4,pointRadius:2,borderDash:[6,3]},
         {label:'Real (%)',data:realArr,borderColor:'#0073ea',backgroundColor:'rgba(0,115,234,.12)',fill:true,tension:.4,pointRadius:3,spanGaps:false}
       ];
 
