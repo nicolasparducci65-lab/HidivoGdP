@@ -3269,6 +3269,48 @@ async function cargarDashboard(){
   renderProyectosTabla('dashProyectosList', proyectos);
 }
 
+// ── MONTO DE CONTRATO PARA PRESENTACIÓN ──
+// Hay dos fuentes legítimas: proyectos.monto_contrato (el contractual, escrito
+// por la ficha o la extracción IA del PDF) y Σ rubros.monto_contrato (el vigente,
+// que incluye órdenes de cambio). Para MOSTRAR el monto (tabla del Dashboard,
+// Proyectos, tarjeta "Suma contratos", PDFs) la regla es: registro; si está
+// vacío, Σ rubros; si ambos existen y difieren más de la tolerancia, indicador
+// con los dos valores. Todo CÁLCULO (avance, EVM/SPI, cartera, liquidación,
+// amortización, totales de Rubros) sigue usando Σ rubros: son magnitudes
+// ponderadas por ejecución y deben cuadrar con los rubros.
+const MONTO_CONTRATO_TOLERANCIA = 1.00;
+
+function montoContratoProyecto(p, sumaRubros){
+  const contractual = Number(p?.monto_contrato) || 0;
+  const vigente = Number(sumaRubros) || 0;
+  const valor = contractual > 0 ? contractual : vigente;
+  const difiere = contractual > 0 && vigente > 0 && Math.abs(contractual - vigente) > MONTO_CONTRATO_TOLERANCIA;
+  return {
+    valor, contractual, vigente, difiere,
+    delta: vigente - contractual,
+    fuente: contractual > 0 ? 'registro' : (vigente > 0 ? 'rubros' : null)
+  };
+}
+
+// Celda/tarjeta: el valor mostrado y, si difiere, "Contrato: X · Vigente: Y · Δ".
+function montoContratoHtml(m){
+  const f = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(!m.valor) return '—';
+  if(!m.difiere) return f(m.valor);
+  const d = (m.delta>=0?'+':'−')+f(Math.abs(m.delta));
+  return `<span title="Contrato: ${f(m.contractual)} · Vigente (rubros): ${f(m.vigente)} · Δ ${d}">${f(m.valor)} <span style="color:#b8860b;font-weight:600">⚠</span></span>` +
+         `<div style="font-size:10px;color:#b8860b;margin-top:2px;white-space:nowrap">Contrato ${f(m.contractual)} · Vigente ${f(m.vigente)} · Δ ${d}</div>`;
+}
+
+// Σ rubros.monto_contrato agrupada por proyecto (una consulta para toda la lista).
+async function sumasRubrosPorProyecto(ids){
+  const sumas = {};
+  if(!ids.length) return sumas;
+  const { data: rubros } = await sb.from('rubros').select('proyecto_id,monto_contrato').in('proyecto_id', ids);
+  (rubros||[]).forEach(r=>{ sumas[r.proyecto_id] = (sumas[r.proyecto_id]||0) + (r.monto_contrato||0); });
+  return sumas;
+}
+
 // Calcula las métricas del Dashboard sin tocar el DOM, reutilizable en pantalla y en el PDF.
 async function calcularMetricasDashboard(lista){
   const enEjecucion = lista.filter(p=>p.estado==='ejecucion');
@@ -3283,17 +3325,22 @@ async function calcularMetricasDashboard(lista){
     .in('proyecto_id', ids);
 
   const { data: rubros } = await sb.from('rubros')
-    .select('cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
+    .select('proyecto_id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
     .in('proyecto_id', ids);
 
+  // Avance: cálculo → Σ rubros (vigente). "Suma contratos": presentación → regla
+  // montoContratoProyecto por proyecto (registro, o Σ rubros si está vacío).
   let produccionTotal=0, montoTotal=0, avance=0;
+  const sumas = {};
   if(rubros&&rubros.length){
     produccionTotal = rubros.reduce((acc,r)=>acc+(r.total_produccion||0),0);
     montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
     avance = montoTotal>0 ? parseFloat((produccionTotal/montoTotal*100).toFixed(1)) : 0;
+    rubros.forEach(r=>{ sumas[r.proyecto_id] = (sumas[r.proyecto_id]||0) + (r.monto_contrato||0); });
   }
+  const sumaContratos = lista.reduce((s,p)=>s+montoContratoProyecto(p, sumas[p.id]).valor, 0);
 
-  return { proyectosActivos:enEjecucion.length, registros:totalRegistros||0, produccionTotal, avance, sumaContratos:montoTotal };
+  return { proyectosActivos:enEjecucion.length, registros:totalRegistros||0, produccionTotal, avance, sumaContratos };
 }
 
 async function actualizarMetricasDashboard(lista){
@@ -3394,7 +3441,7 @@ async function renderProyectosTabla(containerId, lista){
       <tr>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
-        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montoContratoHtml(montoContratoProyecto(p, montosReales[p.id]))}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
@@ -13635,7 +13682,7 @@ ${metricas ? `
         return `<tr>
         <td>${p.nombre}</td>
         <td>${p.contratante||'—'}</td>
-        <td>${montosReales[p.id] ? '$'+Number(montosReales[p.id]).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</td>
+        <td>${(()=>{ const m=montoContratoProyecto(p, montosReales[p.id]); return m.valor ? '$'+Number(m.valor).toLocaleString('es-EC',{minimumFractionDigits:2})+(m.difiere?' *':'') : '—'; })()}</td>
         <td>${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
         <td style="font-weight:700;color:${estadoColorMap[p.estado]||'#676879'}">${estadoLabelMap[p.estado]||p.estado}</td>
         ${incTiempo?`<td style="color:${tiempo.color};font-weight:600">${tiempo.icon} ${tiempo.label}${spiTexto}</td>`:''}
@@ -13643,6 +13690,14 @@ ${metricas ? `
       }).join('')}
     </tbody>
   </table>` : '<div style="font-size:9px;color:#676879;padding:6px 0">No hay proyectos para mostrar con los filtros actuales</div>'}
+  ${(()=>{
+    // Nota al pie: el cuerpo muestra el monto contractual; aquí van las diferencias con el vigente.
+    const f = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2});
+    const dif = listaProyectos.map(p=>({p, m: montoContratoProyecto(p, montosReales[p.id])})).filter(x=>x.m.difiere);
+    if(!dif.length) return '';
+    return `<div style="font-size:8px;color:#676879;margin-top:6px;line-height:1.5">* Monto contractual del registro; difiere del vigente por rubros (órdenes de cambio o fichas por actualizar): ` +
+      dif.map(x=>`${x.p.nombre}: contrato ${f(x.m.contractual)} · vigente ${f(x.m.vigente)} · Δ ${(x.m.delta>=0?'+':'−')+f(Math.abs(x.m.delta))}`).join('; ') + '.</div>';
+  })()}
 </div>
 
 <div class="footer">
@@ -13792,6 +13847,9 @@ async function generarReportePDF(){
       .select('*').eq('proyecto_id', currentProyecto).order('orden');
     todosRubros = rubs||[];
   }
+  // Cabecera: misma regla de presentación que el Dashboard (registro, o Σ rubros
+  // si está vacío); la diferencia con el vigente va en nota al pie, no en el cuerpo.
+  const montoLibro = montoContratoProyecto(proy, await obtenerMontoContratoProyecto());
 
   // Obtener planillas del período si aplica
   let planillas = [];
@@ -13872,7 +13930,7 @@ async function generarReportePDF(){
     <div class="info-item"><div class="lbl">Contratista</div><div class="val">${proy.contratista||'—'}</div></div>
     <div class="info-item"><div class="lbl">Ubicación</div><div class="val">${proy.ubicacion||'—'}</div></div>
     <div class="info-item"><div class="lbl">Período</div><div class="val">${fechaInicioFmt} — ${fechaFinFmt}</div></div>
-    <div class="info-item"><div class="lbl">Monto contrato</div><div class="val">${proy.monto_contrato ? '$'+Number(proy.monto_contrato).toLocaleString('es-EC',{minimumFractionDigits:2}) : '—'}</div></div>
+    <div class="info-item"><div class="lbl">Monto contrato</div><div class="val">${montoLibro.valor ? '$'+Number(montoLibro.valor).toLocaleString('es-EC',{minimumFractionDigits:2})+(montoLibro.difiere?' *':'') : '—'}</div></div>
   </div>
 </div>
 
@@ -14000,6 +14058,7 @@ ${incCurvaS && curvaSDatos ? `
   </div>`).join('')}
 </div>
 
+${montoLibro.difiere ? `<div style="font-size:8px;color:#676879;margin:4px 0 6px">* Monto contractual del registro del proyecto. Vigente por rubros (con órdenes de cambio): $${Number(montoLibro.vigente).toLocaleString('es-EC',{minimumFractionDigits:2})} · Δ ${(montoLibro.delta>=0?'+':'−')+'$'+Number(Math.abs(montoLibro.delta)).toLocaleString('es-EC',{minimumFractionDigits:2})}.</div>` : ''}
 <div class="footer">
   <span class="footer-left">HIDIVO — Gestión de Obras Civiles · ${proy.nombre||'—'}</span>
   <span class="footer-right">Generado: ${fechaGeneracion}</span>
