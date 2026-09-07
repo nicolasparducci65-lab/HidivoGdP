@@ -3107,6 +3107,7 @@ function navTo(page, btn){
   const accion = acciones[page];
   document.getElementById('btnAccionPrincipal').style.display = accion?.show ? 'flex' : 'none';
   if(accion) document.getElementById('btnAccionTexto').textContent = accion.texto;
+  if(page==='dashboard') cargarDashboard();
   if(page==='proyectos') cargarProyectosLista();
   if(page==='rubros'&&currentProyecto) cargarRubros();
   if(page==='libro'&&currentProyecto) cargarLibroObra();
@@ -3212,61 +3213,178 @@ function formatoKSinSigno(valor){
   return (valor/1000).toLocaleString('es-EC',{minimumFractionDigits:1,maximumFractionDigits:1})+' K';
 }
 
-async function cargarDashboard(){
-  let proyData;
-  if(currentPerfil?.rolGlobal === 'admin'){
-    // Admin global ve todos los proyectos
-    const { data: p } = await sb.from('proyectos').select('*');
-    proyData = p||[];
-  } else {
-    // Todos los demás usuarios solo ven los proyectos a los que están invitados
-    const { data: membs } = await sb.from('proyecto_miembros')
-      .select('proyecto_id').eq('usuario_id', currentUser.id);
-    const ids = (membs||[]).map(m=>m.proyecto_id);
-    if(ids.length){
-      const { data: p } = await sb.from('proyectos').select('*').in('id', ids);
-      proyData = p||[];
-    } else {
-      proyData = [];
+// ── LISTAS DE PROYECTOS: FILTROS EN MEMORIA, CACHÉ COMPARTIDA Y RENDER ÚNICO ──
+// Filtros por pantalla, solo en memoria y por sesión (son del usuario, no del
+// proyecto: limpiarEstadoProyecto no los toca; no se persisten).
+const filtrosDashboard = { contratante:'', contratista:'', estado:'' };
+const filtrosProyectos = { contratante:'', contratista:'', estado:'' };
+const SELECTS_FILTRO = {
+  dashboard: { contratante:'filtroContratante', contratista:'filtroContratista', estado:'filtroEstado' },
+  proyectos: { contratante:'filtroContratanteProyectos', contratista:'filtroContratistaProyectos', estado:'filtroEstadoProyectos' }
+};
+
+// AND entre los tres; sin estado definido cuenta como 'ejecucion'.
+function aplicarFiltroProyectos(lista, f){
+  let r = lista||[];
+  if(f.contratante) r = r.filter(p=>p.contratante===f.contratante);
+  if(f.contratista) r = r.filter(p=>p.contratista===f.contratista);
+  if(f.estado)      r = r.filter(p=>(p.estado||'ejecucion')===f.estado);
+  return r;
+}
+
+// Opciones de los selects desde los datos. Conserva la selección; si el valor
+// ya no existe en los datos, vuelve a "Todos" EXPLÍCITAMENTE (estado y select).
+function poblarSelectsFiltro(ids, filtros, lista){
+  const opciones = {
+    contratante: [...new Set((lista||[]).map(p=>p.contratante).filter(Boolean))].sort().map(v=>[v,v]),
+    contratista: [...new Set((lista||[]).map(p=>p.contratista).filter(Boolean))].sort().map(v=>[v,v]),
+    estado: [...new Set((lista||[]).map(p=>p.estado||'ejecucion'))]
+      .sort((a,b)=>estadoLabel(a).localeCompare(estadoLabel(b))).map(v=>[v,estadoLabel(v)])
+  };
+  const placeholder = { contratante:'— Todos los contratantes —', contratista:'— Todos los contratistas —', estado:'— Todos los estados —' };
+  for(const k of ['contratante','contratista','estado']){
+    if(filtros[k] && !opciones[k].some(([v])=>v===filtros[k])) filtros[k] = '';
+    const sel = document.getElementById(ids[k]);
+    if(!sel) continue;
+    sel.innerHTML = `<option value="">${placeholder[k]}</option>` +
+      opciones[k].map(([v,t])=>`<option value="${escAttr(v)}">${escAttr(t)}</option>`).join('');
+    sel.value = filtros[k];
+  }
+}
+
+function leerFiltrosDeSelects(ids, filtros){
+  for(const k of ['contratante','contratista','estado']){
+    const sel = document.getElementById(ids[k]);
+    if(sel) filtros[k] = sel.value||'';
+  }
+}
+
+// Caché compartida por Dashboard y Proyectos (avance, SPI, montos, registros por
+// proyecto). Se refresca al entrar a cualquiera de las dos y se invalida tras
+// importar rubros, guardar/eliminar proyecto y editar/aprobar libro de obra.
+// Vive solo en memoria: nunca sirve datos de una sesión anterior.
+let cacheProyectos = null;
+function invalidarCacheProyectos(){ cacheProyectos = null; }
+
+// Trae todas las filas paginando con .range(): PostgREST corta en max-rows
+// (1.000 por defecto) SIN avisar, y un admin ya supera esa cifra en rubros.
+async function traerPaginado(construir, tam=1000){
+  const filas = []; let desde = 0;
+  for(;;){
+    const { data, error } = await construir().range(desde, desde+tam-1);
+    if(error){ console.error('traerPaginado', error); break; }
+    filas.push(...(data||[]));
+    if(!data || data.length < tam) break;
+    desde += tam;
+  }
+  return filas;
+}
+
+// Construcción PURA de la caché (sin red). Misma matemática que el cálculo
+// anterior por proyecto; solo cambia que los datos llegan en lote.
+function construirCacheProyectos(lista, rubros, lbsActivas, cron, registrosLibro){
+  const rubrosPorP = {}, lbPorP = {}, cronPorP = {}, regPorP = {};
+  (rubros||[]).forEach(r=>{ (rubrosPorP[r.proyecto_id] = rubrosPorP[r.proyecto_id]||[]).push(r); });
+  (lbsActivas||[]).forEach(l=>{ lbPorP[l.proyecto_id] = l.id; });
+  (cron||[]).forEach(c=>{ (cronPorP[c.proyecto_id] = cronPorP[c.proyecto_id]||[]).push(c); });
+  (registrosLibro||[]).forEach(x=>{ regPorP[x.proyecto_id] = (regPorP[x.proyecto_id]||0)+1; });
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const avances={}, spiEstados={}, montosReales={}, producciones={}, registros={};
+  (lista||[]).forEach(p=>{
+    const rs = rubrosPorP[p.id]||[];
+    registros[p.id] = regPorP[p.id]||0;
+    const prod = rs.reduce((a,r)=>a+(r.total_produccion||0),0);
+    const total = rs.reduce((a,r)=>a+(r.monto_contrato||0),0);
+    producciones[p.id] = prod;
+    montosReales[p.id] = total;
+    avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
+    // SPI: solo el cronograma de la LB activa DEL PROPIO proyecto.
+    const lbAct = lbPorP[p.id];
+    const cr = lbAct ? (cronPorP[p.id]||[]).filter(c=>c.linea_base_id===lbAct) : [];
+    if(!rs.length || !cr.length){ spiEstados[p.id] = null; return; }
+    const cronMap = {}; cr.forEach(c=>cronMap[c.rubro_id]=c);
+    let BCWP=0, BCWS=0, hayFechas=false;
+    rs.forEach(r=>{
+      const c = cronMap[r.id];
+      if(!c||!c.fecha_inicio||!c.fecha_fin) return;
+      hayFechas = true;
+      const pesoEfectivo = total>0 ? ((r.monto_contrato||0)/total*100) : 0;
+      const avReal = r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0);
+      const inicio = new Date(c.fecha_inicio+'T00:00:00');
+      const fin = new Date(c.fecha_fin+'T00:00:00');
+      const dur = (fin-inicio)||1;
+      const trans = Math.min(Math.max(hoy-inicio,0),dur);
+      const pctPlan = Math.min((trans/dur)*100,100);
+      BCWP += (avReal/100)*pesoEfectivo;
+      BCWS += (pctPlan/100)*pesoEfectivo;
+    });
+    spiEstados[p.id] = (hayFechas && BCWS>0) ? BCWP/BCWS : null;
+  });
+  return { ids:new Set((lista||[]).map(p=>p.id)), avances, spiEstados, montosReales, producciones, registros };
+}
+
+// Carga en lote: 3 consultas en paralelo + 1 (cronograma de las LB activas).
+async function cargarCacheProyectos(lista){
+  const ids = (lista||[]).map(p=>p.id);
+  const t0 = performance.now(); let viajes = 0;
+  const cuenta = (construir)=>()=>{ viajes++; return construir(); };
+  let rubros=[], lbs=[], regs=[], cron=[];
+  if(ids.length){
+    [rubros, lbs, regs] = await Promise.all([
+      traerPaginado(cuenta(()=>sb.from('rubros').select('proyecto_id,id,monto_contrato,total_produccion,estado').in('proyecto_id', ids))),
+      traerPaginado(cuenta(()=>sb.from('lineas_base').select('id,proyecto_id').eq('activa',true).in('proyecto_id', ids))),
+      traerPaginado(cuenta(()=>sb.from('libro_obra').select('proyecto_id').in('proyecto_id', ids)))
+    ]);
+    const lbIds = lbs.map(l=>l.id);
+    if(lbIds.length){
+      cron = await traerPaginado(cuenta(()=>sb.from('cronograma_rubros')
+        .select('proyecto_id,rubro_id,linea_base_id,fecha_inicio,fecha_fin').in('linea_base_id', lbIds)));
     }
   }
-  proyectos = proyData;
+  cacheProyectos = construirCacheProyectos(lista, rubros, lbs, cron, regs);
+  cacheProyectos.viajes = viajes;
+  cacheProyectos.filas = { rubros: rubros.length, lineas_base: lbs.length, cronograma: cron.length, libro_obra: regs.length };
+  console.info(`[proyectos] caché cargada: ${viajes} viajes, ${Math.round(performance.now()-t0)} ms`, cacheProyectos.filas);
+  return cacheProyectos;
+}
 
-  // Poblar filtro de contratantes
-  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
-  const sel = document.getElementById('filtroContratante');
-  if(sel){
-    const valorActual = sel.value;
-    sel.innerHTML = '<option value="">— Todos los contratantes —</option>' +
-      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
-    if(valorActual) sel.value = valorActual;
+async function asegurarCacheProyectos(lista){
+  const ids = (lista||[]).map(p=>p.id);
+  if(cacheProyectos && ids.every(id=>cacheProyectos.ids.has(id))) return cacheProyectos;
+  return cargarCacheProyectos(lista);
+}
+
+// Proyectos visibles para el usuario: admin global todos; el resto, por membresía.
+async function cargarProyectosDelUsuario(){
+  if(currentPerfil?.rolGlobal === 'admin'){
+    const { data: p } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
+    return p||[];
   }
+  const { data: membs } = await sb.from('proyecto_miembros')
+    .select('proyecto_id').eq('usuario_id', currentUser.id);
+  const ids = (membs||[]).map(m=>m.proyecto_id);
+  if(!ids.length) return [];
+  const { data: p } = await sb.from('proyectos').select('*').in('id', ids).order('created_at',{ascending:false});
+  return p||[];
+}
 
-  // Poblar filtro de contratistas
-  const contratistas = [...new Set(proyectos.map(p=>p.contratista).filter(Boolean))].sort();
-  const selC = document.getElementById('filtroContratista');
-  if(selC){
-    const valorActualC = selC.value;
-    selC.innerHTML = '<option value="">— Todos los contratistas —</option>' +
-      contratistas.map(c=>`<option value="${c}">${c}</option>`).join('');
-    if(valorActualC) selC.value = valorActualC;
-  }
+// Render único del Dashboard: SIEMPRE aplica el filtro vigente. El token
+// descarta el resultado de un render viejo que termine después de uno nuevo.
+let _tokenRenderDash = 0, _tokenRenderProy = 0;
+async function renderDashboard(){
+  const token = ++_tokenRenderDash;
+  await asegurarCacheProyectos(proyectos);
+  if(token !== _tokenRenderDash) return;
+  const lista = aplicarFiltroProyectos(proyectos, filtrosDashboard);
+  actualizarMetricasDashboard(lista);
+  renderProyectosTabla('dashProyectosList', lista);
+}
 
-  // Poblar filtro de estados (proyectos.estado, el estado operativo que ya
-  // muestra la columna Estado de la tabla). Sin estado definido cuenta como
-  // 'ejecucion' para no desaparecer del filtro.
-  const estados = [...new Set(proyectos.map(p=>p.estado||'ejecucion'))]
-    .sort((a,b)=>estadoLabel(a).localeCompare(estadoLabel(b)));
-  const selE = document.getElementById('filtroEstado');
-  if(selE){
-    const valorActualE = selE.value;
-    selE.innerHTML = '<option value="">— Todos los estados —</option>' +
-      estados.map(e=>`<option value="${e}">${estadoLabel(e)}</option>`).join('');
-    if(valorActualE) selE.value = valorActualE;
-  }
-
-  await actualizarMetricasDashboard(proyectos);
-  renderProyectosTabla('dashProyectosList', proyectos);
+async function cargarDashboard(){
+  proyectos = await cargarProyectosDelUsuario();
+  poblarSelectsFiltro(SELECTS_FILTRO.dashboard, filtrosDashboard, proyectos);
+  invalidarCacheProyectos();
+  await renderDashboard();
 }
 
 // ── MONTO DE CONTRATO PARA PRESENTACIÓN ──
@@ -3302,49 +3420,30 @@ function montoContratoHtml(m){
          `<div style="font-size:10px;color:#b8860b;margin-top:2px;white-space:nowrap">Contrato ${f(m.contractual)} · Vigente ${f(m.vigente)} · Δ ${d}</div>`;
 }
 
-// Σ rubros.monto_contrato agrupada por proyecto (una consulta para toda la lista).
-async function sumasRubrosPorProyecto(ids){
-  const sumas = {};
-  if(!ids.length) return sumas;
-  const { data: rubros } = await sb.from('rubros').select('proyecto_id,monto_contrato').in('proyecto_id', ids);
-  (rubros||[]).forEach(r=>{ sumas[r.proyecto_id] = (sumas[r.proyecto_id]||0) + (r.monto_contrato||0); });
-  return sumas;
+// Métricas del Dashboard EN MEMORIA sobre la lista (filtrada) y la caché.
+// Avance: cálculo → Σ rubros (vigente). "Suma contratos": presentación → regla
+// montoContratoProyecto por proyecto (registro, o Σ rubros si está vacío).
+function calcularMetricasEnMemoria(lista){
+  const c = cacheProyectos || construirCacheProyectos([],[],[],[],[]);
+  let produccionTotal=0, montoTotal=0, registros=0, sumaContratos=0;
+  (lista||[]).forEach(p=>{
+    produccionTotal += c.producciones[p.id]||0;
+    montoTotal += c.montosReales[p.id]||0;
+    registros += c.registros[p.id]||0;
+    sumaContratos += montoContratoProyecto(p, c.montosReales[p.id]).valor;
+  });
+  const avance = montoTotal>0 ? parseFloat((produccionTotal/montoTotal*100).toFixed(1)) : 0;
+  return { proyectosActivos:(lista||[]).filter(p=>p.estado==='ejecucion').length, registros, produccionTotal, avance, sumaContratos };
 }
 
-// Calcula las métricas del Dashboard sin tocar el DOM, reutilizable en pantalla y en el PDF.
+// Compatibilidad con el PDF del Dashboard: mismas firmas, ahora sobre la caché.
 async function calcularMetricasDashboard(lista){
-  const enEjecucion = lista.filter(p=>p.estado==='ejecucion');
-  const ids = lista.map(p=>p.id);
-
-  if(!ids.length){
-    return { proyectosActivos:0, registros:0, produccionTotal:0, avance:0, sumaContratos:0 };
-  }
-
-  const { count: totalRegistros } = await sb.from('libro_obra')
-    .select('id',{count:'exact',head:true})
-    .in('proyecto_id', ids);
-
-  const { data: rubros } = await sb.from('rubros')
-    .select('proyecto_id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion')
-    .in('proyecto_id', ids);
-
-  // Avance: cálculo → Σ rubros (vigente). "Suma contratos": presentación → regla
-  // montoContratoProyecto por proyecto (registro, o Σ rubros si está vacío).
-  let produccionTotal=0, montoTotal=0, avance=0;
-  const sumas = {};
-  if(rubros&&rubros.length){
-    produccionTotal = rubros.reduce((acc,r)=>acc+(r.total_produccion||0),0);
-    montoTotal = rubros.reduce((acc,r)=>acc+(r.monto_contrato||0),0);
-    avance = montoTotal>0 ? parseFloat((produccionTotal/montoTotal*100).toFixed(1)) : 0;
-    rubros.forEach(r=>{ sumas[r.proyecto_id] = (sumas[r.proyecto_id]||0) + (r.monto_contrato||0); });
-  }
-  const sumaContratos = lista.reduce((s,p)=>s+montoContratoProyecto(p, sumas[p.id]).valor, 0);
-
-  return { proyectosActivos:enEjecucion.length, registros:totalRegistros||0, produccionTotal, avance, sumaContratos };
+  await asegurarCacheProyectos(proyectos.length ? proyectos : lista);
+  return calcularMetricasEnMemoria(lista);
 }
 
-async function actualizarMetricasDashboard(lista){
-  const m = await calcularMetricasDashboard(lista);
+function actualizarMetricasDashboard(lista){
+  const m = calcularMetricasEnMemoria(lista);
   document.getElementById('mProyectos').textContent = m.proyectosActivos;
   document.getElementById('mRegistros').textContent = m.registros;
   document.getElementById('mProduccion').textContent = formatoK(m.produccionTotal);
@@ -3352,66 +3451,10 @@ async function actualizarMetricasDashboard(lista){
   document.getElementById('mSumaContratos').textContent = formatoK(m.sumaContratos);
 }
 
-// Calcula avance, SPI y monto real por proyecto, sin tocar el DOM.
-// Reutilizable en pantalla (renderProyectosTabla) y en el reporte PDF del Dashboard.
+// Avance, SPI y monto por proyecto, desde la caché (compatibilidad con el PDF).
 async function calcularEstadosProyectos(lista){
-  const avances = {};
-  const spiEstados = {};
-  const montosReales = {};
-
-  for(const p of lista){
-    const { data: rubros } = await sb.from('rubros')
-      .select('id,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion,estado')
-      .eq('proyecto_id',p.id);
-
-    if(rubros&&rubros.length){
-      const prod = rubros.reduce((a,r)=>a+(r.total_produccion||0),0);
-      const total = rubros.reduce((a,r)=>a+(r.monto_contrato||0),0);
-      avances[p.id] = total>0 ? (prod/total*100).toFixed(1) : 0;
-      montosReales[p.id] = total;
-
-      // Cargar cronograma para SPI (solo la línea base activa)
-      const { data: lbAct } = await sb.from('lineas_base').select('id').eq('proyecto_id',p.id).eq('activa',true).limit(1);
-      let qCronDash = sb.from('cronograma_rubros')
-        .select('rubro_id,fecha_inicio,fecha_fin,peso_pct').eq('proyecto_id',p.id);
-      if(lbAct&&lbAct.length) qCronDash = qCronDash.eq('linea_base_id', lbAct[0].id);
-      const { data: cron } = await qCronDash;
-
-      if(cron&&cron.length){
-        const cronMap = {};
-        cron.forEach(c=>cronMap[c.rubro_id]=c);
-
-        // Ponderación por costo: peso = monto del rubro / monto total del proyecto
-
-        let BCWP=0, BCWS=0, hayFechas=false;
-        const hoy2 = new Date(); hoy2.setHours(0,0,0,0);
-        rubros.forEach(r=>{
-          const c = cronMap[r.id];
-          if(!c||!c.fecha_inicio||!c.fecha_fin) return;
-          hayFechas=true;
-          const pesoEfectivo = total>0 ? ((r.monto_contrato||0)/total*100) : 0;
-          const avReal = r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0);
-          const inicio = new Date(c.fecha_inicio+'T00:00:00');
-          const fin = new Date(c.fecha_fin+'T00:00:00');
-          const dur = (fin-inicio)||1;
-          const trans = Math.min(Math.max(hoy2-inicio,0),dur);
-          const pctPlan = Math.min((trans/dur)*100,100);
-          BCWP += (avReal/100)*pesoEfectivo;
-          BCWS += (pctPlan/100)*pesoEfectivo;
-        });
-
-        spiEstados[p.id] = (hayFechas && BCWS>0) ? BCWP/BCWS : null;
-      } else {
-        spiEstados[p.id] = null;
-      }
-    } else {
-      avances[p.id] = 0;
-      spiEstados[p.id] = null;
-      montosReales[p.id] = 0;
-    }
-  }
-
-  return { avances, spiEstados, montosReales };
+  const c = await asegurarCacheProyectos(proyectos.length ? proyectos : lista);
+  return { avances:c.avances, spiEstados:c.spiEstados, montosReales:c.montosReales };
 }
 
 function etiquetaTiempoPorSPI(spi){
@@ -3421,13 +3464,20 @@ function etiquetaTiempoPorSPI(spi){
   return { label:'Atrasado', color:'#e2445c', icon:'🔴' };
 }
 
-async function renderProyectosTabla(containerId, lista){
+// SÍNCRONO: pinta desde la caché, sin red. Con filtro activo y sin resultados
+// avisa que es el filtro, no la ausencia de proyectos.
+function renderProyectosTabla(containerId, lista){
   const container = document.getElementById(containerId);
+  if(!container) return;
   if(!lista||!lista.length){
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">${puedeGestionarProyectos()?'Crea tu primer proyecto para comenzar':'No tienes proyectos asignados'}</div>${puedeGestionarProyectos()?'<button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button>':''}</div>`;
+    const hayFiltro = proyectos.length > 0;
+    container.innerHTML = hayFiltro
+      ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Ningún proyecto coincide con el filtro</div><div class="empty-sub">${proyectos.length} proyecto(s) en total</div></div>`
+      : `<div class="empty-state"><div class="empty-icon">🏗️</div><div class="empty-title">Sin proyectos aún</div><div class="empty-sub">${puedeGestionarProyectos()?'Crea tu primer proyecto para comenzar':'No tienes proyectos asignados'}</div>${puedeGestionarProyectos()?'<button class="btn primary" onclick="abrirModalProyecto()">Crear proyecto</button>':''}</div>`;
     return;
   }
-  const { avances, spiEstados, montosReales } = await calcularEstadosProyectos(lista);
+  const c = cacheProyectos || construirCacheProyectos([],[],[],[],[]);
+  const avances = c.avances, spiEstados = c.spiEstados, montosReales = c.montosReales;
 
   // Solo el admin edita proyectos desde la tabla. Residente, técnico SST y
   // visualizador ven la lista de SUS proyectos en modo lectura (pueden abrirlos).
@@ -3435,7 +3485,8 @@ async function renderProyectosTabla(containerId, lista){
   container.innerHTML = `<table>
     <thead><tr><th>Proyecto</th><th>Contratante</th><th>Monto contrato</th><th>Fecha Fin Planificada</th><th>Estado</th><th>Progreso</th><th style="text-align:center">Tiempo</th>${puedeEditar?'<th></th>':''}</tr></thead>
     <tbody>${lista.map(p=>{
-      const spi = spiEstados[p.id];
+      const spi = spiEstados[p.id] ?? null;
+      const avance = avances[p.id] ?? 0;
       const { label:tiempoLabel, color:tiempoColor, icon:tiempoIcon } = etiquetaTiempoPorSPI(spi);
       return `
       <tr>
@@ -3444,7 +3495,7 @@ async function renderProyectosTabla(containerId, lista){
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montoContratoHtml(montoContratoProyecto(p, montosReales[p.id]))}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><span class="badge ${p.estado}">${estadoLabel(p.estado)}</span></td>
-        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avances[p.id]}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avances[p.id],100)}%;background:#0073ea"></div></div></div></td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div class="progress-wrap"><div class="progress-label"><span>Avance</span><span>${avance}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${Math.min(avance,100)}%;background:#0073ea"></div></div></div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;text-align:center">
           <span style="font-size:12px;font-weight:600;color:${tiempoColor}">${tiempoIcon} ${tiempoLabel}</span>
           ${spi!==null?`<div style="font-size:10px;color:#676879">SPI: ${spi.toFixed(2)}</div>`:''}
@@ -3456,90 +3507,39 @@ async function renderProyectosTabla(containerId, lista){
   </table>`;
 }
 
-// Filtro compartido de proyectos por contratante/contratista/estado (AND).
-// Cada sección tiene sus propios selects, la lógica es una sola: la usan el
-// Dashboard, el reporte PDF y la sección Proyectos.
-function filtrarProyectosPorSelects(idContratante, idContratista, idEstado){
-  const contratante = document.getElementById(idContratante)?.value||'';
-  const contratista = document.getElementById(idContratista)?.value||'';
-  const estado      = document.getElementById(idEstado)?.value||'';
-  let filtrados = proyectos;
-  if(contratante) filtrados = filtrados.filter(p=>p.contratante===contratante);
-  if(contratista) filtrados = filtrados.filter(p=>p.contratista===contratista);
-  if(estado)      filtrados = filtrados.filter(p=>(p.estado||'ejecucion')===estado);
-  return filtrados;
-}
-
+// Lista filtrada del Dashboard (la usa el PDF).
 function proyectosFiltradosDashboard(){
-  return filtrarProyectosPorSelects('filtroContratante','filtroContratista','filtroEstado');
+  return aplicarFiltroProyectos(proyectos, filtrosDashboard);
 }
 
-async function filtrarProyectosDashboard(){
-  const filtrados = proyectosFiltradosDashboard();
-  await actualizarMetricasDashboard(filtrados);
-  renderProyectosTabla('dashProyectosList', filtrados);
+// onchange de los selects del Dashboard: estado en memoria + render. Cero red.
+function filtrarProyectosDashboard(){
+  leerFiltrosDeSelects(SELECTS_FILTRO.dashboard, filtrosDashboard);
+  renderDashboard();
 }
 
 function estadoLabel(e){ return {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'}[e]||e; }
 
 // ── PROYECTOS ──
-async function cargarProyectosLista(){
-  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
-  let data;
-  if(!esAdminGlobal){
-    // Solo proyectos donde el usuario es miembro
-    const { data: miembros } = await sb.from('proyecto_miembros')
-      .select('proyecto_id').eq('usuario_id', currentUser.id);
-    const ids = (miembros||[]).map(m=>m.proyecto_id);
-    if(!ids.length){ proyectos=[]; renderProyectosTabla('proyectosList',[]); return; }
-    const { data: proy } = await sb.from('proyectos')
-      .select('*').in('id', ids).order('created_at',{ascending:false});
-    data = proy||[];
-  } else {
-    const { data: proy } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
-    data = proy||[];
-  }
-  proyectos = data;
-
-  // Poblar filtro de contratantes
-  const contratantes = [...new Set(proyectos.map(p=>p.contratante).filter(Boolean))].sort();
-  const selCte = document.getElementById('filtroContratanteProyectos');
-  if(selCte){
-    const valorActual = selCte.value;
-    selCte.innerHTML = '<option value="">— Todos los contratantes —</option>' +
-      contratantes.map(c=>`<option value="${c}">${c}</option>`).join('');
-    if(valorActual) selCte.value = valorActual;
-  }
-
-  // Poblar filtro de contratistas
-  const contratistas = [...new Set(proyectos.map(p=>p.contratista).filter(Boolean))].sort();
-  const selCta = document.getElementById('filtroContratistaProyectos');
-  if(selCta){
-    const valorActualC = selCta.value;
-    selCta.innerHTML = '<option value="">— Todos los contratistas —</option>' +
-      contratistas.map(c=>`<option value="${c}">${c}</option>`).join('');
-    if(valorActualC) selCta.value = valorActualC;
-  }
-
-  // Poblar filtro de estados (mismo criterio que el Dashboard: proyectos.estado,
-  // sin estado definido cuenta como 'ejecucion')
-  const estadosProy = [...new Set(proyectos.map(p=>p.estado||'ejecucion'))]
-    .sort((a,b)=>estadoLabel(a).localeCompare(estadoLabel(b)));
-  const selEst = document.getElementById('filtroEstadoProyectos');
-  if(selEst){
-    const valorActualE = selEst.value;
-    selEst.innerHTML = '<option value="">— Todos los estados —</option>' +
-      estadosProy.map(e=>`<option value="${e}">${estadoLabel(e)}</option>`).join('');
-    if(valorActualE) selEst.value = valorActualE;
-  }
-
-  renderProyectosTabla('proyectosList', proyectos);
+// Render único de Proyectos: SIEMPRE aplica su filtro; token contra renders viejos.
+async function renderListaProyectos(){
+  const token = ++_tokenRenderProy;
+  await asegurarCacheProyectos(proyectos);
+  if(token !== _tokenRenderProy) return;
+  renderProyectosTabla('proyectosList', aplicarFiltroProyectos(proyectos, filtrosProyectos));
 }
 
-async function filtrarProyectosLista(){
-  const filtrados = filtrarProyectosPorSelects(
-    'filtroContratanteProyectos','filtroContratistaProyectos','filtroEstadoProyectos');
-  renderProyectosTabla('proyectosList', filtrados);
+async function cargarProyectosLista(){
+  proyectos = await cargarProyectosDelUsuario();
+  poblarSelectsFiltro(SELECTS_FILTRO.proyectos, filtrosProyectos, proyectos);
+  invalidarCacheProyectos();
+  await renderListaProyectos();
+}
+
+// onchange de los selects de Proyectos: estado en memoria + render. Cero red.
+function filtrarProyectosLista(){
+  leerFiltrosDeSelects(SELECTS_FILTRO.proyectos, filtrosProyectos);
+  renderListaProyectos();
 }
 
 async function cargarProyectosSelector(){
@@ -3860,6 +3860,7 @@ async function eliminarProyecto(){
 
   toast('Proyecto eliminado ✓','success');
   cerrarModal('modalProyecto');
+  invalidarCacheProyectos();
   // Resetear proyecto actual si era el eliminado
   if(currentProyecto===id){ currentProyecto=null; }
   cargarProyectosLista();
@@ -3917,6 +3918,7 @@ async function guardarProyecto(){
   if(error){ toast('Error: '+error.message,'error'); return; }
   toast(id?'Proyecto actualizado':'Proyecto creado con éxito','success');
   cerrarModal('modalProyecto');
+  invalidarCacheProyectos();
   cargarDashboard();
   cargarProyectosSelector();
   if(currentPage==='proyectos') cargarProyectosLista();
@@ -4306,6 +4308,7 @@ async function aplicarImportacionRubros(){
 
   window._planImportRubros = null;
   cerrarModal('modalImportRubros');
+  invalidarCacheProyectos();
   toast(`✅ Importación aplicada: ${actualizados} actualizados, ${plan.nuevos.length} nuevos, ${plan.ausentes.length} conservados · cronograma LB-${lb.numero}`,'success');
   cargarRubros();
 }
@@ -5436,6 +5439,7 @@ async function sincronizarRegistrosOffline(){
   _sincronizandoOffline = false;
   actualizarIndicadorOffline();
   if(ok){
+    invalidarCacheProyectos();
     toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
     try{
       if(currentPage==='libro') cargarLibroObra();
@@ -5549,6 +5553,7 @@ async function aprobarRegistroLibro(id, numero){
   await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'aprobado', autor_id:currentUser?.id});
   notificarPorPush('libro', `Registro N° ${numero} del libro de obra aprobado ✅`, '');
   notificarPorEmail('libro', 'Registro aprobado', '', numero);
+  invalidarCacheProyectos();
   toast(`Registro N° ${numero} aprobado ✓`,'success');
   cargarLibroObra();
   cargarNotificacionesGlobales();
@@ -5567,6 +5572,7 @@ async function observarRegistroLibro(id, numero){
   await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'observado', comentario:comentario.trim(), autor_id:currentUser?.id});
   notificarPorPush('libro', `Registro N° ${numero} observado ⚠️`, comentario.trim());
   notificarPorEmail('libro', 'Registro observado — requiere corrección', comentario.trim(), numero);
+  invalidarCacheProyectos();
   toast(`Registro N° ${numero} devuelto con observación`,'success');
   cargarLibroObra();
   cargarNotificacionesGlobales();
@@ -5577,6 +5583,7 @@ async function reabrirRegistroLibro(id, numero){
   if(!confirm(`¿Reabrir el Registro N° ${numero}?\n\nPerderá el sello de aprobación y quedará pendiente. La acción quedará en el historial.`)) return;
   await sb.from('libro_obra').update({estado_aprobacion:'pendiente', aprobado_por:null, aprobado_at:null}).eq('id', id);
   await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'reabierto', autor_id:currentUser?.id});
+  invalidarCacheProyectos();
   toast(`Registro N° ${numero} reabierto`,'success');
   cargarLibroObra();
 }
@@ -5983,6 +5990,7 @@ async function guardarRegistroLibro(){
     }
   }
 
+  invalidarCacheProyectos();
   toast('Registro guardado con éxito ✓','success');
   cerrarModal('modalLibro');
   btnGuardar.disabled=false;
@@ -14398,6 +14406,7 @@ async function guardarEdicionRegistro(){
     }
   }
 
+  invalidarCacheProyectos();
   toast('Registro actualizado ✓','success');
   window._editandoRegistroId = null;
 
@@ -14445,6 +14454,7 @@ async function confirmarEliminarRegistro(id, num){
     }
   }
 
+  invalidarCacheProyectos();
   toast('Registro eliminado y rubros actualizados','success');
   cerrarModal('modalDetalleLibro');
   cargarLibroObra();

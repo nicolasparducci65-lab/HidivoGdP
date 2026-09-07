@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidivo-v18';
+const CACHE_NAME = 'hidivo-v19';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
