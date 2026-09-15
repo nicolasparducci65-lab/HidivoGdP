@@ -867,6 +867,9 @@
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="rptCuadroRubros" checked style="width:16px;height:16px;accent-color:#0073ea"/> Cuadro de rubros completo
           </label>
+          <label id="rptResumenIALabel" style="display:none;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="rptResumenIA" checked style="width:16px;height:16px;accent-color:#0073ea"/> ✨ Resumen ejecutivo (redacción asistida por IA, revisas antes de incluirlo)
+          </label>
         </div>
       </div>
 
@@ -890,6 +893,25 @@
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Vista previa
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RESUMEN EJECUTIVO (borrador IA, editable por el fiscalizador) -->
+<div class="modal-overlay" id="modalResumenIA" style="z-index:1200">
+  <div class="modal" style="width:680px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">✨ Resumen ejecutivo — revisar y aprobar</div>
+      <button class="btn" onclick="resolverResumenIA(null)" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1">
+      <div id="resumenIAMeta" style="font-size:12px;color:#676879;margin-bottom:10px"></div>
+      <textarea class="form-control" id="resumenIATexto" rows="18" style="font-family:inherit;font-size:13px;line-height:1.5"></textarea>
+      <div style="font-size:11px;color:#676879;margin-top:8px">El texto redactado por la IA solo usa los hechos calculados por la app para el período (registros aprobados). Corrige lo que haga falta: lo que confirmes es lo que va al PDF, con la nota "Redacción asistida por IA; revisado y aprobado por tu nombre".</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="resolverResumenIA(null)">Generar sin resumen</button>
+      <button class="btn primary" onclick="resolverResumenIA(document.getElementById('resumenIATexto').value)">Aprobar e incluir en el PDF</button>
     </div>
   </div>
 </div>
@@ -13613,6 +13635,10 @@ function abrirModalReporte(){
   document.getElementById('reporteFechaFin').value = hoyEc;
   document.getElementById('rptNovedadesPeriodo').value = '';
   document.getElementById('rptActividadesSiguiente').value = '';
+  // El resumen ejecutivo por IA lo redacta/aprueba solo admin o fiscalizador;
+  // el residente no ve la opción.
+  const lblIA = document.getElementById('rptResumenIALabel');
+  if(lblIA) lblIA.style.display = puedeResumenIA() ? 'flex' : 'none';
   seleccionarTipoReporte('cliente');
   document.getElementById('modalReporte').classList.add('show');
 }
@@ -13731,6 +13757,187 @@ ${metricas ? `
   document.getElementById('reporteContenido').innerHTML = editableHtml;
   cerrarModal('modalReporteDashboard');
   document.getElementById('modalVistaReporte').classList.add('show');
+}
+
+// ── RESUMEN EJECUTIVO DEL INFORME (redacción asistida por IA) ──
+// La app calcula los HECHOS (solo registros aprobados) y la Edge Function
+// resumen-informe los redacta. El modelo no calcula ni inventa. El fiscalizador
+// revisa y aprueba en un modal; el texto aprobado se guarda en
+// libro_obra_informes con el hash de los hechos: si el hash no cambia, se
+// reutiliza sin llamar a la IA. Si la IA falla o tarda más de 20 s, el PDF
+// sale sin resumen y lo indica; nunca bloquea el informe.
+const RESUMEN_IA_TIMEOUT_MS = 20000;
+
+function puedeResumenIA(){ return ['admin','fiscalizador'].includes(currentPerfil?.rol); }
+
+// Construcción PURA de los hechos. Recibe datos ya cargados; no toca la red.
+function armarHechosInforme(d){
+  const aprobados = (d.registros||[]).filter(r=>r.estado_aprobacion==='aprobado');
+  const idsAprob = new Set(aprobados.map(r=>r.id));
+  // Coerción explícita: los numeric llegan como número por PostgREST, pero como
+  // cadena desde exportaciones/fixtures; sumar cadenas daría NaN en silencio.
+  const num = v => Number(v)||0;
+  const rubrosN = (d.rubros||[]).map(r=>({ ...r,
+    cantidad_contrato:num(r.cantidad_contrato), cantidad_ejecutada:num(r.cantidad_ejecutada),
+    precio_unitario:num(r.precio_unitario), monto_contrato:num(r.monto_contrato), total_produccion:num(r.total_produccion) }));
+  d = { ...d, rubros: rubrosN, ocs: (d.ocs||[]).map(o=>({ ...o, monto_total:num(o.monto_total) })) };
+  const rubroPorId = {}; rubrosN.forEach(r=>{ rubroPorId[r.id] = r; });
+  const totalMonto = rubrosN.reduce((s,r)=>s+r.monto_contrato,0);
+
+  // Rubros trabajados en el período (solo registros aprobados)
+  const trabajados = {};
+  let produccionPeriodo = 0;
+  (d.avances||[]).forEach(a=>{
+    if(!idsAprob.has(a.registro_id)) return;
+    const r = rubroPorId[a.rubro_id]; if(!r) return;
+    const cant = Number(a.cantidad_dia)||0;
+    if(!trabajados[r.id]) trabajados[r.id] = { codigo:r.codigo||'—', descripcion:r.descripcion, unidad:r.unidad||'', cantidad:0 };
+    trabajados[r.id].cantidad += cant;
+    produccionPeriodo += cant * (Number(r.precio_unitario)||0);
+  });
+  const rubrosTrabajados = Object.values(trabajados).filter(t=>t.cantidad>0)
+    .map(t=>({ ...t, cantidad: Math.round(t.cantidad*100)/100 }));
+
+  // Avance acumulado real vs programado a la fecha fin del período (LB activa),
+  // con el núcleo EVM de la app (ponderación por costo).
+  const cronMap = {}; (d.cron||[]).forEach(c=>{ cronMap[c.rubro_id] = c; });
+  const rubrosEVM = rubrosConPesoEfectivo((d.rubros||[]).map(r=>{
+    const c = cronMap[r.id]||{};
+    return { ...r, fecha_inicio: c.fecha_inicio||null, fecha_fin: c.fecha_fin||null,
+      avance_real: r.estado==='terminado' ? 100 : (r.monto_contrato>0 ? Math.min(((r.total_produccion||0)/r.monto_contrato)*100,100) : 0) };
+  }));
+  const fechaCorte = new Date(d.fechaFin+'T00:00:00');
+  const { BCWP, BCWS, SPI, conFechas } = calcularEVMEnFecha(rubrosEVM, fechaCorte);
+  const r2 = v => v==null ? null : Math.round(v*100)/100;
+  const lecturaSPI = SPI==null ? 'sin dato' : SPI>=0.95 ? 'en tiempo' : SPI>=0.80 ? 'leve atraso' : 'atrasado';
+
+  const abiertas = (d.observaciones||[]).filter(o=>['abierta','en_proceso'].includes(o.estado));
+  const hoy = d.hoy ? new Date(d.hoy+'T00:00:00') : new Date();
+  const dias = (iso)=> iso ? Math.max(0, Math.round((hoy - new Date(iso))/86400000)) : null;
+
+  return {
+    proyecto: { nombre:d.proyecto?.nombre||'', contratante:d.proyecto?.contratante||null, contratista:d.proyecto?.contratista||null, ubicacion:d.proyecto?.ubicacion||null },
+    periodo: {
+      inicio: d.fechaInicio, fin: d.fechaFin,
+      dias_con_registro_aprobado: aprobados.length,
+      fechas_registro: aprobados.map(r=>r.fecha),
+      personal_promedio: aprobados.length ? Math.round(aprobados.reduce((s,r)=>s+(r.personal_total||0),0)/aprobados.length) : null
+    },
+    avance: {
+      linea_base: d.lbActiva ? `LB-${d.lbActiva.numero} — ${d.lbActiva.motivo||''}`.trim() : null,
+      periodo_pct: totalMonto>0 ? r2(produccionPeriodo/totalMonto*100) : null,
+      acumulado_real_pct: r2(BCWP),
+      acumulado_programado_pct: conFechas.length ? r2(BCWS) : null,
+      spi: r2(SPI), lectura_spi: lecturaSPI,
+      rubros_con_cronograma: conFechas.length, rubros_total: (d.rubros||[]).length
+    },
+    rubros_trabajados: rubrosTrabajados,
+    incidencias: aprobados.filter(r=>(r.novedades||'').trim()).map(r=>({ fecha:r.fecha, novedad:(r.novedades||'').trim().slice(0,300), resolucion:(r.resoluciones||'').trim().slice(0,200)||null })),
+    paralizaciones: aprobados.filter(r=>(r.personal_total||0)===0).map(r=>r.fecha),
+    observaciones_abiertas: abiertas.map(o=>({ numero:o.numero||null, titulo:o.titulo, estado:o.estado, dias_abierta: dias(o.created_at) })),
+    ordenes_cambio_pendientes: (d.ocs||[]).filter(o=>['borrador','solicitada'].includes(o.estado)).map(o=>({ numero:o.numero, titulo:o.titulo, estado:o.estado, monto_total: r2(o.monto_total) })),
+    rubros_ejecucion_sobre_contrato: (d.rubros||[]).filter(r=>(r.cantidad_ejecutada||0) > (r.cantidad_contrato||0) && (r.cantidad_ejecutada||0)>0)
+      .map(r=>({ codigo:r.codigo||'—', descripcion:r.descripcion, unidad:r.unidad||'', ejecutado:r2(r.cantidad_ejecutada), contrato:r2(r.cantidad_contrato) })),
+    registros_pendientes: (d.registros||[]).filter(r=>r.estado_aprobacion==='pendiente').length,
+    registros_observados: (d.registros||[]).filter(r=>r.estado_aprobacion==='observado').length
+  };
+}
+
+// JSON canónico (claves ordenadas) → SHA-256 hex. Mismo hash = mismos hechos.
+function jsonCanonico(v){
+  if(Array.isArray(v)) return '['+v.map(jsonCanonico).join(',')+']';
+  if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+jsonCanonico(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+async function hashHechos(hechos){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(jsonCanonico(hechos)));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// Modal del borrador: devuelve el texto aprobado o null (generar sin resumen).
+let _resolverResumenIA = null;
+function editarResumenIA(borrador, meta){
+  document.getElementById('resumenIATexto').value = borrador;
+  document.getElementById('resumenIAMeta').textContent = meta;
+  document.getElementById('modalResumenIA').classList.add('show');
+  return new Promise(res=>{ _resolverResumenIA = res; });
+}
+function resolverResumenIA(texto){
+  document.getElementById('modalResumenIA').classList.remove('show');
+  const r = _resolverResumenIA; _resolverResumenIA = null;
+  if(r) r(texto && texto.trim() ? texto.trim() : null);
+}
+
+// Borrador: reutiliza el guardado si el hash coincide; si no, llama a la IA
+// con timeout. Devuelve { texto, modelo, reutilizado } o { error }.
+async function obtenerBorradorResumen(hechos, hash, fechaInicio, fechaFin){
+  const { data: previo } = await sb.from('libro_obra_informes')
+    .select('texto,modelo,aprobado_por').eq('proyecto_id', currentProyecto)
+    .eq('fecha_inicio', fechaInicio).eq('fecha_fin', fechaFin).eq('hechos_hash', hash)
+    .order('created_at',{ascending:false}).limit(1).maybeSingle();
+  if(previo?.texto) return { texto: previo.texto, modelo: previo.modelo, reutilizado: true };
+
+  const { data: { session } } = await sb.auth.getSession();
+  if(!session) return { error: 'sin sesión' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), RESUMEN_IA_TIMEOUT_MS);
+  try{
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/resumen-informe`, {
+      method:'POST', signal: ctrl.signal,
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token, 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({ proyecto_id: currentProyecto, hechos })
+    });
+    const data = await resp.json().catch(()=>({}));
+    if(!resp.ok || data.error) return { error: data.error || `HTTP ${resp.status}` };
+    if(!data.texto) return { error: 'respuesta vacía' };
+    return { texto: data.texto, modelo: data.modelo, reutilizado: false };
+  }catch(e){
+    return { error: e.name==='AbortError' ? `sin respuesta en ${RESUMEN_IA_TIMEOUT_MS/1000} s` : e.message };
+  }finally{ clearTimeout(timer); }
+}
+
+async function guardarResumenInforme(fechaInicio, fechaFin, hash, texto, modelo){
+  const { error } = await sb.from('libro_obra_informes').upsert({
+    proyecto_id: currentProyecto, fecha_inicio: fechaInicio, fecha_fin: fechaFin,
+    hechos_hash: hash, texto, modelo: modelo||null, aprobado_por: currentUser?.id||null
+  }, { onConflict: 'proyecto_id,fecha_inicio,fecha_fin,hechos_hash' });
+  if(error) console.warn('libro_obra_informes:', error.message);
+}
+
+// Orquesta todo para el informe. Devuelve { texto, aprobador, modelo } o
+// { nota } explicando por qué no hay resumen. Nunca lanza.
+async function prepararResumenInforme(fechaInicio, fechaFin, registros, proy){
+  try{
+    const idsReg = (registros||[]).map(r=>r.id);
+    const [avR, rubR, lbR, obsR, ocR] = await Promise.all([
+      idsReg.length ? sb.from('libro_obra_rubros').select('registro_id,rubro_id,cantidad_dia').in('registro_id', idsReg) : Promise.resolve({data:[]}),
+      sb.from('rubros').select('id,codigo,descripcion,unidad,cantidad_contrato,cantidad_ejecutada,precio_unitario,monto_contrato,total_produccion,estado').eq('proyecto_id', currentProyecto),
+      sb.from('lineas_base').select('id,numero,motivo').eq('proyecto_id', currentProyecto).eq('activa', true).maybeSingle(),
+      sb.from('observaciones').select('numero,titulo,estado,created_at').eq('proyecto_id', currentProyecto).in('estado',['abierta','en_proceso']),
+      sb.from('ordenes_cambio').select('numero,titulo,estado,monto_total').eq('proyecto_id', currentProyecto).in('estado',['borrador','solicitada'])
+    ]);
+    const lb = lbR.data||null;
+    const { data: cron } = lb ? await sb.from('cronograma_rubros').select('rubro_id,fecha_inicio,fecha_fin').eq('linea_base_id', lb.id) : { data: [] };
+
+    const hechos = armarHechosInforme({ proyecto: proy, fechaInicio, fechaFin, registros, avances: avR.data||[], rubros: rubR.data||[], cron: cron||[], lbActiva: lb, observaciones: obsR.data||[], ocs: ocR.data||[], hoy: hoyEcuador() });
+    if(!hechos.periodo.dias_con_registro_aprobado) return { nota: 'sin registros aprobados en el período' };
+
+    const hash = await hashHechos(hechos);
+    const borrador = await obtenerBorradorResumen(hechos, hash, fechaInicio, fechaFin);
+    if(borrador.error){ toast('Resumen IA no disponible: '+borrador.error+'. El informe se genera sin resumen.','error'); return { nota: borrador.error }; }
+
+    const meta = borrador.reutilizado
+      ? 'Texto ya aprobado para este período con los mismos hechos (no se volvió a llamar a la IA). Puedes ajustarlo.'
+      : `Borrador redactado por ${borrador.modelo||'IA'} a partir de ${hechos.periodo.dias_con_registro_aprobado} registro(s) aprobado(s), ${hechos.rubros_trabajados.length} rubro(s) trabajado(s). Revísalo antes de aprobar.`;
+    const texto = await editarResumenIA(borrador.texto, meta);
+    if(!texto) return { nota: 'omitido por el usuario' };
+
+    await guardarResumenInforme(fechaInicio, fechaFin, hash, texto, borrador.modelo);
+    return { texto, modelo: borrador.modelo, aprobador: `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim() };
+  }catch(e){
+    console.error('resumen informe:', e);
+    return { nota: e.message||'error inesperado' };
+  }
 }
 
 async function generarReportePDF(){
@@ -13859,6 +14066,10 @@ async function generarReportePDF(){
   // si está vacío); la diferencia con el vigente va en nota al pie, no en el cuerpo.
   const montoLibro = montoContratoProyecto(proy, await obtenerMontoContratoProyecto());
 
+  // Resumen ejecutivo (IA) — solo si está marcado y el rol lo permite. Nunca bloquea.
+  const incResumenIA = !!document.getElementById('rptResumenIA')?.checked && puedeResumenIA();
+  const resumenIA = incResumenIA ? await prepararResumenInforme(fechaInicio, fechaFin, registros, proy) : null;
+
   // Obtener planillas del período si aplica
   let planillas = [];
   if(incPlanillas){
@@ -13941,6 +14152,14 @@ async function generarReportePDF(){
     <div class="info-item"><div class="lbl">Monto contrato</div><div class="val">${montoLibro.valor ? '$'+Number(montoLibro.valor).toLocaleString('es-EC',{minimumFractionDigits:2})+(montoLibro.difiere?' *':'') : '—'}</div></div>
   </div>
 </div>
+
+${resumenIA && resumenIA.texto ? `
+<div class="section">
+  <div class="section-title">Resumen Ejecutivo</div>
+  <div style="font-size:9px;line-height:1.55;color:#323338;white-space:pre-wrap">${escAttr(resumenIA.texto)}</div>
+  <div style="font-size:7px;color:#676879;margin-top:6px;font-style:italic">[Redacción asistida por IA; revisado y aprobado por ${escAttr(resumenIA.aprobador||'—')}]</div>
+</div>` : (resumenIA && resumenIA.nota ? `
+<div style="font-size:7px;color:#676879;margin:0 0 8px;font-style:italic">Resumen ejecutivo no incluido (${escAttr(resumenIA.nota)}).</div>` : '')}
 
 <div class="section">
   <div class="section-title">Resumen del Período</div>
