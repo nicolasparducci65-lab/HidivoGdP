@@ -8364,6 +8364,17 @@ async function cargarFormatosCalidad(){
   const conteoPorPlantilla = {};
   (respuestas||[]).forEach(r=>{ conteoPorPlantilla[r.plantilla_id] = (conteoPorPlantilla[r.plantilla_id]||0)+1; });
 
+  // RED DE SEGURIDAD: una plantilla con respuestas en este proyecto se lista
+  // SIEMPRE, esté o no asignada y esté activa o retirada. El historial nunca
+  // desaparece de la vista por un cambio de asignación o de versión.
+  const idsAsignadas = new Set(plantillasAsignadas.map(p=>p.id));
+  const idsConHistorial = [...new Set((respuestas||[]).map(r=>r.plantilla_id))].filter(id=>!idsAsignadas.has(id));
+  if(idsConHistorial.length){
+    const { data: extra } = await sb.from('formatos_calidad_plantillas')
+      .select('id,nombre,descripcion,campos,activo').in('id', idsConHistorial);
+    (extra||[]).forEach(p=>plantillasAsignadas.push({...p, rol_llenado:'residente', soloHistorial:true}));
+  }
+
   if(esResidente){
     const plantillasResidente = plantillasAsignadas.filter(p=>p.rol_llenado==='residente');
     renderFormatosCalidadResidente(plantillasResidente, respuestas||[]);
@@ -8404,7 +8415,7 @@ async function cargarFormatosCalidad(){
         <thead><tr><th>Formato</th><th>Descripción</th><th style="text-align:center">Lo llena</th><th style="text-align:center">Campos</th><th style="text-align:center">Respuestas</th><th></th></tr></thead>
         <tbody>
           ${plantillasAsignadas.map(p=>`<tr>
-            <td style="font-weight:600">${p.nombre}</td>
+            <td style="font-weight:600">${p.nombre}${p.activo===false?' <span style="background:#f5f6f8;color:#676879;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px" title="Plantilla retirada: no admite nuevos registros, el historial sigue disponible">RETIRADA</span>':''}${p.soloHistorial?' <span style="background:#fdf6e3;color:#b8860b;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px" title="No está asignada al proyecto, pero tiene registros">SOLO HISTORIAL</span>':''}</td>
             <td style="font-size:13px;color:#676879">${p.descripcion||'—'}</td>
             <td style="text-align:center;font-size:12px">${p.rol_llenado==='fiscalizador'?'🔍 Fiscalizador':'👷 Residente'}</td>
             <td style="text-align:center">${(p.campos||[]).length}</td>
@@ -8438,10 +8449,12 @@ function renderFormatosCalidadResidente(plantillas, respuestas, devolverHtml=fal
     </div>` : `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;padding:16px">
       ${plantillas.map(p=>`
-        <div style="border:1px solid #e6e9ef;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px">
-          <div style="font-weight:700;font-size:14px">${p.nombre}</div>
+        <div style="border:1px solid #e6e9ef;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px${p.activo===false?';opacity:.75':''}">
+          <div style="font-weight:700;font-size:14px">${p.nombre}${p.activo===false?' <span style="background:#f5f6f8;color:#676879;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px">RETIRADA</span>':''}</div>
           ${p.descripcion?`<div style="font-size:12px;color:#676879;flex:1">${p.descripcion}</div>`:'<div style="flex:1"></div>'}
-          <button onclick="abrirModalLlenarFormato('${p.id}')" class="btn primary" style="justify-content:center">+ Nuevo registro</button>
+          ${p.activo===false
+            ? '<div style="font-size:11px;color:#676879;text-align:center">Sin nuevos registros: usa la versión vigente. Tus registros anteriores siguen abajo.</div>'
+            : `<button onclick="abrirModalLlenarFormato('${p.id}')" class="btn primary" style="justify-content:center">+ Nuevo registro</button>`}
         </div>`).join('')}
     </div>`}
   </div>
@@ -8744,10 +8757,14 @@ async function eliminarPlantillaCalidad(){
 async function abrirModalAsignarFormatos(){
   if(!currentProyecto) return;
 
-  // Todas las plantillas visibles: base del sistema (empresa_id null) + de la empresa del usuario
+  // Todas las plantillas visibles: base del sistema (empresa_id null) + de la empresa del usuario.
+  // Las ACTIVAS se ofrecen para asignar; las RETIRADAS solo se listan si ya están
+  // asignadas o tienen registros en este proyecto, para que el guardado no las
+  // pierda (antes el modal las ocultaba y al guardar se borraba su asignación:
+  // así desaparecieron del listado 11 pilotes de Zapote al retirar FR-001-PIL-V1).
   const empresaId = currentPerfil?.empresa_id||null;
-  let query = sb.from('formatos_calidad_plantillas').select('id,nombre,descripcion').eq('activo',true);
-  const { data: todas } = empresaId
+  let query = sb.from('formatos_calidad_plantillas').select('id,nombre,descripcion,activo');
+  const { data: todasRaw } = empresaId
     ? await query.or(`empresa_id.is.null,empresa_id.eq.${empresaId}`)
     : await query.is('empresa_id', null);
 
@@ -8756,6 +8773,13 @@ async function abrirModalAsignarFormatos(){
   const rolPorPlantilla = {};
   (asignadasActuales||[]).forEach(a=>{ rolPorPlantilla[a.plantilla_id] = a.rol_llenado; });
 
+  const { data: resp } = await sb.from('formatos_calidad_respuestas').select('plantilla_id').eq('proyecto_id', currentProyecto);
+  const conRegistros = {};
+  (resp||[]).forEach(r=>{ conRegistros[r.plantilla_id] = (conRegistros[r.plantilla_id]||0)+1; });
+  window._formatosConRegistros = conRegistros;
+
+  const todas = (todasRaw||[]).filter(p=>p.activo!==false || rolPorPlantilla.hasOwnProperty(p.id) || conRegistros[p.id]);
+
   const cont = document.getElementById('listaAsignarFormatos');
   if(!todas||!todas.length){
     cont.innerHTML = '<div style="text-align:center;color:#676879;font-size:13px;padding:16px">No hay plantillas disponibles. Crea una primero.</div>';
@@ -8763,12 +8787,14 @@ async function abrirModalAsignarFormatos(){
     cont.innerHTML = todas.map(p=>{
       const asignado = rolPorPlantilla.hasOwnProperty(p.id);
       const rolActual = rolPorPlantilla[p.id]||'residente';
+      const n = conRegistros[p.id]||0;
       return `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-bottom:6px${p.activo===false?';background:#fafafa':''}">
         <input type="checkbox" class="chkAsignarFormato" value="${p.id}" ${asignado?'checked':''} style="width:15px;height:15px;accent-color:#0073ea"/>
         <div style="flex:1">
-          <div style="font-weight:600;font-size:13px">${p.nombre}</div>
+          <div style="font-weight:600;font-size:13px">${p.nombre}${p.activo===false?' <span style="background:#f5f6f8;color:#676879;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:6px">RETIRADA</span>':''}</div>
           ${p.descripcion?`<div style="font-size:11px;color:#676879">${p.descripcion}</div>`:''}
+          ${n?`<div style="font-size:11px;color:#b8860b">${n} registro(s) en este proyecto: la asignación se conserva aunque la desmarques</div>`:''}
         </div>
         <select class="selRolAsignarFormato" data-plantilla="${p.id}" style="font-size:12px;padding:4px 6px;border:1px solid #e6e9ef;border-radius:6px">
           <option value="residente" ${rolActual==='residente'?'selected':''}>👷 Residente</option>
@@ -8789,16 +8815,39 @@ async function guardarAsignacionFormatos(){
   const btn = document.getElementById('btnGuardarAsignarFormatos');
   btn.disabled=true; btn.textContent='Guardando...';
 
-  // Reemplazar asignaciones: borrar todas las actuales y volver a insertar las seleccionadas
-  await sb.from('formatos_calidad_asignaciones').delete().eq('proyecto_id', currentProyecto);
-  if(seleccionados.length){
-    await sb.from('formatos_calidad_asignaciones').insert(
-      seleccionados.map(plantilla_id=>({ proyecto_id: currentProyecto, plantilla_id, rol_llenado: roles[plantilla_id]||'residente' }))
-    );
+  // Guardado por DIFERENCIA, nunca borrar-todo + reinsertar: una plantilla con
+  // registros en el proyecto se conserva aunque se desmarque (su historial
+  // depende de la asignación para mostrarse). Cada llamada comprueba su error.
+  const conRegistros = window._formatosConRegistros||{};
+  const { data: actuales, error: e0 } = await sb.from('formatos_calidad_asignaciones')
+    .select('id, plantilla_id, rol_llenado').eq('proyecto_id', currentProyecto);
+  if(e0){ toast('Error leyendo asignaciones: '+e0.message,'error'); btn.disabled=false; btn.textContent='Guardar asignación'; return; }
+  const actualPorPlantilla = {}; (actuales||[]).forEach(a=>{ actualPorPlantilla[a.plantilla_id] = a; });
+  const setSel = new Set(seleccionados);
+
+  // Sin política de UPDATE en la tabla (RLS Ola 2): un cambio de rol se hace
+  // borrando esa fila e insertándola de nuevo, ambas operaciones permitidas.
+  const aQuitar = (actuales||[]).filter(a=>!setSel.has(a.plantilla_id) && !conRegistros[a.plantilla_id]);
+  const conservadas = (actuales||[]).filter(a=>!setSel.has(a.plantilla_id) && conRegistros[a.plantilla_id]);
+  const cambianRol = (actuales||[]).filter(a=>setSel.has(a.plantilla_id) && a.rol_llenado!==(roles[a.plantilla_id]||'residente'));
+  const aInsertar = seleccionados
+    .filter(id=>!actualPorPlantilla[id] || cambianRol.some(a=>a.plantilla_id===id))
+    .map(plantilla_id=>({ proyecto_id: currentProyecto, plantilla_id, rol_llenado: roles[plantilla_id]||'residente' }));
+
+  const idsBorrar = [...aQuitar, ...cambianRol].map(a=>a.id);
+  if(idsBorrar.length){
+    const { error } = await sb.from('formatos_calidad_asignaciones').delete().in('id', idsBorrar);
+    if(error){ toast('Error quitando asignaciones: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar asignación'; return; }
+  }
+  if(aInsertar.length){
+    const { error } = await sb.from('formatos_calidad_asignaciones').insert(aInsertar);
+    if(error){ toast('Error asignando formatos: '+error.message+(cambianRol.length?' (revisa las asignaciones: un cambio de rol pudo quedar a medias)':''),'error'); btn.disabled=false; btn.textContent='Guardar asignación'; cargarFormatosCalidad(); return; }
   }
 
   btn.disabled=false; btn.textContent='Guardar asignación';
-  toast('Formatos asignados ✓','success');
+  toast(conservadas.length
+    ? `Formatos asignados ✓ · ${conservadas.length} plantilla(s) con registros se conservan aunque se desmarcaron`
+    : 'Formatos asignados ✓','success');
   cerrarModal('modalAsignarFormatos');
   cargarFormatosCalidad();
 }
