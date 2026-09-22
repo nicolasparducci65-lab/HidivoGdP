@@ -1,10 +1,16 @@
-const CACHE_NAME = 'hidivo-v21';
+const CACHE_NAME = 'hidivo-v22';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
   '/HidivoGdP/styles.css',
   '/HidivoGdP/constantes.js',
   '/HidivoGdP/manifest.json',
+  // Recorridos 360: módulo propio + librerías vendorizadas (sin CDN)
+  '/HidivoGdP/js/recorridos360.js',
+  '/HidivoGdP/css/recorridos360.css',
+  '/HidivoGdP/vendor/pannellum/pannellum.js',
+  '/HidivoGdP/vendor/pannellum/pannellum.css',
+  '/HidivoGdP/vendor/exifr/exifr.full.umd.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'

@@ -19,7 +19,7 @@ const ESTADOS_LIBRO = {
 
 const MODULO_LABELS = {
   rubros:'Rubros', libro:'Libro de Obra', curvaS:'Curva S',
-  fiscalizacion:'Observaciones', solicitudes:'Solicitudes',
+  fiscalizacion:'Observaciones', recorridos360:'Recorridos 360', solicitudes:'Solicitudes',
   planillas:'Planillas', equipos:'Equipos', materiales:'Materiales',
   contratos:'Contratos', general:'General'
 };

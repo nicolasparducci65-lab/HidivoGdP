@@ -1,0 +1,39 @@
+/* Recorridos 360 — estilos del módulo. Cargado desde index.html. */
+.r360-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.r360-card{border:1px solid #e6e9ef;border-radius:10px;padding:14px;background:#fff;cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.r360-card:hover{border-color:#0073ea;box-shadow:0 2px 8px rgba(0,115,234,.08)}
+.r360-card .r360-fecha{font-size:11px;color:#676879}
+.r360-card .r360-titulo{font-weight:700;font-size:14px;color:#1a1a2e}
+.r360-estado{display:inline-block;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700}
+.r360-estado.borrador{background:#f5f6f8;color:#676879}
+.r360-estado.publicado{background:#e6f4ee;color:#00854d}
+
+.r360-puntos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.r360-punto{border:1px solid #e6e9ef;border-radius:8px;overflow:hidden;background:#fff}
+.r360-punto img{width:100%;aspect-ratio:2/1;object-fit:cover;display:block;background:#f0f2f5}
+.r360-punto .r360-punto-info{padding:6px 8px;font-size:11px;color:#676879;line-height:1.4}
+.r360-punto .r360-punto-info b{color:#1a1a2e}
+.r360-punto.sin-ubicar{border-color:#f0d98c}
+
+.r360-drop{border:2px dashed #c5c7d4;border-radius:10px;padding:18px;text-align:center;color:#676879;font-size:13px;background:#fafbff}
+.r360-drop b{color:#0073ea}
+
+.r360-progreso{margin-top:10px;font-size:12px;color:#323338}
+.r360-barra{height:8px;background:#e6e9ef;border-radius:4px;overflow:hidden;margin-top:4px}
+.r360-barra > div{height:100%;background:#0073ea;width:0;transition:width .2s}
+
+.r360-cola{border:1px solid #e6e9ef;border-radius:10px;padding:12px;margin-top:14px;background:#fff}
+.r360-cola-item{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f2f5;font-size:12px}
+.r360-cola-item:last-child{border-bottom:none}
+.r360-cola-item .estado{min-width:96px;font-weight:600}
+.r360-cola-item .estado.pendiente{color:#b8860b}
+.r360-cola-item .estado.subiendo{color:#0073ea}
+.r360-cola-item .estado.error{color:#e2445c}
+.r360-cola-item .estado.pausado{color:#676879}
+.r360-aviso{background:#fdf6e3;border:1px solid #f0d98c;border-radius:8px;padding:8px 12px;font-size:12px;color:#7a5c00;margin-top:8px}
+.r360-error{background:#fdecef;border:1px solid #f5c2ca;border-radius:8px;padding:8px 12px;font-size:12px;color:#8a1c2b;margin-top:8px}
+
+@media (max-width:600px){
+  .r360-grid{grid-template-columns:1fr}
+  .r360-puntos{grid-template-columns:repeat(2,1fr)}
+}

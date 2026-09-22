@@ -1,2 +1,77 @@
 # HidivoGdP
 Gestion de Proyectos de Obra
+
+PWA en vanilla JS sin build: `index.html` (monolítico) + `styles.css` + `constantes.js` +
+`service-worker.js`; backend Supabase (Auth, Postgres con RLS, Storage, Edge Functions en
+`supabase/functions`); deploy a GitHub Pages desde `master`. **En cada deploy se incrementa
+`CACHE_NAME` en `service-worker.js`.**
+
+## Módulo Recorridos 360 (`js/recorridos360.js`, `css/recorridos360.css`)
+
+Registro fotográfico 360 de la obra con cámaras Insta360 serie X (X3/X4/X5), ubicado sobre
+los planos del proyecto y comparable entre fechas.
+
+**Entrada válida:** JPEG equirectangular 2:1 exportado desde la app Insta360 o Insta360
+Studio (≈11900×5950, 15–25 MB). La app **no** procesa `.insp` ni `.insv` (mensaje: *"Exporta
+la foto 360 desde la app Insta360 antes de subirla"*) ni video.
+
+**Video 360 (MP4 equirectangular):** no se sube a Storage. Hasta que exista `scripts/frames_360.sh`
+(fase f), extraer fotogramas en PC con ffmpeg y subirlos como fotos en modo Secuencia:
+```bash
+ffmpeg -i recorrido.mp4 -vf "fps=1/3" -q:v 2 frame_%04d.jpg
+```
+(`fps=1/3` = un fotograma cada 3 s; ajustar según el ritmo de caminata. Los JPEG resultantes
+no traen EXIF: la app usará la fecha del archivo y lo dejará anotado en el punto.)
+
+**Qué hace el cliente con cada foto (de a una, también en móvil):**
+1. Valida extensión y proporción 2:1 (tolerancia 1 %) leyendo el marcador SOF, sin decodificar.
+2. Calcula `sha256` del original (dedupe por recorrido; `UNIQUE (recorrido_id, hash_sha256)`).
+3. Lee metadatos con exifr **antes** de comprimir (canvas descarta EXIF/XMP): `fecha_captura`
+   (`DateTimeOriginal`; si falta, fecha del archivo con aviso), lat/lon/alt, heading
+   (`GPano:PoseHeadingDegrees`), cámara, ancho/alto originales.
+4. Genera tres variantes con `createImageBitmap(resizeWidth/Height)` + `bitmap.close()`:
+   `full` 5760×2880 (JPEG 0,82; si supera 5,5 MB baja la calidad de 0,04 en 0,04 hasta 0,70),
+   `web` 4096×2048 (dispositivos con `MAX_TEXTURE_SIZE` < 5760) y `thumb` 1024×512.
+   Nunca se sube el original. Si el dispositivo no puede decodificar: *"Sube este lote desde PC"*.
+5. Encola en IndexedDB (`hidivo-offline` / `pendientes`, `tipo: 'punto360'`) y sube en
+   segundo plano con la cola existente: progreso por foto, reintentos (5), pausa manual.
+
+**Storage:** bucket **privado** `fotos-360`, rutas `<proyecto_id>/<recorrido_id>/<punto_id>/{full,web,thumb}.jpg`,
+JPEG, 8 MB por objeto. Políticas por proyecto derivadas del primer segmento de la ruta.
+Toda lectura pasa por `storage360` (URLs firmadas de 12 h, **una** firma por recorrido,
+caché en memoria, refirma única ante error de carga; `getBlob` para informes; `getShareUrl`
+solo admin/fiscalizador). Prohibido construir rutas `/object/public/` para este bucket.
+
+**Roles:** ver = cualquier miembro del proyecto; crear recorridos y subir puntos =
+admin/fiscalizador/residente; editar/publicar = admin/fiscalizador; eliminar = admin. Un
+recorrido **publicado** congela posición, archivos, fecha de captura, hash y recorrido de sus
+puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si no, el congelado
+se evadiría despublicando). `publicado_en`/`publicado_por` los fija el servidor y el
+`proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un punto deben
+coincidir con sus propios ids (todo por triggers `BEFORE`). Módulo opcional por proyecto
+(ficha del proyecto).
+
+**Librerías vendorizadas** (sin CDN, precacheadas por el SW): `vendor/pannellum` 2.5.6 (MIT)
+y `vendor/exifr` 7.1.3 (MIT).
+
+### Aplicar la migración
+
+`supabase/migrations/20260922_recorridos_360.sql` **no se ejecuta automáticamente**: revisar y
+aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
+- 8 políticas en `recorridos_360`/`puntos_360`, 4 en `storage.objects` (`fotos360 …`), bucket
+  con `public = false`, triggers `r360_guard_recorrido`, `p360_a_proyecto` y
+  `p360_b_guard_publicado`, columnas `punto_360_id`/`yaw`/`pitch` en `observaciones`.
+- (a) `GET` anónimo a `/object/public/fotos-360/...` → error y firmar con la clave anon → error;
+  (b) un residente de otro proyecto no puede firmar rutas ajenas; (c) una URL firmada con
+  `expiresIn = 5` responde 200 y, pasados 7 s, 400 (medido con `fetch`).
+- Reglas de integridad con un fiscalizador sobre un recorrido publicado (bloque 5 del pie).
+- `grep -n "object/public" js/recorridos360.js` y `grep -n "fotos-360" index.html` → sin resultados.
+
+### Estado por fases
+(a) migración + bucket ✔ · (b) carga, metadatos, variantes, cola y `storage360` ✔ ·
+(c) visor Pannellum, mini-mapa, modos Por punto / Secuencia · (d) observación desde 360 ·
+(e) comparar y línea de tiempo · (f) SW/offline, `scripts/frames_360.sh`.
+
+Fuera de alcance (preparado, no implementado): checklists por hito/rubro, agente IA de visión,
+migración a Cloudflare R2 (cambiar solo `storage360.*`), auditoría planillas vs evidencia,
+fotogrametría.

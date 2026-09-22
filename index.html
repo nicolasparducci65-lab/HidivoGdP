@@ -149,6 +149,10 @@
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Observaciones
       </div>
+      <div class="nav-item" onclick="navTo('recorridos360',this)">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        Recorridos 360
+      </div>
       <div class="nav-item" onclick="navTo('solicitudes',this)">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         Solicitudes
@@ -368,6 +372,10 @@
       </div>
 
       <!-- FISCALIZACIÓN -->
+      <!-- RECORRIDOS 360 (js/recorridos360.js) -->
+      <div class="page" id="page-recorridos360">
+        <div id="recorridos360Content"><div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver sus recorridos 360</div></div></div>
+      </div>
       <div class="page" id="page-fiscalizacion">
         <div id="fiscalizacionContent"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div><div class="empty-sub">Elige un proyecto para ver las inspecciones</div></div></div>
       </div>
@@ -630,6 +638,9 @@
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modFormatosCalidad" checked style="width:15px;height:15px;accent-color:#0073ea"/> ✅ Formatos de Calidad
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
+            <input type="checkbox" id="modRecorridos360" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🌐 Recorridos 360
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modSST" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🦺 SST / SSO
@@ -2988,12 +2999,12 @@ function primeraSeccionPermitida(permitidos){
 function aplicarAccesosPorRol(rol){
   // Mostrar/ocultar items del nav según rol
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['proyectos','rubros','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     tecnico_sst:  ['proyectos','sso','archivos','chat'],
-    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
+    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','recorridos360','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
 
@@ -3026,6 +3037,7 @@ function aplicarAccesosPorRol(rol){
     libro:          document.querySelector('.nav-item[onclick*="libro"]'),
     curvaS:         document.querySelector('.nav-item[onclick*="curvaS"]'),
     fiscalizacion:  document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    recorridos360:  document.querySelector('.nav-item[onclick*="recorridos360"]'),
     solicitudes:    document.querySelector('.nav-item[onclick*="solicitudes"]'),
     planillas:      document.querySelector('.nav-item[onclick*="planillas"]'),
     equipos:        document.querySelector('.nav-item[onclick*="equipos"]'),
@@ -3100,7 +3112,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', recorridos360:'Recorridos 360', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   // Importar Excel y su plantilla son acciones de escritura: solo gestores de
   // rubros (admin/fiscalizador). El residente y el visualizador ven Rubros en
@@ -3113,7 +3125,7 @@ function navTo(page, btn){
   if(btnEliminarRubros) btnEliminarRubros.style.display = (page==='rubros' && currentProyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
   const btnOC = document.getElementById('btnOrdenesCambio');
   if(btnOC) btnOC.style.display = (page==='rubros' && currentProyecto && ['admin','fiscalizador'].includes(currentPerfil?.rol)) ? 'flex' : 'none';
-  const showSelector = ['rubros','libro','curvaS','fiscalizacion','chat','solicitudes','planillas','contrato','ensayos','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso'].includes(page);
+  const showSelector = ['rubros','libro','curvaS','fiscalizacion','recorridos360','chat','solicitudes','planillas','contrato','ensayos','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso'].includes(page);
   document.getElementById('proyectoSelector').style.display = showSelector ? 'block' : 'none';
   const rol = currentPerfil?.rol;
   const esVisualizador = rol==='visualizador';
@@ -3135,6 +3147,7 @@ function navTo(page, btn){
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
   if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
+  if(page==='recorridos360'&&currentProyecto&&typeof cargarRecorridos360==='function') cargarRecorridos360();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
   if(page==='contrato'&&currentProyecto) cargarContrato();
@@ -3680,6 +3693,7 @@ async function cambiarProyecto(id){
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
   if(currentPage==='fiscalizacion') cargarFiscalizacion();
+  if(currentPage==='recorridos360'&&typeof cargarRecorridos360==='function') cargarRecorridos360();
   if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='planillas') cargarPlanillas();
   if(currentPage==='contrato') cargarContrato();
@@ -3730,17 +3744,19 @@ function limpiarEstadoProyecto(){
   // SST
   sstConfigActual = null; sstChecklistRespuestasCache = {};
   sstCache = { riesgos:[], eppMatriz:[], eppEntregas:[], capacitaciones:[], incidentes:[], ptes:[], examMatriz:[], examRegistros:[] };
+  // Recorridos 360 (js/recorridos360.js): recorrido activo, puntos y caché de URLs firmadas
+  if(typeof limpiarEstadoR360==='function') limpiarEstadoR360();
 }
 
 function aplicarModulosProyecto(modulos){
   const rol = currentPerfil?.rol;
   const accesos = {
-    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
-    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
-    residente:    ['proyectos','rubros','fiscalizacion','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
+    admin:        ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat','usuarios','reportesGlobales'],
+    fiscalizador: ['dashboard','proyectos','rubros','libro','curvaS','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','archivos','subcontratistas','formatosCalidad','sso','chat'],
+    residente:    ['proyectos','rubros','fiscalizacion','recorridos360','solicitudes','planillas','equipos','materiales','libro','archivos','subcontratistas','formatosCalidad','chat'],
     bodeguero:    ['materiales','archivos','subcontratistas','chat'],
     tecnico_sst:  ['proyectos','sso','archivos','chat'],
-    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','archivos','subcontratistas','sso','chat'],
+    visualizador: ['dashboard','proyectos','rubros','curvaS','libro','recorridos360','archivos','subcontratistas','sso','chat'],
     cliente:      ['dashboard','curvaS']
   };
   const permitidos = accesos[rol]||['dashboard'];
@@ -3750,6 +3766,7 @@ function aplicarModulosProyecto(modulos){
     curvaS:           modulos?.curvaS !== false,
     libro:            modulos?.libro !== false,
     fiscalizacion:    modulos?.observaciones !== false,
+    recorridos360:    modulos?.recorridos360 !== false,
     solicitudes:      modulos?.solicitudes !== false,
     planillas:        modulos?.planillas !== false,
     equipos:          modulos?.equipos !== false,
@@ -3763,6 +3780,7 @@ function aplicarModulosProyecto(modulos){
     curvaS:          document.querySelector('.nav-item[onclick*="curvaS"]'),
     libro:           document.querySelector('.nav-item[onclick*="libro"]'),
     fiscalizacion:   document.querySelector('.nav-item[onclick*="fiscalizacion"]'),
+    recorridos360:   document.querySelector('.nav-item[onclick*="recorridos360"]'),
     solicitudes:     document.querySelector('.nav-item[onclick*="solicitudes"]'),
     planillas:       document.querySelector('.nav-item[onclick*="planillas"]'),
     equipos:         document.querySelector('.nav-item[onclick*="equipos"]'),
@@ -3783,7 +3801,7 @@ function aplicarModulosProyecto(modulos){
 
   // Si está en una página que se desactivó, redirigir avisando el motivo
   if(currentPage && navItems[currentPage] && navItems[currentPage].style.display==='none'){
-    const NOMBRES_PAGINA = { curvaS:'Curva S', libro:'Libro de Obra', fiscalizacion:'Observaciones', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Equipos', materiales:'Materiales', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST/SSO' };
+    const NOMBRES_PAGINA = { curvaS:'Curva S', libro:'Libro de Obra', fiscalizacion:'Observaciones', recorridos360:'Recorridos 360', solicitudes:'Solicitudes', planillas:'Planillas de Pago', equipos:'Equipos', materiales:'Materiales', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST/SSO' };
     toast(`Este proyecto no tiene el módulo ${NOMBRES_PAGINA[currentPage]||currentPage}`,'info');
     const paginaInicio = primeraSeccionPermitida(permitidos);
     navTo(paginaInicio, document.querySelector(`.nav-item[onclick*="${paginaInicio}"]`));
@@ -3825,6 +3843,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modSubcontratistas').checked = mods.subcontratistas !== false;
   document.getElementById('modFormatosCalidad').checked = mods.formatosCalidad !== false;
+  document.getElementById('modRecorridos360').checked = mods.recorridos360 !== false;
   document.getElementById('modSST').checked = mods.sst !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
@@ -3902,6 +3921,7 @@ async function guardarProyecto(){
     materiales: document.getElementById('modMateriales').checked,
     subcontratistas: document.getElementById('modSubcontratistas').checked,
     formatosCalidad: document.getElementById('modFormatosCalidad').checked,
+    recorridos360: document.getElementById('modRecorridos360').checked,
     sst: document.getElementById('modSST').checked,
   };
   const data = {
@@ -5405,10 +5425,14 @@ let _sincronizandoOffline = false;
 
 async function sincronizarRegistrosOffline(){
   if(_sincronizandoOffline || !navigator.onLine) return;
-  let pendientes = [];
-  try{ pendientes = await idbTodos(); }catch(e){ return; }
-  if(!pendientes.length){ actualizarIndicadorOffline(); return; }
+  // El guard se toma ANTES del primer await: dos disparos casi simultáneos
+  // (evento online + programación desde Recorridos 360) no deben correr a la vez.
   _sincronizandoOffline = true;
+  let pendientes = [];
+  try{ pendientes = await idbTodos(); }catch(e){ _sincronizandoOffline = false; return; }
+  // Fotos 360 en pausa o con reintentos agotados se saltan: si no queda nada más, no hay nada que sincronizar
+  const saltables = pendientes.filter(i => i.tipo==='punto360' && typeof r360ColaSaltar==='function' && r360ColaSaltar(i)).length;
+  if(!pendientes.length || saltables === pendientes.length){ _sincronizandoOffline = false; actualizarIndicadorOffline(); return; }
   actualizarIndicadorOffline('Sincronizando...');
   let ok = 0, fallos = 0;
   pendientes.sort((a,b)=>a.creadoOffline.localeCompare(b.creadoOffline));
@@ -5417,6 +5441,11 @@ async function sincronizarRegistrosOffline(){
       const tipoItem = item.tipo || 'libro';
       if(tipoItem === 'observacion'){ await subirObservacionOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
       if(tipoItem === 'solicitud'){ await subirSolicitudOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
+      // Fotos 360 (js/recorridos360.js): la cola solo SUBE; pausada o agotados los reintentos se salta el ítem
+      if(tipoItem === 'punto360'){
+        if(typeof subirPunto360Offline!=='function' || r360ColaSaltar(item)) continue;
+        await subirPunto360Offline(item); await idbBorrar(item.idLocal); ok++; continue;
+      }
       // Número definitivo asignado al sincronizar (evita choques)
       const { data: maxN } = await sb.from('libro_obra').select('numero_registro')
         .eq('proyecto_id', item.proyecto_id).order('numero_registro',{ascending:false}).limit(1);
@@ -5467,6 +5496,7 @@ async function sincronizarRegistrosOffline(){
       if(currentPage==='libro') cargarLibroObra();
       if(currentPage==='fiscalizacion') cargarObservaciones();
       if(currentPage==='solicitudes') cargarSolicitudes();
+      if(currentPage==='recorridos360'&&typeof cargarRecorridos360==='function') cargarRecorridos360();
       cargarNotificacionesGlobales();
     }catch(e){}
   }
@@ -5528,17 +5558,24 @@ async function subirSolicitudOffline(item){
 async function actualizarIndicadorOffline(textoForzado){
   const el = document.getElementById('offlineIndicador');
   if(!el) return;
-  let n = 0;
-  try{ n = (await idbTodos()).length; }catch(e){}
+  let n = 0, saltados = 0;
+  try{
+    const items = await idbTodos();
+    // Fotos 360 en pausa o con reintentos agotados no son "por sincronizar": se muestran aparte
+    saltados = items.filter(i => i.tipo==='punto360' && typeof r360ColaSaltar==='function' && r360ColaSaltar(i)).length;
+    n = items.length - saltados;
+  }catch(e){}
   if(textoForzado){
     el.style.display = 'flex';
     el.textContent = '🔄 ' + textoForzado;
     el.style.background = '#f0f7ff'; el.style.color = '#0073ea';
     return;
   }
-  if(n > 0){
+  if(n > 0 || saltados > 0){
     el.style.display = 'flex';
-    el.textContent = `📴 ${n} por sincronizar`;
+    el.textContent = n > 0
+      ? `📴 ${n} por sincronizar${saltados ? ` · ${saltados} foto(s) 360 en pausa/error` : ''}`
+      : `⏸ ${saltados} foto(s) 360 en pausa/error`;
     el.style.background = '#fdf6e3'; el.style.color = '#b8860b';
   } else if(!navigator.onLine){
     el.style.display = 'flex';
@@ -16257,5 +16294,12 @@ async function imprimirPTE(id){
 document.querySelectorAll('.modal-overlay').forEach(m => document.body.appendChild(m));
 checkAuth();
 </script>
+<!-- Recorridos 360: librerías vendorizadas (sin CDN) y módulo propio. Van después del
+     script principal porque usan sus globales; el SW las precachea. -->
+<link rel="stylesheet" href="vendor/pannellum/pannellum.css"/>
+<link rel="stylesheet" href="css/recorridos360.css"/>
+<script src="vendor/exifr/exifr.full.umd.js"></script>
+<script src="vendor/pannellum/pannellum.js"></script>
+<script src="js/recorridos360.js"></script>
 </body>
 </html>
