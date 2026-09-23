@@ -63,10 +63,13 @@ defecto**: se activa por proyecto en la ficha del proyecto (mientras no esté ac
 **Visor y mini-mapa (fase c):** visor Pannellum (variante `full` si `MAX_TEXTURE_SIZE` ≥ 5760,
 si no `web`; brújula si el punto trae `heading_norte`). La panorámica la descarga el módulo
 con `fetch` abortable (cambiar de punto cancela la descarga; ante 400/403 refirma y reintenta
-una vez) y se entrega a Pannellum como `blob:`; las 3 últimas quedan en memoria y la siguiente
-se precarga cuando la actual ya se ve (no con ahorro de datos ni 2G). Un visor que aún no
-cargó no se destruye hasta que cargue (Pannellum no cancela su carga y dejaría contextos
-WebGL huérfanos). Mini-mapa sobre los planos del proyecto (imagen o PDF vía pdf.js con render
+una vez) y se entrega a Pannellum como `blob:`; las 5 últimas quedan en memoria (LRU; al
+expulsar una se revoca su `blob:`; la caché se vacía al salir del recorrido, al abrir otro y
+al cambiar de proyecto) y la siguiente se precarga cuando la actual ya se ve (no con ahorro de
+datos ni 2G). Cada visor vive en un host propio; uno que aún no cargó no se destruye hasta que
+cargue (Pannellum no cancela su carga y dejaría contextos WebGL huérfanos). En consola queda
+la decisión `MAX_TEXTURE_SIZE → full/web` y, abriendo la app con `?r360exp=5`, las URLs
+firmadas vencen a los 5 s para probar el refirmado automático. Mini-mapa sobre los planos del proyecto (imagen o PDF vía pdf.js con render
 serializado, misma convención `x/y` en % que los pines de observaciones): marcas por punto,
 arrastrables; toque en marca abre la foto. Los refrescos (sincronización, eliminar punto) son
 parciales: no destruyen visor, mapa ni selección. Modos:

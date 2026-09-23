@@ -22,7 +22,7 @@ const R360 = {
   TOLERANCIA_RATIO: 0.01,    // 2:1 ± 1 %
   MAX_REINTENTOS: 5,
   FIRMA_SEGUNDOS: 43200,     // 12 h
-  BLOBS_MAX: 3,              // panorámicas descargadas que se conservan en memoria (≈15 MB)
+  BLOBS_MAX: 5,              // panorámicas descargadas que se conservan en memoria (≤ 5 × 5,5 MB); se vacía al salir del recorrido
   MSG_INSTA: 'Exporta la foto 360 desde la app Insta360 antes de subirla',
   MSG_VIDEO: 'Los videos 360 no se suben desde la app: extrae fotogramas del MP4 (ver README, Recorridos 360) y súbelos como fotos en modo Secuencia',
   MSG_PC: 'Sube este lote desde PC',
@@ -34,6 +34,14 @@ const R360 = {
   // estado de carga
   procesando: false, lote: 0, subiendoIdLocal: null, _progreso: {}, _maxTextura: null
 };
+// Prueba de refirmado automático: abrir la app con ?r360exp=5 hace que las URLs
+// firmadas venzan a los 5 s (miniaturas y visor deben refirmar solos una vez).
+(() => {
+  try{
+    const v = Number(new URLSearchParams(location.search).get('r360exp'));
+    if(v >= 5 && v <= 86400){ R360.FIRMA_SEGUNDOS = v; console.info(`[360] PRUEBA: URLs firmadas con vencimiento de ${v} s (?r360exp)`); }
+  }catch(e){}
+})();
 
 // Roles (copia de las políticas de observaciones): el residente SUBE puntos
 // pero no los actualiza; ubicar en el plano, etiquetar y publicar son de
@@ -272,7 +280,11 @@ function r360MaxTextura(){
   }catch(e){ R360._maxTextura = 4096; }
   return R360._maxTextura;
 }
-function r360VarianteVisor(){ return r360MaxTextura() >= R360.FULL[0] ? 'archivo_full' : 'archivo_web'; }
+function r360VarianteVisor(){
+  const max = r360MaxTextura(), full = max >= R360.FULL[0];
+  if(!R360._logVariante){ R360._logVariante = true; console.info(`[360] MAX_TEXTURE_SIZE=${max} → el visor usa la variante ${full ? 'full (5760×2880)' : 'web (4096×2048)'}`); }
+  return full ? 'archivo_full' : 'archivo_web';
+}
 
 // ── Cola de subida (IndexedDB 'hidivo-offline', store 'pendientes', tipo 'punto360') ──
 function r360Pausada(){ try{ return localStorage.getItem('r360_pausa') === '1'; }catch(e){ return false; } }
@@ -365,7 +377,9 @@ async function subirPunto360Offline(item){
   // Limpieza de un ítem que YA salió de la cola: si falla, queda una lápida
   const limpiarOLapida = async motivo => { const r = await r360LimpiarSobrantes(item, motivo, prog); if(!r.ok) await r360GuardarLapida(item); };
   try{
-    if(!(await r360ItemSigueEnCola(item.idLocal))){ terminado = true; await limpiarOLapida('ítem descartado antes de subir'); return null; }
+    // Ya no está en cola: quien lo descartó (r360DescartarItem) limpió o dejó lápida; aquí no se borra nada
+    // (podría ser un punto cuya fila SÍ llegó al servidor, y un admin sí puede borrar objetos con fila)
+    if(!(await r360ItemSigueEnCola(item.idLocal))){ terminado = true; return null; }
     // Otro intento (u otro dispositivo) ya registró esta foto: lo que este ítem
     // hubiera subido bajo OTRO punto_id sobra.
     const dup = await buscarPorHash();
@@ -551,10 +565,10 @@ function r360ProgresoUI(){
 // NO se toca subiendoIdLocal: la subida en curso del bucle offline termina sola.
 function limpiarEstadoR360(){
   R360.recorridos = []; R360.recorridoActivo = null; R360.puntos = []; R360.planos = [];
-  R360.planoId = null; R360.seleccionado = null; R360.visorPuntoId = null; R360._drag = null;
+  R360.planoId = null; R360.seleccionado = null; R360.visorPuntoId = null; r360CancelarArrastre();
   R360._mapaToken++; r360PdfReset();
   r360AbortarDescarga(); if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} R360._precarga = null; }
-  R360._blobs.clear();
+  r360VaciarCacheBlobs();
   r360DestruirVisor();
   if(R360.procesando){ R360.lote++; R360.procesando = false; }
   storage360.limpiarCache();
@@ -584,8 +598,14 @@ async function cargarRecorridos360(){
   if(!r360ModuloActivo()){ cont.innerHTML = ''; return; }
   if(!currentProyecto){ cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-title">Selecciona un proyecto</div></div>'; return; }
   if(R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto){ return abrirRecorrido360(R360.recorridoActivo.id); }
+  const proy = currentProyecto;
   const { data, error } = await sb.from('recorridos_360').select('*, puntos_360(count)')
-    .eq('proyecto_id', currentProyecto).order('fecha', { ascending: false }).order('created_at', { ascending: false });
+    .eq('proyecto_id', proy).order('fecha', { ascending: false }).order('created_at', { ascending: false });
+  // Mientras se consultaba pudo cambiar el proyecto, abrirse un recorrido o empezar a
+  // escribirse uno nuevo: una lista tardía no pisa nada de eso
+  if(proy !== currentProyecto || (R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto)) return;
+  const formAbierto = document.getElementById('r360NuevoForm');
+  if(formAbierto && formAbierto.style.display !== 'none') return;
   if(error){
     // 42P01 = la tabla no existe: la migración 20260922_recorridos_360.sql aún no se aplicó
     cont.innerHTML = error.code === '42P01'
@@ -690,7 +710,8 @@ async function abrirRecorrido360(id, opts = {}){
   // Vista actual del visor, para restaurarla si se reabre el mismo punto
   let vista = null; const idPrevio = R360.visorPuntoId;
   if(R360.visor && idPrevio){ try{ if(R360.visor.isLoaded()) vista = { yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
-  r360AbortarDescarga(); r360DestruirVisor(); R360.seleccionado = null; R360._drag = null; R360._mapaToken++;
+  if(R360.recorridoActivo?.id !== id) r360VaciarCacheBlobs();   // las panorámicas en memoria son de otro recorrido
+  r360AbortarDescarga(); r360DestruirVisor(); R360.seleccionado = null; r360CancelarArrastre(); R360._mapaToken++;
   cont.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando recorrido...</div>';
   const [{ data: rec, error: e1 }, { data: puntos, error: e2 }, { data: planos }] = await Promise.all([
     sb.from('recorridos_360').select('*').eq('id', id).single(),
@@ -773,8 +794,8 @@ async function abrirRecorrido360(id, opts = {}){
   if(inicial) r360AbrirVisor(inicial, { scroll: false, ...(inicial === idPrevio && vista ? vista : {}) });
 }
 function r360VolverALista(){
-  R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null;
-  r360AbortarDescarga(); r360DestruirVisor(); R360._mapaToken++;
+  R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null; r360CancelarArrastre();
+  r360AbortarDescarga(); r360DestruirVisor(); r360VaciarCacheBlobs(); R360._mapaToken++;
   cargarRecorridos360();
 }
 
@@ -842,7 +863,7 @@ async function r360TogglePublicado(){
   if(error){ toast('Error: ' + error.message, 'error'); return; }
   toast(publicar ? 'Recorrido publicado ✓' : 'Recorrido devuelto a borrador', 'success');
   if(R360.recorridoActivo?.id === rec.id) abrirRecorrido360(rec.id, { completo: true });
-  else if(currentPage === 'recorridos360' && !R360.recorridoActivo) cargarRecorridos360();   // el usuario ya volvió a la lista
+  else r360RefrescarTrasSync(true);   // el usuario ya volvió a la lista (no pisa un formulario ni otro recorrido)
 }
 
 async function r360EliminarPunto(id){
@@ -855,11 +876,11 @@ async function r360EliminarPunto(id){
   // Rutas reconstruidas desde los ids (no desde la fila): solo se borran los objetos de ESTE punto
   const rutas = ['full', 'web', 'thumb'].map(v => storage360.ruta(p.proyecto_id, p.recorrido_id, p.id, v));
   try{ await storage360.borrar(rutas); }catch(e){ console.warn('[360] borrar storage:', e?.message || e); }
-  rutas.forEach(r => R360._blobs.delete(r));
+  rutas.forEach(r360OlvidarBlob);
   toast('Punto eliminado', 'success');
   // Refresco ligero (quita el punto, cierra su visor si era el visible) solo si el usuario sigue en ese recorrido
   if(R360.recorridoActivo?.id === recId) abrirRecorrido360(recId);
-  else if(currentPage === 'recorridos360' && !R360.recorridoActivo) cargarRecorridos360();
+  else r360RefrescarTrasSync(true);
 }
 
 // ── Guardar cambios de un punto (ubicación, etiqueta) ───────────────────────
@@ -911,6 +932,7 @@ function r360SetModo(m){
 
 async function r360PintarMapa(){
   const cont = document.getElementById('r360Mapa'), nav = document.getElementById('r360PdfNav'); if(!cont) return;
+  r360CancelarArrastre();                       // el overlay se reemplaza: un arrastre en curso no puede seguir
   const token = ++R360._mapaToken;
   if(nav) nav.innerHTML = '';
   if(!R360.planos.length){ r360PdfReset(); cont.innerHTML = '<div class="r360-mapa-vacio">Este proyecto no tiene planos. Súbelos en Observaciones › Planos para ubicar los puntos.</div>'; return; }
@@ -1010,6 +1032,12 @@ function r360Coords(e, ov){
   const c = coordsPinDesdeEvento(e, ov);
   return { x: Math.min(100, Math.max(0, c.x)), y: Math.min(100, Math.max(0, c.y)) };
 }
+// Cancela un arrastre en curso (cambio de plano, de recorrido o de proyecto) soltando la captura del puntero
+function r360CancelarArrastre(){
+  const d = R360._drag; if(!d) return;
+  R360._drag = null;
+  try{ d.el.releasePointerCapture(d.pointerId); }catch(e){}
+}
 // Interacción del overlay: toque en vacío = ubicar el punto seleccionado;
 // toque en una marca = abrir en el visor; arrastre de una marca = moverla.
 function r360EnlazarOverlay(ov){
@@ -1017,6 +1045,7 @@ function r360EnlazarOverlay(ov){
   ov.addEventListener('pointerdown', e => {
     const m = e.target.closest('.r360-marca'); if(!m) return;
     if(R360._drag) return;                                   // ya hay un puntero arrastrando
+    if(e.button !== 0) return;                               // botón secundario (menú contextual): no arma arrastre
     e.preventDefault();
     R360._drag = { id: m.dataset.id, el: m, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, movible: r360PuedeUbicar(), c: null, repintar: false };
     try{ m.setPointerCapture(e.pointerId); }catch(_){}
@@ -1033,10 +1062,10 @@ function r360EnlazarOverlay(ov){
     if(d.moved && d.c){
       const ok = await r360GuardarPunto(d.id, { plano_id: R360.planoId, x: d.c.x, y: d.c.y, waypoint: true });
       if(ok) r360RepintarTrasCambio(); else r360PintarMarcas();   // si falló, la marca vuelve a su sitio
-    } else if(e.type === 'pointerup'){
+    } else if(e.type === 'pointerup' && r360Punto(d.id)){
       r360AbrirVisor(d.id);                                  // repinta marcas (incluye lo diferido durante el arrastre)
     } else {
-      r360PintarMarcas();
+      r360PintarMarcas();                                    // cancelación, o el punto desapareció mientras se tocaba
     }
   };
   ov.addEventListener('pointerup', fin);
@@ -1165,16 +1194,37 @@ async function r360Interpolar(){
 function r360AbortarDescarga(){
   if(R360._visorAbort){ try{ R360._visorAbort.abort(); }catch(e){} R360._visorAbort = null; }
 }
+// Caché LRU de panorámicas: como máximo BLOBS_MAX entradas { blob, url }. Al
+// expulsar una entrada se revoca su blob: URL si seguía viva; se vacía entera
+// al salir del recorrido (r360VolverALista), al abrir otro y al cambiar de
+// proyecto (limpiarEstadoR360).
+function r360RevocarEntrada(e){ if(e && e.url){ try{ URL.revokeObjectURL(e.url); }catch(_){} e.url = null; } }
+function r360OlvidarBlob(path){ const e = R360._blobs.get(path); if(e){ r360RevocarEntrada(e); R360._blobs.delete(path); } }
+function r360VaciarCacheBlobs(){ R360._blobs.forEach(r360RevocarEntrada); R360._blobs.clear(); }
 function r360BlobCache(path, blob){
   if(blob){
-    R360._blobs.delete(path); R360._blobs.set(path, blob);
-    while(R360._blobs.size > R360.BLOBS_MAX) R360._blobs.delete(R360._blobs.keys().next().value);
+    r360OlvidarBlob(path);
+    R360._blobs.set(path, { blob, url: null });
+    while(R360._blobs.size > R360.BLOBS_MAX) r360OlvidarBlob(R360._blobs.keys().next().value);
     return blob;
   }
-  const b = R360._blobs.get(path);
-  if(b){ R360._blobs.delete(path); R360._blobs.set(path, b); }   // LRU
-  return b || null;
+  const e = R360._blobs.get(path); if(!e) return null;
+  R360._blobs.delete(path); R360._blobs.set(path, e);   // LRU: la más reciente al final
+  return e.blob;
 }
+// blob: URL para el visor, registrada en la entrada de caché (se revoca al
+// cargar, al fallar, al destruir el visor o al expulsar la entrada).
+function r360UrlDeBlob(path, blob){
+  const u = URL.createObjectURL(blob);
+  const e = R360._blobs.get(path); if(e){ r360RevocarEntrada(e); e.url = u; }
+  return u;
+}
+function r360RevocarUrl(path, url){
+  if(!url) return;
+  const e = R360._blobs.get(path); if(e && e.url === url) e.url = null;
+  try{ URL.revokeObjectURL(url); }catch(_){}
+}
+function r360RevocarUrlVisor(v){ if(v && v._r360BlobUrl){ const u = v._r360BlobUrl; v._r360BlobUrl = null; r360RevocarUrl(v._r360Path, u); } }
 async function r360DescargarPanoramica(path, signal, onProgreso){
   const cache = r360BlobCache(path); if(cache) return cache;
   // Ya en vuelo (precarga u otro visor): se comparte, salvo que esa descarga
@@ -1215,11 +1265,15 @@ function r360DestruirVisor(){
   try{ v._r360Host?.remove(); }catch(e){}
   const fin = () => {
     try{ v.destroy(); }catch(e){}
-    if(v._r360BlobUrl){ try{ URL.revokeObjectURL(v._r360BlobUrl); }catch(e){} v._r360BlobUrl = null; }
+    r360RevocarUrlVisor(v);
   };
   let cargado = true; try{ cargado = v.isLoaded(); }catch(e){}
   if(cargado){ fin(); return Promise.resolve(); }
-  return Promise.race([v._r360Listo || Promise.resolve(), new Promise(r => setTimeout(r, 10000))]).then(fin, fin);
+  // Se destruye al terminar la carga (aunque sea después del tope de 10 s: una
+  // carga tardía crearía contexto WebGL y listeners que nadie más liberaría) y,
+  // como tope, a los 10 s. destroy() de Pannellum tolera llamarse dos veces.
+  const alTerminar = (v._r360Listo || Promise.resolve()).then(fin, fin);
+  return Promise.race([alTerminar, new Promise(r => setTimeout(r, 10000))]).then(fin, fin);
 }
 async function r360AbrirVisor(id, opts = {}){
   const p = r360Punto(id), cont = document.getElementById('r360Visor');
@@ -1253,13 +1307,13 @@ async function r360AbrirVisor(id, opts = {}){
   }
   if(!blob || R360.visorPuntoId !== id || ac.signal.aborted) return;   // el usuario cambió de punto mientras descargaba
   if(R360._visorAbort === ac) R360._visorAbort = null;
-  r360CrearVisor(cont, p, blob, opts);
+  r360CrearVisor(cont, p, path, blob, opts);
 }
-function r360CrearVisor(cont, p, blob, opts){
+function r360CrearVisor(cont, p, path, blob, opts){
   if(typeof pannellum === 'undefined'){ cont.innerHTML = '<div class="r360-visor-msg">El visor 360 no está disponible (pannellum no cargó)</div>'; return; }
   cont.innerHTML = '';
   const host = document.createElement('div'); host.className = 'r360-visor-host'; cont.appendChild(host);   // contenedor propio de ESTE visor
-  const bu = URL.createObjectURL(blob);
+  const bu = r360UrlDeBlob(path, blob);
   const cfg = {
     type: 'equirectangular', panorama: bu, autoLoad: true, showControls: true, crossOrigin: 'anonymous',
     hfov: opts.hfov ?? 100, minHfov: 40, maxHfov: 120, yaw: opts.yaw ?? 0, pitch: opts.pitch ?? 0,
@@ -1272,17 +1326,18 @@ function r360CrearVisor(cont, p, blob, opts){
   };
   let v;
   try{ v = pannellum.viewer(host, cfg); }
-  catch(e){ URL.revokeObjectURL(bu); cont.innerHTML = `<div class="r360-visor-msg">No se pudo iniciar el visor: ${escAttr(e?.message || e)}</div>`; return; }
+  catch(e){ r360RevocarUrl(path, bu); cont.innerHTML = `<div class="r360-visor-msg">No se pudo iniciar el visor: ${escAttr(e?.message || e)}</div>`; return; }
   v._r360Host = host;
+  v._r360Path = path;
   v._r360BlobUrl = bu;
   v._r360Listo = new Promise(res => { v.on('load', res); v.on('error', res); });
   R360.visor = v;
   v.on('load', () => {
-    if(v._r360BlobUrl){ URL.revokeObjectURL(v._r360BlobUrl); v._r360BlobUrl = null; }
+    r360RevocarUrlVisor(v);                              // la textura ya está en GPU: el blob: URL sobra
     if(R360.visor === v) r360Precargar(p.id);          // la siguiente se descarga solo cuando esta ya se ve
   });
   v.on('error', msg => {
-    if(v._r360BlobUrl){ URL.revokeObjectURL(v._r360BlobUrl); v._r360BlobUrl = null; }
+    r360RevocarUrlVisor(v);
     console.warn('[360] visor:', msg);
   });
 }
