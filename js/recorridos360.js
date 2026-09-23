@@ -1407,15 +1407,19 @@ function r360DestruirVisor(){
   // o diferido) vacía "su" contenedor, y así nunca toca al visor siguiente ni al
   // mensaje de descarga que ocupa #r360Visor.
   try{ v._r360Host?.remove(); }catch(e){}
+  let diferido = false, llamadas = 0;
   const fin = () => {
+    llamadas++;
     try{ v.destroy(); }catch(e){}
     r360RevocarUrlVisor(v);
+    r360Dbg(`visor destroy punto #${v._r360Orden ?? '?'}${diferido ? (llamadas === 1 ? ' (diferido hasta terminar su carga)' : ' (segunda pasada: carga tardía tras el tope)') : ''}`);
   };
   let cargado = true; try{ cargado = v.isLoaded(); }catch(e){}
   if(cargado){ fin(); return Promise.resolve(); }
   // Se destruye al terminar la carga (aunque sea después del tope de 10 s: una
   // carga tardía crearía contexto WebGL y listeners que nadie más liberaría) y,
   // como tope, a los 10 s. destroy() de Pannellum tolera llamarse dos veces.
+  diferido = true;
   const alTerminar = (v._r360Listo || Promise.resolve()).then(fin, fin);
   return Promise.race([alTerminar, new Promise(r => setTimeout(r, 10000))]).then(fin, fin);
 }
@@ -1474,17 +1478,22 @@ function r360CrearVisor(cont, p, path, blob, opts){
   catch(e){ r360RevocarUrl(path, bu); cont.innerHTML = `<div class="r360-visor-msg">No se pudo iniciar el visor: ${escAttr(e?.message || e)}</div>`; return; }
   v._r360Host = host;
   v._r360Path = path;
+  v._r360Orden = p.orden;
   v._r360BlobUrl = bu;
   v._r360Listo = new Promise(res => { v.on('load', res); v.on('error', res); });
   R360.visor = v;
+  // Eventos del visor: van por consola con prefijo [360] (el panel de depuración los captura)
   v.on('load', () => {
     r360RevocarUrlVisor(v);                              // la textura ya está en GPU: el blob: URL sobra
-    if(opts._dbg) r360Dbg(`punto #${p.orden}: ${path.endsWith('full.jpg') ? 'full' : 'web'} · ${(blob.size / 1048576).toFixed(2)} MB · descarga ${opts._dbg.tDesc} ms${opts._dbg.enCache ? ' (caché)' : ''} · visible a los ${Math.round(performance.now() - opts._dbg.t0)} ms`);
+    const d = opts._dbg;
+    console.info(`[360] visor load punto #${p.orden}: ${path.endsWith('full.jpg') ? 'full' : 'web'} · ${(blob.size / 1048576).toFixed(2)} MB`
+      + (d ? ` · descarga ${d.tDesc} ms${d.enCache ? ' (caché)' : ''} · visible a los ${Math.round(performance.now() - d.t0)} ms` : '')
+      + (R360.visor === v ? '' : ' · (visor ya reemplazado: se destruye)'));
     if(R360.visor === v) r360Precargar(p.id);          // la siguiente se descarga solo cuando esta ya se ve
   });
   v.on('error', msg => {
     r360RevocarUrlVisor(v);
-    console.warn(`[360] visor punto #${p.orden}:`, msg);
+    console.warn(`[360] visor error punto #${p.orden}:`, msg);
   });
 }
 // Precarga la siguiente panorámica a la caché en memoria (una a la vez; no
