@@ -61,7 +61,8 @@ Eliminar = admin. Un recorrido **publicado** congela posición, archivos, fecha 
 recorrido de sus puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si
 no, el congelado se evadiría despublicando). `publicado_en`/`publicado_por` los fija el
 servidor y el `proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un
-punto deben coincidir con sus propios ids (todo por triggers `BEFORE`). Módulo **apagado por
+punto deben coincidir con sus propios ids y su `plano_id` debe ser un plano del mismo proyecto
+(todo por triggers `BEFORE`). Módulo **apagado por
 defecto**: se activa por proyecto en la ficha del proyecto (mientras no esté activo no hay
 ítem de menú ni aviso).
 
@@ -97,6 +98,7 @@ aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
   `punto_360_id`/`yaw`/`pitch` en `observaciones`.
 - Residente sobre un recorrido en borrador: actualiza etiqueta/posición (1 fila), falla con 42501
   al tocar `fecha_captura`; sobre uno publicado su UPDATE devuelve 0 filas (bloque 5b del pie).
+- `plano_id` de otro proyecto → 23514; del mismo proyecto → OK (bloque 5c).
 - Un residente borra con `remove()` un objeto propio sin fila (devuelve 1) y no uno con fila
   (devuelve 0), bloque 6 del pie.
 - (a) `GET` anónimo a `/object/public/fotos-360/...` → error y firmar con la clave anon → error;

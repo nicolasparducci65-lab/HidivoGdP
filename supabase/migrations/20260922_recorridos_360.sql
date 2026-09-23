@@ -133,6 +133,8 @@ create index if not exists puntos_360_proyecto_fecha_idx  on public.puntos_360 (
 --    <proyecto_id>/<recorrido_id>/<id>/{full,web,thumb}.jpg: así ninguna fila
 --    puede apuntar a objetos de otro punto (y un borrado por admin nunca
 --    alcanza archivos ajenos).
+--  * plano_id, al fijarse o cambiar, debe ser un plano del MISMO proyecto del
+--    punto (para todos los roles; también protege el permiso del residente).
 -- Sin SECURITY DEFINER: el usuario debe poder ver el recorrido (r360_select);
 -- si no lo ve, el insert falla, que es lo correcto.
 create or replace function public.p360_a_proyecto()
@@ -153,6 +155,12 @@ begin
   or (new.archivo_web   is not null and new.archivo_web   <> v_prefijo || 'web.jpg')
   or (new.archivo_thumb is not null and new.archivo_thumb <> v_prefijo || 'thumb.jpg') then
     raise exception 'Las rutas de archivo del punto deben ser <proyecto>/<recorrido>/<punto>/{full,web,thumb}.jpg' using errcode = '23514';
+  end if;
+  -- El plano debe ser del mismo proyecto que el punto (se comprueba al fijarlo o cambiarlo)
+  if new.plano_id is not null and (tg_op = 'INSERT' or new.plano_id is distinct from old.plano_id) then
+    if not exists (select 1 from public.planos pl where pl.id = new.plano_id and pl.proyecto_id = new.proyecto_id) then
+      raise exception 'El plano % no pertenece al proyecto del punto (o no es visible para este usuario)', new.plano_id using errcode = '23514';
+    end if;
   end if;
   return new;
 end $$;
@@ -369,6 +377,10 @@ create policy "fotos360 eliminar propios sin punto" on storage.objects for delet
 --   (await sb.from('puntos_360').update({etiqueta:'Eje 2', x: 40, y: 55}).eq('id', Q).select('id')).data.length   // 1  (borrador: permitido)
 --   (await sb.from('puntos_360').update({fecha_captura: new Date().toISOString()}).eq('id', Q).select('id')).error?.code   // '42501' (columna fuera de la lista blanca)
 --   (await sb.from('puntos_360').update({etiqueta:'Eje 3'}).eq('id', P).select('id')).data.length   // 0  (publicado: la política no aplica)
+--
+-- 5c) Plano de otro proyecto (cualquier rol con UPDATE; recorrido en borrador, punto Q):
+--   (await sb.from('puntos_360').update({plano_id:'<plano de OTRO proyecto>', x: 10, y: 10}).eq('id', Q)).error?.code   // '23514'
+--   (await sb.from('puntos_360').update({plano_id:'<plano del MISMO proyecto>', x: 10, y: 10}).eq('id', Q)).error         // null
 --
 -- 6) Limpieza de sobrantes (con un RESIDENTE del proyecto). remove() NO devuelve error cuando la
 --    política niega el borrado: devuelve la lista de objetos borrados, así que se compara el largo.
