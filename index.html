@@ -640,7 +640,7 @@
             <input type="checkbox" id="modFormatosCalidad" checked style="width:15px;height:15px;accent-color:#0073ea"/> ✅ Formatos de Calidad
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
-            <input type="checkbox" id="modRecorridos360" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🌐 Recorridos 360
+            <input type="checkbox" id="modRecorridos360" style="width:15px;height:15px;accent-color:#0073ea"/> 🌐 Recorridos 360
           </label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;border:1px solid #e6e9ef;border-radius:8px">
             <input type="checkbox" id="modSST" checked style="width:15px;height:15px;accent-color:#0073ea"/> 🦺 SST / SSO
@@ -3685,10 +3685,13 @@ async function cambiarProyecto(id){
   if(proy){
     const idx = proyectos.findIndex(p=>p.id===id);
     if(idx>=0) proyectos[idx]=proy; else proyectos.push(proy);
-    aplicarModulosProyecto(proy.modulos);
     window._proyectoCerrado = proy.estado_cierre === 'liquidado';
     if(window._proyectoCerrado) toast('🏁 Proyecto LIQUIDADO — solo lectura','info');
   }
+  // Los módulos se aplican SIEMPRE (con la copia en caché si la recarga falló sin
+  // señal): si no, los ítems de menú quedan como los dejó el rol y un módulo
+  // apagado (p. ej. Recorridos 360) aparecería visible.
+  aplicarModulosProyecto((proy || proyectos.find(p=>p.id===id))?.modulos);
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
@@ -3766,7 +3769,7 @@ function aplicarModulosProyecto(modulos){
     curvaS:           modulos?.curvaS !== false,
     libro:            modulos?.libro !== false,
     fiscalizacion:    modulos?.observaciones !== false,
-    recorridos360:    modulos?.recorridos360 !== false,
+    recorridos360:    modulos?.recorridos360 === true,   // apagado por defecto: se activa por proyecto
     solicitudes:      modulos?.solicitudes !== false,
     planillas:        modulos?.planillas !== false,
     equipos:          modulos?.equipos !== false,
@@ -3843,7 +3846,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modMateriales').checked = mods.materiales !== false;
   document.getElementById('modSubcontratistas').checked = mods.subcontratistas !== false;
   document.getElementById('modFormatosCalidad').checked = mods.formatosCalidad !== false;
-  document.getElementById('modRecorridos360').checked = mods.recorridos360 !== false;
+  document.getElementById('modRecorridos360').checked = mods.recorridos360 === true;   // apagado por defecto
   document.getElementById('modSST').checked = mods.sst !== false;
   document.getElementById('modalProyecto').classList.add('show');
 }
@@ -3960,6 +3963,12 @@ async function guardarProyecto(){
   if(error){ toast('Error: '+error.message,'error'); return; }
   toast(id?'Proyecto actualizado':'Proyecto creado con éxito','success');
   cerrarModal('modalProyecto');
+  if(id && id===currentProyecto){
+    // Módulos del proyecto actual: se reflejan en el menú de inmediato (sin esperar a cambiar de proyecto)
+    const idx = proyectos.findIndex(p=>p.id===id);
+    if(idx>=0) proyectos[idx] = {...proyectos[idx], ...data};
+    aplicarModulosProyecto(modulos);
+  }
   invalidarCacheProyectos();
   cargarDashboard();
   cargarProyectosSelector();
@@ -5434,17 +5443,32 @@ async function sincronizarRegistrosOffline(){
   const saltables = pendientes.filter(i => i.tipo==='punto360' && typeof r360ColaSaltar==='function' && r360ColaSaltar(i)).length;
   if(!pendientes.length || saltables === pendientes.length){ _sincronizandoOffline = false; actualizarIndicadorOffline(); return; }
   actualizarIndicadorOffline('Sincronizando...');
-  let ok = 0, fallos = 0;
-  pendientes.sort((a,b)=>a.creadoOffline.localeCompare(b.creadoOffline));
+  let ok = 0, fallos = 0, ok360 = 0;
+  // Registros de campo (libro, observación, solicitud) primero: son pequeños y no deben esperar
+  // detrás de decenas de MB de fotos 360 ni caer con el break de un corte de red durante una foto.
+  const prioridad = i => i.tipo==='punto360' ? 2 : (i.tipo==='punto360_limpieza' ? 1 : 0);
+  pendientes.sort((a,b)=>(prioridad(a)-prioridad(b)) || a.creadoOffline.localeCompare(b.creadoOffline));
   for(const item of pendientes){
     try{
       const tipoItem = item.tipo || 'libro';
       if(tipoItem === 'observacion'){ await subirObservacionOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
       if(tipoItem === 'solicitud'){ await subirSolicitudOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
-      // Fotos 360 (js/recorridos360.js): la cola solo SUBE; pausada o agotados los reintentos se salta el ítem
+      // Fotos 360 (js/recorridos360.js): la cola solo SUBE; pausada o agotados los reintentos se salta el ítem.
+      // Devuelve null si el ítem fue descartado durante la subida (no cuenta como sincronizado).
       if(tipoItem === 'punto360'){
         if(typeof subirPunto360Offline!=='function' || r360ColaSaltar(item)) continue;
-        await subirPunto360Offline(item); await idbBorrar(item.idLocal); ok++; continue;
+        const res = await subirPunto360Offline(item); await idbBorrar(item.idLocal);
+        if(res !== null){ ok++; ok360++; }
+        continue;
+      }
+      // Lápida de limpieza 360 (descarte sin señal o limpieza fallida): borra objetos huérfanos
+      // (solo si el punto NO quedó registrado en el servidor) y desaparece
+      if(tipoItem === 'punto360_limpieza'){
+        if(typeof r360EjecutarLapida === 'function'){
+          try{ await r360EjecutarLapida(item); }
+          catch(e){ if(esErrorDeRed(e)) throw e; console.warn('[360] limpieza diferida:', e?.message||e); }
+        }
+        await idbBorrar(item.idLocal); continue;
       }
       // Número definitivo asignado al sincronizar (evita choques)
       const { data: maxN } = await sb.from('libro_obra').select('numero_registro')
@@ -5496,7 +5520,8 @@ async function sincronizarRegistrosOffline(){
       if(currentPage==='libro') cargarLibroObra();
       if(currentPage==='fiscalizacion') cargarObservaciones();
       if(currentPage==='solicitudes') cargarSolicitudes();
-      if(currentPage==='recorridos360'&&typeof cargarRecorridos360==='function') cargarRecorridos360();
+      // Recorridos 360 solo se refresca (parcialmente) si se subieron fotos 360: no se destruye el visor por un libro o una observación
+      if(typeof r360RefrescarTrasSync==='function') r360RefrescarTrasSync(ok360);
       cargarNotificacionesGlobales();
     }catch(e){}
   }
@@ -5561,9 +5586,10 @@ async function actualizarIndicadorOffline(textoForzado){
   let n = 0, saltados = 0;
   try{
     const items = await idbTodos();
-    // Fotos 360 en pausa o con reintentos agotados no son "por sincronizar": se muestran aparte
+    // Fotos 360 en pausa o con reintentos agotados no son "por sincronizar": se muestran aparte.
+    // Las lápidas de limpieza 360 no son registros: no se cuentan.
     saltados = items.filter(i => i.tipo==='punto360' && typeof r360ColaSaltar==='function' && r360ColaSaltar(i)).length;
-    n = items.length - saltados;
+    n = items.length - saltados - items.filter(i => i.tipo==='punto360_limpieza').length;
   }catch(e){}
   if(textoForzado){
     el.style.display = 'flex';
@@ -7050,20 +7076,29 @@ let pdfPaginaActual = 1;
 
 // Carga pdf.js bajo demanda (compartido por el visor de la pestaña Planos y
 // el selector de pin del modal de observación)
+let _pdfJsCarga = null;
 async function asegurarPdfJs(){
   if(typeof pdfjsLib !== 'undefined') return;
-  await new Promise(resolve=>{
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = resolve;
-    document.head.appendChild(s);
-  });
+  // Una sola carga compartida; si el CDN no responde (sin señal, bloqueado) la
+  // promesa RECHAZA en vez de quedar colgada para siempre.
+  if(!_pdfJsCarga){
+    _pdfJsCarga = new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      const fallo = ()=>{ s.remove(); _pdfJsCarga = null; reject(new Error('pdf.js no disponible (sin conexión o CDN bloqueado)')); };
+      const t = setTimeout(fallo, 20000);
+      s.onload = ()=>{ clearTimeout(t); resolve(); };
+      s.onerror = ()=>{ clearTimeout(t); fallo(); };
+      document.head.appendChild(s);
+    });
+  }
+  await _pdfJsCarga;
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
 async function renderizarPDF(url, pagina){
-  await asegurarPdfJs();
   try {
+    await asegurarPdfJs();   // puede rechazar (CDN bloqueado / sin señal): cae al iframe de abajo
     if(!pdfDoc || pdfDoc._url !== url){
       pdfDoc = await pdfjsLib.getDocument(url).promise;
       pdfDoc._url = url;
@@ -7649,8 +7684,8 @@ function cargarPlanoSelectorPin(){
 // Render de PDF del selector: estado propio (_selPinPdf) para no interferir
 // con el visor de la pestaña Planos (pdfDoc/pdfPaginaActual quedan intactos)
 async function renderizarPDFSelector(url, pagina){
-  await asegurarPdfJs();
   try{
+    await asegurarPdfJs();   // puede rechazar (CDN bloqueado / sin señal): lo captura el catch
     if(!_selPinPdf.doc || _selPinPdf.url !== url){
       _selPinPdf.doc = await pdfjsLib.getDocument(url).promise;
       _selPinPdf.url = url;

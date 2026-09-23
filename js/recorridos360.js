@@ -1,10 +1,12 @@
 // ============================================================================
-// RECORRIDOS 360 — módulo (fase b: validación, metadatos, variantes, cola y
-// storage360). Cargado desde index.html DESPUÉS del script principal; usa sus
-// globales: sb, currentProyecto, currentPerfil, currentUser, currentPage, toast,
-// escAttr, idbGuardar/idbTodos/idbBorrar/idbOp, esErrorDeRed,
-// actualizarIndicadorOffline, sincronizarRegistrosOffline, _sincronizandoOffline,
-// bloquearSiCerrado, hoyEcuador.
+// RECORRIDOS 360 — módulo. Fase (b): validación, metadatos, variantes, cola y
+// storage360. Fase (c): visor Pannellum, mini-mapa sobre planos y modos
+// Por punto / Secuencia. Cargado desde index.html DESPUÉS del script
+// principal; usa sus globales: sb, currentProyecto, currentPerfil, currentUser,
+// currentPage, proyectos, toast, escAttr, idbGuardar/idbTodos/idbBorrar/idbOp,
+// esErrorDeRed, actualizarIndicadorOffline, sincronizarRegistrosOffline,
+// _sincronizandoOffline, bloquearSiCerrado, hoyEcuador, coordsPinDesdeEvento,
+// asegurarPdfJs (pdf.js bajo demanda) y la librería vendorizada pannellum.
 //
 // Entrada válida: JPEG equirectangular 2:1 exportado desde la app Insta360 o
 // Insta360 Studio. Nunca se sube el original: se generan full/web/thumb en el
@@ -20,16 +22,27 @@ const R360 = {
   TOLERANCIA_RATIO: 0.01,    // 2:1 ± 1 %
   MAX_REINTENTOS: 5,
   FIRMA_SEGUNDOS: 43200,     // 12 h
+  BLOBS_MAX: 3,              // panorámicas descargadas que se conservan en memoria (≈15 MB)
   MSG_INSTA: 'Exporta la foto 360 desde la app Insta360 antes de subirla',
   MSG_VIDEO: 'Los videos 360 no se suben desde la app: extrae fotogramas del MP4 (ver README, Recorridos 360) y súbelos como fotos en modo Secuencia',
   MSG_PC: 'Sube este lote desde PC',
-  recorridos: [], recorridoActivo: null, puntos: [],
+  // estado de página
+  recorridos: [], recorridoActivo: null, puntos: [], planos: [],
+  modo: 'punto', planoId: null, seleccionado: null,
+  visor: null, visorPuntoId: null, _visorAbort: null, _precarga: null, _blobs: new Map(), _descargas: new Map(),
+  _pdf: { doc: null, url: null, pagina: 1, paginaPedida: 1, tarea: null }, _mapaToken: 0, _drag: null,
+  // estado de carga
   procesando: false, lote: 0, subiendoIdLocal: null, _progreso: {}, _maxTextura: null
 };
 
+// Roles (copia de las políticas de observaciones): el residente SUBE puntos
+// pero no los actualiza; ubicar en el plano, etiquetar y publicar son de
+// admin/fiscalizador; eliminar es de admin.
 const PUEDE_EDITAR_R360   = () => ['admin','fiscalizador','residente'].includes(currentPerfil?.rol);
 const PUEDE_PUBLICAR_R360 = () => ['admin','fiscalizador'].includes(currentPerfil?.rol);
 const ES_ADMIN_R360       = () => currentPerfil?.rol === 'admin';
+function r360Congelado(){ const r = R360.recorridoActivo; return !!r && r.estado === 'publicado' && !ES_ADMIN_R360(); }
+function r360PuedeUbicar(){ return PUEDE_PUBLICAR_R360() && !r360Congelado(); }
 
 // uuid v4 con fallback real (Safari antiguo sin crypto.randomUUID). Nunca null:
 // el id del punto forma la ruta de storage y la fila.
@@ -49,9 +62,8 @@ const storage360 = {
   ruta(proyectoId, recorridoId, puntoId, variante){
     return `${proyectoId}/${recorridoId}/${puntoId}/${variante}.jpg`;
   },
-  // upsert:false a propósito: el residente no tiene UPDATE ni DELETE en el
-  // bucket. Si el objeto ya existe (reintento tras una subida parcial) se da
-  // por subido en vez de fallar.
+  // upsert:false a propósito: el residente no tiene UPDATE en el bucket. Si el
+  // objeto ya existe (reintento tras una subida parcial) se da por subido.
   async subir(path, blob){
     const { error } = await sb.storage.from(R360.BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if(error){
@@ -100,9 +112,17 @@ const storage360 = {
     if(error) throw error;
     return data.signedUrl;
   },
-  async borrar(paths){
-    const { error } = await sb.storage.from(R360.BUCKET).remove(paths.filter(Boolean));
+  // remove() NO falla cuando la política niega el borrado: devuelve solo los
+  // objetos que sí borró. Se devuelve ese número; si es menor y no es esperado
+  // (`parcialEsperado`), se avisa en consola.
+  async borrar(paths, parcialEsperado = false){
+    const lista = paths.filter(Boolean);
+    if(!lista.length) return 0;
+    const { data, error } = await sb.storage.from(R360.BUCKET).remove(lista);
     if(error) throw error;
+    const n = (data || []).length;
+    if(n < lista.length && !parcialEsperado) console.warn(`[360] remove(): ${lista.length - n} de ${lista.length} objeto(s) no se borraron (sin permiso o inexistentes)`, lista);
+    return n;
   },
   limpiarCache(){ _firmas360.clear(); }
 };
@@ -241,11 +261,14 @@ async function procesarPanoramica(file, dims, onProgreso){
 }
 
 // MAX_TEXTURE_SIZE del dispositivo: decide si el visor carga 'full' o 'web'.
+// El contexto de prueba se libera enseguida (cuentan para el cupo del navegador).
 function r360MaxTextura(){
   if(R360._maxTextura) return R360._maxTextura;
   try{
-    const gl = document.createElement('canvas').getContext('webgl') || document.createElement('canvas').getContext('experimental-webgl');
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
     R360._maxTextura = gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 4096;
+    try{ gl?.getExtension('WEBGL_lose_context')?.loseContext(); }catch(e){}
   }catch(e){ R360._maxTextura = 4096; }
   return R360._maxTextura;
 }
@@ -271,38 +294,89 @@ function r360ProgramarSync(intento = 0){
 async function r360ItemSigueEnCola(idLocal){
   try{ return !!(await idbOp('readonly', s => s.get(idLocal))); }catch(e){ return true; }
 }
+function r360RutasItem(item){
+  return { full:  storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'full'),
+           web:   storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'web'),
+           thumb: storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'thumb') };
+}
+// Borra los objetos de un ítem abandonado (dedupe, descarte). Se intentan las
+// TRES rutas siempre, no solo las que esta sesión recuerda haber subido: tras
+// recargar la página el progreso en memoria se pierde, y remove() es
+// idempotente. La política "fotos360 eliminar propios sin punto" impide borrar
+// objetos referenciados por una fila o ajenos. Falla en silencio hacia el
+// usuario, pero SIEMPRE deja rastro en consola.
+async function r360LimpiarSobrantes(item, motivo, prog){
+  prog = prog || R360._progreso[item.idLocal] || {};
+  const rutas = Object.values(r360RutasItem(item));
+  const enSesion = ['full','web','thumb'].filter(v => prog[v]).length;
+  try{
+    const n = await storage360.borrar(rutas, true);
+    console.info(`[360] limpieza (${motivo}): ${n} objeto(s) borrados de ${rutas.length} posibles (${enSesion} subidos en esta sesión)`);
+    return { ok: true, red: false };
+  }catch(e){
+    const red = esErrorDeRed(e);
+    console.warn(`[360] limpieza (${motivo}) falló${red ? ' por red (se reintentará)' : ''}; pueden quedar objetos huérfanos:`, e?.message || e, rutas);
+    return { ok: false, red };
+  }
+}
+// Lápida: pendiente de limpieza sin blobs; el bucle de sincronización la
+// ejecuta (r360EjecutarLapida) al tener conexión.
+async function r360GuardarLapida(item){
+  try{
+    await idbGuardar({ idLocal: r360Uuid(), creadoOffline: new Date().toISOString(), tipo: 'punto360_limpieza',
+      punto_id: item.punto_id, recorrido_id: item.recorrido_id, proyecto_id: item.proyecto_id, rutas: Object.values(r360RutasItem(item)) });
+  }catch(e){ console.warn('[360] no se pudo guardar la lápida de limpieza:', e?.message || e); }
+}
+// ¿El punto de este ítem ya tiene fila en el servidor? (true/false; lanza si la consulta falla)
+async function r360PuntoRegistrado(item){
+  const { data, error } = await sb.from('puntos_360').select('id').eq('id', item.punto_id).maybeSingle();
+  if(error) throw error;
+  return !!data;
+}
+// Ejecuta una lápida (la llama index.html): si el punto quedó registrado no se
+// borra nada (un admin sí podría borrar objetos con fila). Lanza en error de red.
+async function r360EjecutarLapida(item){
+  if(item.punto_id && await r360PuntoRegistrado(item)){ console.info('[360] lápida: el punto ya está registrado, no se borra nada'); return; }
+  await storage360.borrar(item.rutas || [], true);
+}
 
 // Sube un ítem de la cola: 3 variantes + fila. Idempotente ante reintentos:
 // dedupe por hash en el servidor, objetos ya existentes se aceptan (409), y el
 // UNIQUE (recorrido, hash) convierte un insert repetido en éxito. El progreso
 // por variante vive en memoria (no se reescriben 7 MB de blobs en IndexedDB).
+// Devuelve el id del punto, o null si el ítem fue descartado (no cuenta como
+// sincronizado).
 async function subirPunto360Offline(item){
   R360.subiendoIdLocal = item.idLocal; r360PintarCola();
   const prog = R360._progreso[item.idLocal] = R360._progreso[item.idLocal] || {};
-  const rutas = {
-    full:  storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'full'),
-    web:   storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'web'),
-    thumb: storage360.ruta(item.proyecto_id, item.recorrido_id, item.punto_id, 'thumb')
-  };
-  // Si otro intento ya dejó la fila (dedupe por hash o UNIQUE), los objetos que
-  // este intento hubiera subido bajo OTRO punto_id sobran: se intenta borrarlos
-  // (solo lo consigue un admin; para el resto queda como huérfano a limpiar).
-  const limpiarSobrantes = async () => {
-    const subidas = ['full','web','thumb'].filter(v => prog[v]).map(v => rutas[v]);
-    if(subidas.length){ try{ await storage360.borrar(subidas); }catch(e){} }
-  };
-  try{
-    const { data: dup } = await sb.from('puntos_360').select('id')
+  const rutas = r360RutasItem(item);
+  let terminado = false;
+  const buscarPorHash = async () => {
+    const { data, error } = await sb.from('puntos_360').select('id')
       .eq('recorrido_id', item.recorrido_id).eq('hash_sha256', item.punto.hash_sha256).maybeSingle();
-    if(dup && dup.id !== item.punto_id){ await limpiarSobrantes(); return dup.id; }
-    if(dup) return dup.id;
+    if(error) throw error;
+    return data;
+  };
+  // Limpieza cuyo fallo de red debe reintentarse con el ítem (sigue en cola): se relanza como error de red
+  const limpiarOFallar = async motivo => {
+    const r = await r360LimpiarSobrantes(item, motivo, prog);
+    if(!r.ok && r.red) throw new Error('Failed to fetch (limpieza de sobrantes: ' + motivo + ')');
+  };
+  // Limpieza de un ítem que YA salió de la cola: si falla, queda una lápida
+  const limpiarOLapida = async motivo => { const r = await r360LimpiarSobrantes(item, motivo, prog); if(!r.ok) await r360GuardarLapida(item); };
+  try{
+    if(!(await r360ItemSigueEnCola(item.idLocal))){ terminado = true; await limpiarOLapida('ítem descartado antes de subir'); return null; }
+    // Otro intento (u otro dispositivo) ya registró esta foto: lo que este ítem
+    // hubiera subido bajo OTRO punto_id sobra.
+    const dup = await buscarPorHash();
+    if(dup){ if(dup.id !== item.punto_id) await limpiarOFallar('foto ya registrada en otro punto'); terminado = true; return dup.id; }
     for(const v of ['thumb','web','full']){
       if(prog[v]) continue;
       await storage360.subir(rutas[v], item.blobs[v]);
       prog[v] = true;
     }
     if(!(await r360ItemSigueEnCola(item.idLocal))){   // el usuario lo descartó mientras subía
-      await limpiarSobrantes(); return null;
+      terminado = true; await limpiarOLapida('ítem descartado durante la subida'); return null;
     }
     const p = item.punto;
     const { error } = await sb.from('puntos_360').insert({
@@ -315,10 +389,17 @@ async function subirPunto360Offline(item){
       notas: p.fecha_estimada ? 'Fecha de captura estimada: el archivo no traía EXIF, se usó la fecha del archivo.' : null
     });
     if(error){
-      if(error.code === '23505'){ await limpiarSobrantes(); return item.punto_id; }   // ya insertado por otro intento
+      if(error.code === '23505'){
+        // ¿Chocó por (recorrido, hash) con OTRO punto, o por id con la misma fila
+        // (insert repetido)? Solo en el primer caso los objetos de este ítem sobran.
+        const existente = await buscarPorHash();
+        if(existente && existente.id !== item.punto_id){ await limpiarOFallar('UNIQUE por hash: otro punto ya tiene esta foto'); terminado = true; return existente.id; }
+        terminado = true;
+        return item.punto_id;
+      }
       throw error;
     }
-    delete R360._progreso[item.idLocal];
+    terminado = true;
     return item.punto_id;
   }catch(e){
     if(!esErrorDeRed(e)){
@@ -329,6 +410,7 @@ async function subirPunto360Offline(item){
     }
     throw e;
   }finally{
+    if(terminado) delete R360._progreso[item.idLocal];   // si sigue en cola, prog evita resubir variantes
     R360.subiendoIdLocal = null;
     if(currentPage === 'recorridos360') r360PintarCola();
   }
@@ -345,10 +427,27 @@ async function r360ReintentarItem(idLocal){
   it.intentos = 0; it.errorDefinitivo = false; it.ultimoError = null;
   await idbGuardar(it); actualizarIndicadorOffline(); r360PintarCola(); r360ProgramarSync();
 }
+// Descartar: quita el ítem de la cola y limpia sus objetos. Sin conexión deja
+// una "lápida" (tipo punto360_limpieza, sin blobs) que el bucle de
+// sincronización ejecuta al volver la señal.
 async function r360DescartarItem(idLocal){
   if(R360.subiendoIdLocal === idLocal){ toast('Esa foto se está subiendo ahora; espera a que termine', 'info'); return; }
   if(!confirm('¿Descartar esta foto de la cola? No se subirá.')) return;
-  await idbBorrar(idLocal); delete R360._progreso[idLocal];
+  const it = (await r360ItemsCola()).find(i => i.idLocal === idLocal);
+  if(R360.subiendoIdLocal === idLocal){ toast('Esa foto empezó a subirse; espera a que termine', 'info'); return; }
+  if(!it){ r360PintarCola(); return; }
+  await idbBorrar(idLocal);
+  const prog = R360._progreso[idLocal] || {};
+  delete R360._progreso[idLocal];
+  if(navigator.onLine){
+    // Si la fila ya existe en el servidor (el INSERT llegó pero su respuesta se
+    // perdió) NO se borra nada: los objetos son de un punto registrado.
+    let registrado = null;
+    try{ registrado = await r360PuntoRegistrado(it); }catch(e){ registrado = null; }   // null = no se pudo saber
+    if(registrado === true) toast('Esa foto ya estaba registrada en el servidor; se quitó de la cola sin borrar nada', 'info');
+    else if(registrado === false){ const r = await r360LimpiarSobrantes(it, 'ítem descartado de la cola', prog); if(!r.ok) await r360GuardarLapida(it); }
+    else await r360GuardarLapida(it);
+  } else await r360GuardarLapida(it);
   actualizarIndicadorOffline(); r360PintarCola();
 }
 function r360TogglePausa(){
@@ -448,17 +547,41 @@ function r360ProgresoUI(){
 
 // ── Página ──────────────────────────────────────────────────────────────────
 // Al cambiar de proyecto: se descarta la vista, se cancela un lote en curso
-// (token) y se vacía la caché de firmas. NO se toca subiendoIdLocal: la
-// subida en curso del bucle offline termina sola.
+// (token), se destruye el visor, se abortan descargas y se vacían cachés.
+// NO se toca subiendoIdLocal: la subida en curso del bucle offline termina sola.
 function limpiarEstadoR360(){
-  R360.recorridos = []; R360.recorridoActivo = null; R360.puntos = [];
+  R360.recorridos = []; R360.recorridoActivo = null; R360.puntos = []; R360.planos = [];
+  R360.planoId = null; R360.seleccionado = null; R360.visorPuntoId = null; R360._drag = null;
+  R360._mapaToken++; r360PdfReset();
+  r360AbortarDescarga(); if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} R360._precarga = null; }
+  R360._blobs.clear();
+  r360DestruirVisor();
   if(R360.procesando){ R360.lote++; R360.procesando = false; }
   storage360.limpiarCache();
+}
+function r360Punto(id){ return R360.puntos.find(p => p.id === id); }
+function r360PuntosOrdenados(){
+  return [...R360.puntos].sort((a, b) => ((a.orden || 0) - (b.orden || 0)) || String(a.fecha_captura || '').localeCompare(String(b.fecha_captura || '')));
+}
+function r360Fecha(iso, corta){
+  if(!iso) return '—';
+  try{ return new Date(iso).toLocaleString('es-EC', corta ? { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch(e){ return String(iso); }
+}
+// Módulo activo en el proyecto actual: por la ficha del proyecto (fuente de
+// verdad) y por el ítem de menú (aplicarModulosProyecto). Apagado por defecto.
+function r360ModuloActivo(){
+  const nav = document.querySelector('.nav-item[onclick*="recorridos360"]');
+  if(nav && nav.style.display === 'none') return false;
+  const proy = (typeof proyectos !== 'undefined' && Array.isArray(proyectos)) ? proyectos.find(x => x.id === currentProyecto) : null;
+  if(proy && proy.modulos?.recorridos360 !== true) return false;
+  return true;
 }
 
 async function cargarRecorridos360(){
   const cont = document.getElementById('recorridos360Content');
   if(!cont) return;
+  if(!r360ModuloActivo()){ cont.innerHTML = ''; return; }
   if(!currentProyecto){ cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-title">Selecciona un proyecto</div></div>'; return; }
   if(R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto){ return abrirRecorrido360(R360.recorridoActivo.id); }
   const { data, error } = await sb.from('recorridos_360').select('*, puntos_360(count)')
@@ -498,6 +621,15 @@ async function cargarRecorridos360(){
     : `<div style="padding:32px;text-align:center;color:#676879"><div style="font-size:32px;margin-bottom:8px">🌐</div>Aún no hay recorridos 360 en este proyecto${puede ? '<div style="font-size:12px;margin-top:6px">Crea uno y sube las fotos exportadas desde la app Insta360</div>' : ''}</div>`}
   </div>`;
 }
+// Lo llama index.html al terminar una sincronización que subió fotos 360:
+// refresco ligero del recorrido abierto, o de la lista si no hay formulario a medias.
+function r360RefrescarTrasSync(ok360){
+  if(!ok360 || currentPage !== 'recorridos360') return;
+  if(R360.recorridoActivo){ abrirRecorrido360(R360.recorridoActivo.id); return; }
+  const form = document.getElementById('r360NuevoForm');
+  if(form && form.style.display !== 'none') return;
+  cargarRecorridos360();
+}
 
 function r360NuevoRecorridoForm(){
   const f = document.getElementById('r360NuevoForm'); if(!f) return;
@@ -517,33 +649,70 @@ async function r360CrearRecorrido(){
   abrirRecorrido360(data.id);
 }
 
-async function abrirRecorrido360(id){
+// Abre un recorrido. Si YA está pintado (mismo id y la página existe) hace un
+// refresco ligero: re-consulta y repinta puntos, marcas, barra y cola sin
+// destruir el visor, el mapa, el PDF, la selección armada ni un arrastre en
+// curso. El render completo queda para la primera apertura, cuando cambia el
+// estado del recorrido o cuando se pide con { completo: true } (Publicar).
+async function abrirRecorrido360(id, opts = {}){
   const cont = document.getElementById('recorridos360Content'); if(!cont) return;
-  // Lote en curso en este mismo recorrido: no destruir la barra de progreso;
-  // refrescar solo la rejilla de puntos y la cola.
-  if(R360.procesando && R360.recorridoActivo?.id === id && document.getElementById('r360Progreso')){
-    const { data: puntos } = await sb.from('puntos_360').select('*').eq('recorrido_id', id).order('orden');
-    if(puntos) R360.puntos = puntos;
-    await r360PintarPuntos(); r360PintarCola(); return;
+  const yaPintado = R360.recorridoActivo?.id === id && !!document.getElementById('r360PuntosWrap');
+  if(yaPintado && !opts.completo){
+    const [{ data: rec, error: eRec }, { data: puntos, error: ePts }, { data: planos, error: ePl }] = await Promise.all([
+      sb.from('recorridos_360').select('*').eq('id', id).single(),
+      sb.from('puntos_360').select('*').eq('recorrido_id', id).order('orden'),
+      sb.from('planos').select('id,nombre,url,tipo').eq('proyecto_id', currentProyecto).order('created_at')
+    ]);
+    // Mientras se consultaba, el usuario pudo volver a la lista, abrir otro recorrido o cambiar de proyecto: se descarta
+    if(R360.recorridoActivo?.id !== id || !document.getElementById('r360PuntosWrap')) return;
+    // Error de consulta (sin señal, RLS, timeout): se conserva la vista actual. Solo PGRST116 (0 filas) = recorrido borrado.
+    if((eRec && eRec.code !== 'PGRST116') || ePts){ console.warn('[360] refresco:', (eRec || ePts)?.message); return; }
+    if(!rec){ R360.recorridoActivo = null; R360.visorPuntoId = null; r360AbortarDescarga(); r360DestruirVisor(); return cargarRecorridos360(); }
+    if(rec.estado === R360.recorridoActivo.estado){
+      R360.recorridoActivo = rec; if(puntos) R360.puntos = puntos;
+      if(R360.visorPuntoId && !r360Punto(R360.visorPuntoId)){
+        R360.visorPuntoId = null; r360AbortarDescarga(); r360DestruirVisor();
+        const v = document.getElementById('r360Visor'); if(v) v.innerHTML = '<div class="r360-visor-msg">El punto que veías ya no existe</div>';
+      }
+      if(R360.seleccionado && !r360Punto(R360.seleccionado)) R360.seleccionado = null;
+      // Planos subidos o borrados en Observaciones › Planos desde la última vez
+      const firma = ps => (ps || []).map(p => p.id + '|' + p.url + '|' + p.nombre + '|' + (p.tipo || '')).join(';');
+      if(!ePl && planos && firma(planos) !== firma(R360.planos)){
+        R360.planos = planos; r360RepintarSelectPlanos();
+        if(!R360.planos.some(p => p.id === R360.planoId)){ R360.planoId = R360.planos[0]?.id || null; r360PdfReset(); }
+        r360PintarMapa().catch(e => console.warn('[360] mapa:', e?.message || e));
+      }
+      await r360PintarPuntos(); r360PintarMarcas(); r360PintarVisorBarra(); r360PintarCola();
+      return;
+    }
+    // el estado cambió (otro dispositivo publicó / despublicó): render completo
   }
+  // Vista actual del visor, para restaurarla si se reabre el mismo punto
+  let vista = null; const idPrevio = R360.visorPuntoId;
+  if(R360.visor && idPrevio){ try{ if(R360.visor.isLoaded()) vista = { yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
+  r360AbortarDescarga(); r360DestruirVisor(); R360.seleccionado = null; R360._drag = null; R360._mapaToken++;
   cont.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando recorrido...</div>';
-  const [{ data: rec, error: e1 }, { data: puntos, error: e2 }] = await Promise.all([
+  const [{ data: rec, error: e1 }, { data: puntos, error: e2 }, { data: planos }] = await Promise.all([
     sb.from('recorridos_360').select('*').eq('id', id).single(),
-    sb.from('puntos_360').select('*').eq('recorrido_id', id).order('orden')
+    sb.from('puntos_360').select('*').eq('recorrido_id', id).order('orden'),
+    sb.from('planos').select('id,nombre,url,tipo').eq('proyecto_id', currentProyecto).order('created_at')
   ]);
   if(e1 || !rec){ toast('No se pudo abrir el recorrido', 'error'); R360.recorridoActivo = null; return cargarRecorridos360(); }
   if(e2) toast('Puntos: ' + e2.message, 'error');
-  R360.recorridoActivo = rec; R360.puntos = puntos || [];
+  if(rec.proyecto_id !== currentProyecto){ R360.recorridoActivo = null; return cargarRecorridos360(); }
+  R360.recorridoActivo = rec; R360.puntos = puntos || []; R360.planos = planos || [];
+  if(R360.visorPuntoId && !r360Punto(R360.visorPuntoId)) R360.visorPuntoId = null;
   const puede = PUEDE_EDITAR_R360(), esAdmin = ES_ADMIN_R360();
   const bloqueado = rec.estado === 'publicado' && !esAdmin;
   // Publicar: admin/fiscalizador. Volver a borrador: solo admin (el servidor lo
   // exige; así el congelado de puntos no se evade despublicando).
   const puedeTogglar = rec.estado === 'publicado' ? esAdmin : PUEDE_PUBLICAR_R360();
+  const ubica = r360PuedeUbicar();
   cont.innerHTML = `
   <div class="card">
     <div class="card-header">
       <div>
-        <div class="card-title"><a href="#" onclick="event.preventDefault();R360.recorridoActivo=null;cargarRecorridos360()" style="color:#676879;text-decoration:none">🌐 Recorridos</a> › ${escAttr(rec.titulo)}
+        <div class="card-title"><a href="#" onclick="event.preventDefault();r360VolverALista()" style="color:#676879;text-decoration:none">🌐 Recorridos</a> › ${escAttr(rec.titulo)}
           <span class="r360-estado ${rec.estado}" style="margin-left:6px">${rec.estado === 'publicado' ? 'PUBLICADO' : 'BORRADOR'}</span></div>
         <div class="card-subtitle">${escAttr(rec.fecha || '')} · <span id="r360NumPuntos">${R360.puntos.length}</span> punto(s)${rec.descripcion ? ' · ' + escAttr(rec.descripcion) : ''}</div>
       </div>
@@ -552,7 +721,7 @@ async function abrirRecorrido360(id){
       </div>
     </div>
     ${puede && !bloqueado ? `
-    <div style="padding:16px">
+    <div style="padding:16px 16px 8px">
       <label class="r360-drop" style="display:block;cursor:pointer">
         <input type="file" accept="image/jpeg,.jpg,.jpeg" multiple style="display:none" onchange="subirFotos360(this)"/>
         <div style="font-size:26px;margin-bottom:6px">📷</div>
@@ -566,10 +735,47 @@ async function abrirRecorrido360(id){
       </div>
       <div id="r360Cola"></div>
     </div>` : (bloqueado ? '<div class="r360-aviso" style="margin:12px 16px">Recorrido publicado: fotos, posiciones y fechas quedan congeladas y no se añaden puntos (solo un administrador). Etiquetas, notas y norte siguen editables.</div>' : '')}
+    <div class="r360-layout">
+      <div class="r360-col-visor">
+        <div id="r360Visor" class="r360-visor"><div class="r360-visor-msg">${R360.puntos.length ? 'Toca una foto de la lista o una marca del plano para verla en 360' : 'Sube fotos para empezar'}</div></div>
+        <div id="r360VisorBarra" class="r360-visor-barra"></div>
+      </div>
+      <div class="r360-col-mapa">
+        <div class="r360-mapa-head">
+          <select id="r360PlanoSel" class="form-control" onchange="r360SetPlano(this.value)" ${R360.planos.length ? '' : 'disabled'}>
+            ${R360.planos.length ? R360.planos.map(p => `<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('') : '<option value="">Sin planos en el proyecto</option>'}
+          </select>
+          ${ubica ? `<div class="r360-modo"><button data-modo="punto" onclick="r360SetModo('punto')">Por punto</button><button data-modo="secuencia" onclick="r360SetModo('secuencia')">Secuencia</button></div>
+          <button id="r360BtnInterpolar" class="btn" onclick="r360Interpolar()" style="display:none;font-size:12px;padding:5px 10px">↔ Interpolar</button>` : ''}
+        </div>
+        <div id="r360Armado"></div>
+        <div id="r360Mapa" class="r360-mapa"></div>
+        <div id="r360PdfNav"></div>
+        <div class="r360-leyenda"><span><i style="background:#00854d"></i>ubicado a mano</span><span><i style="background:#5b8def"></i>interpolado</span><span><i style="background:#ffcb00"></i>en el visor</span></div>
+        <div id="r360Ayuda" class="r360-ayuda"></div>
+      </div>
+    </div>
     <div style="padding:0 16px 16px" id="r360PuntosWrap"></div>
   </div>`;
+  // Plano por defecto: el más usado por los puntos ya ubicados; si no, el primero
+  const usados = {}; R360.puntos.forEach(p => { if(p.plano_id) usados[p.plano_id] = (usados[p.plano_id] || 0) + 1; });
+  const masUsado = Object.entries(usados).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if(!R360.planos.some(p => p.id === R360.planoId)) R360.planoId = (masUsado && R360.planos.some(p => p.id === masUsado)) ? masUsado : (R360.planos[0]?.id || null);
+  r360SetModo(R360.modo);
   await r360PintarPuntos();
   r360PintarCola();
+  r360PintarVisorBarra();
+  // El mapa no bloquea al visor (pdf.js puede tardar o no estar disponible)
+  r360PintarMapa().catch(e => console.warn('[360] mapa:', e?.message || e));
+  // En escritorio se abre de entrada el punto visto o el primero; en móvil se
+  // espera al toque del usuario (cada panorámica pesa 3-5 MB).
+  const inicial = R360.visorPuntoId || (window.innerWidth >= 900 ? r360PuntosOrdenados()[0]?.id : null);
+  if(inicial) r360AbrirVisor(inicial, { scroll: false, ...(inicial === idPrevio && vista ? vista : {}) });
+}
+function r360VolverALista(){
+  R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null;
+  r360AbortarDescarga(); r360DestruirVisor(); R360._mapaToken++;
+  cargarRecorridos360();
 }
 
 // Rejilla de puntos (se puede repintar sin tocar el resto de la página).
@@ -577,13 +783,14 @@ async function r360PintarPuntos(){
   const wrap = document.getElementById('r360PuntosWrap'); if(!wrap) return;
   const esAdmin = ES_ADMIN_R360();
   const num = document.getElementById('r360NumPuntos'); if(num) num.textContent = R360.puntos.length;
-  wrap.innerHTML = R360.puntos.length ? `<div class="r360-puntos">${R360.puntos.map(p => `
-    <div class="r360-punto ${p.x == null ? 'sin-ubicar' : ''}" id="r360p_${p.id}">
+  const lista = r360PuntosOrdenados();
+  wrap.innerHTML = lista.length ? `<div class="r360-puntos">${lista.map(p => `
+    <div class="r360-punto ${p.x == null ? 'sin-ubicar' : ''} ${p.id === R360.visorPuntoId ? 'actual' : ''}" id="r360p_${p.id}" onclick="r360AbrirVisor('${p.id}')">
       <img alt="" data-path="${escAttr(p.archivo_thumb || '')}" loading="lazy"/>
       <div class="r360-punto-info"><b>#${p.orden}</b>${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''}<br>
-        ${p.fecha_captura ? new Date(p.fecha_captura).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-        ${p.x == null ? ' · <span style="color:#b8860b">sin ubicar</span>' : ''}${p.notas ? ' · ⚠' : ''}
-        ${esAdmin ? `<div style="text-align:right;margin-top:2px"><a href="#" onclick="event.preventDefault();r360EliminarPunto('${p.id}')" style="color:#e2445c;font-size:11px">Eliminar</a></div>` : ''}
+        ${r360Fecha(p.fecha_captura, true)}
+        ${p.x == null ? ' · <span style="color:#b8860b">sin ubicar</span>' : (p.waypoint ? ' · 📍' : ' · ≈')}${p.notas ? ' · ⚠' : ''}
+        ${esAdmin ? `<div style="text-align:right;margin-top:2px"><a href="#" onclick="event.preventDefault();event.stopPropagation();r360EliminarPunto('${p.id}')" style="color:#e2445c;font-size:11px">Eliminar</a></div>` : ''}
       </div>
     </div>`).join('')}</div>`
   : '<div style="padding:18px;text-align:center;color:#676879;font-size:13px">Sin puntos todavía</div>';
@@ -591,6 +798,10 @@ async function r360PintarPuntos(){
   const rutas = R360.puntos.flatMap(p => [p.archivo_thumb, p.archivo_web, p.archivo_full]).filter(Boolean);
   if(rutas.length){ try{ await storage360.getUrls(rutas); }catch(e){ console.warn('[360] firmas:', e?.message || e); } }
   wrap.querySelectorAll('img[data-path]').forEach(img => r360SetImg(img, img.dataset.path));
+}
+function r360MarcarThumbActual(){
+  document.querySelectorAll('.r360-punto.actual').forEach(el => el.classList.remove('actual'));
+  const el = document.getElementById('r360p_' + R360.visorPuntoId); if(el) el.classList.add('actual');
 }
 
 async function r360PintarCola(){
@@ -630,18 +841,477 @@ async function r360TogglePublicado(){
   const { error } = await sb.from('recorridos_360').update({ estado: publicar ? 'publicado' : 'borrador' }).eq('id', rec.id);
   if(error){ toast('Error: ' + error.message, 'error'); return; }
   toast(publicar ? 'Recorrido publicado ✓' : 'Recorrido devuelto a borrador', 'success');
-  abrirRecorrido360(rec.id);
+  if(R360.recorridoActivo?.id === rec.id) abrirRecorrido360(rec.id, { completo: true });
+  else if(currentPage === 'recorridos360' && !R360.recorridoActivo) cargarRecorridos360();   // el usuario ya volvió a la lista
 }
 
 async function r360EliminarPunto(id){
   if(!ES_ADMIN_R360()) return;
-  const p = R360.puntos.find(x => x.id === id); if(!p) return;
+  const p = r360Punto(id); if(!p) return;
   if(!confirm(`¿Eliminar el punto #${p.orden} y sus 3 archivos?`)) return;
+  const recId = p.recorrido_id;
   const { error } = await sb.from('puntos_360').delete().eq('id', id);
   if(error){ toast('Error: ' + error.message, 'error'); return; }
   // Rutas reconstruidas desde los ids (no desde la fila): solo se borran los objetos de ESTE punto
   const rutas = ['full', 'web', 'thumb'].map(v => storage360.ruta(p.proyecto_id, p.recorrido_id, p.id, v));
   try{ await storage360.borrar(rutas); }catch(e){ console.warn('[360] borrar storage:', e?.message || e); }
+  rutas.forEach(r => R360._blobs.delete(r));
   toast('Punto eliminado', 'success');
-  abrirRecorrido360(R360.recorridoActivo.id);
+  // Refresco ligero (quita el punto, cierra su visor si era el visible) solo si el usuario sigue en ese recorrido
+  if(R360.recorridoActivo?.id === recId) abrirRecorrido360(recId);
+  else if(currentPage === 'recorridos360' && !R360.recorridoActivo) cargarRecorridos360();
+}
+
+// ── Guardar cambios de un punto (ubicación, etiqueta) ───────────────────────
+// .select('id'): un UPDATE que no alcanza filas (punto borrado en otro
+// dispositivo, o filtrado por RLS) no es un error para PostgREST; se detecta
+// por la respuesta vacía y NO se toca el estado local.
+async function r360GuardarPunto(id, cambios){
+  const { data, error } = await sb.from('puntos_360').update(cambios).eq('id', id).select('id');
+  if(error){
+    toast(esErrorDeRed(error) ? 'Sin señal: la ubicación en el plano se guarda con conexión' : 'No se pudo guardar: ' + error.message, 'error');
+    return false;
+  }
+  if(!data || !data.length){ toast('El punto ya no existe o no tienes permiso para cambiarlo; se recarga el recorrido', 'error'); if(R360.recorridoActivo) abrirRecorrido360(R360.recorridoActivo.id); return false; }
+  const p = r360Punto(id); if(p) Object.assign(p, cambios);
+  return true;
+}
+function r360RepintarTrasCambio(){ r360PintarMarcas(); r360PintarVisorBarra(); r360PintarPuntos(); }
+
+// ── Mini-mapa: plano (imagen o PDF vía pdf.js) + overlay con marcas ─────────
+function r360PdfReset(){
+  const st = R360._pdf, d = st.doc;
+  if(st.tarea){ try{ st.tarea.cancel(); }catch(e){} }
+  R360._pdf = { doc: null, url: null, pagina: 1, paginaPedida: 1, tarea: null };
+  if(d){ try{ const r = d.destroy(); r?.catch?.(() => {}); }catch(e){} }   // libera el worker de pdf.js y el documento parseado
+}
+function r360SetPlano(id){
+  R360.planoId = id || null;
+  r360PdfReset();
+  r360PintarMapa();
+}
+function r360RepintarSelectPlanos(){
+  const sel = document.getElementById('r360PlanoSel'); if(!sel) return;
+  sel.disabled = !R360.planos.length;
+  sel.innerHTML = R360.planos.length ? R360.planos.map(p => `<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('') : '<option value="">Sin planos en el proyecto</option>';
+  if(R360.planoId && R360.planos.some(p => p.id === R360.planoId)) sel.value = R360.planoId;
+}
+function r360SetModo(m){
+  R360.modo = m === 'secuencia' ? 'secuencia' : 'punto';
+  document.querySelectorAll('.r360-modo button').forEach(b => b.classList.toggle('activo', b.dataset.modo === R360.modo));
+  const bi = document.getElementById('r360BtnInterpolar'); if(bi) bi.style.display = (R360.modo === 'secuencia' && r360PuedeUbicar()) ? '' : 'none';
+  const ay = document.getElementById('r360Ayuda');
+  if(ay){
+    if(!r360PuedeUbicar()) ay.textContent = r360Congelado() ? 'Recorrido publicado: las posiciones están congeladas. Toca una marca para ver la foto.' : 'Toca una marca del plano para ver la foto en 360.';
+    else if(R360.modo === 'secuencia') ay.innerHTML = '<b>Secuencia:</b> ubica a mano al menos 2 puntos (inicio, esquinas, fin); tras cada toque queda seleccionado el siguiente por orden. Luego <b>Interpolar</b> reparte los intermedios en línea recta entre esos waypoints, sin tocar los ubicados a mano.';
+    else ay.innerHTML = '<b>Por punto:</b> abre una foto y pulsa «Ubicar en plano»; después toca el plano donde se tomó. Arrastra una marca para moverla.';
+  }
+  r360PintarArmado();
+}
+
+async function r360PintarMapa(){
+  const cont = document.getElementById('r360Mapa'), nav = document.getElementById('r360PdfNav'); if(!cont) return;
+  const token = ++R360._mapaToken;
+  if(nav) nav.innerHTML = '';
+  if(!R360.planos.length){ r360PdfReset(); cont.innerHTML = '<div class="r360-mapa-vacio">Este proyecto no tiene planos. Súbelos en Observaciones › Planos para ubicar los puntos.</div>'; return; }
+  const p = R360.planos.find(x => x.id === R360.planoId) || R360.planos[0]; R360.planoId = p.id;
+  const sel = document.getElementById('r360PlanoSel'); if(sel && sel.value !== p.id) sel.value = p.id;
+  const esPDF = (p.tipo || '').includes('pdf') || String(p.nombre || '').toLowerCase().endsWith('.pdf');
+  if(!esPDF || (R360._pdf.doc && R360._pdf.url !== p.url)) r360PdfReset();   // nunca se pisa un documento vivo sin destruirlo
+  cont.innerHTML = `<div class="r360-mapa-inner">${esPDF ? '<canvas id="r360MapaCanvas"></canvas>' : `<img id="r360MapaImg" src="${escAttr(p.url)}" alt=""/>`}<div id="r360Overlay" class="r360-overlay"></div></div>`;
+  r360EnlazarOverlay(document.getElementById('r360Overlay'));
+  if(esPDF){
+    // La barra de páginas va FUERA del contenedor con scroll: nunca queda bajo el overlay de marcas
+    if(nav) nav.innerHTML = '<div class="r360-pdfnav"><button onclick="r360PdfPagina(-1)">◀</button><span id="r360PdfInfo">Cargando…</span><button onclick="r360PdfPagina(1)">▶</button></div>';
+    // Documento ya cargado (mismo plano tras un render completo): se vuelve a la página que se estaba viendo
+    const pag = (R360._pdf.doc && R360._pdf.url === p.url) ? R360._pdf.paginaPedida : 1;
+    await r360RenderPdfMapa(p.url, pag, token);
+  } else {
+    const img = document.getElementById('r360MapaImg');
+    if(img) img.onerror = () => { if(token === R360._mapaToken) cont.innerHTML = '<div class="r360-mapa-vacio">No se pudo cargar la imagen del plano</div>'; };
+  }
+  if(token !== R360._mapaToken) return;
+  r360PintarMarcas();
+}
+
+// Render de una página del PDF, serializado: cancela el render anterior y
+// respeta la última página pedida. Un fallo de página conserva canvas,
+// overlay y marcas (solo avisa en la barra); un fallo de documento sí
+// reemplaza el mapa por el aviso.
+async function r360RenderPdfMapa(url, pagina, token){
+  const st = R360._pdf;
+  try{
+    await asegurarPdfJs();
+    if(typeof pdfjsLib === 'undefined') throw new Error('pdf.js no disponible');
+    if(token !== R360._mapaToken) return;
+    if(!st.doc || st.url !== url){
+      if(st.doc){ const viejo = st.doc; st.doc = null; st.url = null; try{ viejo.destroy()?.catch?.(() => {}); }catch(e){} }   // sin fuga de worker
+      const doc = await pdfjsLib.getDocument(url).promise;
+      if(token !== R360._mapaToken || R360._pdf !== st){ try{ doc.destroy(); }catch(e){} return; }
+      st.doc = doc; st.url = url; st.pagina = 1; st.paginaPedida = 1; pagina = 1;
+    }
+  }catch(e){
+    console.warn('[360] pdf plano:', e?.message || e);
+    if(token !== R360._mapaToken || R360._pdf !== st) return;   // fallo de un render ya obsoleto: no se toca el mapa vigente
+    const c = document.getElementById('r360Mapa');
+    if(c) c.innerHTML = `<div class="r360-mapa-vacio">No se pudo cargar el PDF del plano${navigator.onLine ? '' : ' (sin señal)'}</div>`;
+    const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = 'PDF no disponible';
+    return;
+  }
+  if(st.tarea){ try{ st.tarea.cancel(); }catch(e){} try{ await st.tarea.promise; }catch(e){} if(st.tarea) st.tarea = null; }
+  if(token !== R360._mapaToken || R360._pdf !== st || st.paginaPedida !== pagina) return;   // llegó otra petición
+  try{
+    const page = await st.doc.getPage(pagina);
+    const canvas = document.getElementById('r360MapaCanvas');
+    if(!canvas || token !== R360._mapaToken || R360._pdf !== st || st.paginaPedida !== pagina) return;
+    const ancho = canvas.parentElement.clientWidth || 600;
+    const vp1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: ancho / vp1.width });
+    canvas.width = vp.width; canvas.height = vp.height;
+    const tarea = page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+    st.tarea = tarea;
+    await tarea.promise;
+    if(st.tarea === tarea) st.tarea = null;
+    st.pagina = pagina;
+    const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = `Página ${pagina} de ${st.doc.numPages}`;
+  }catch(e){
+    if(e?.name === 'RenderingCancelledException') return;
+    console.warn('[360] pdf página:', e?.message || e);
+    if(token !== R360._mapaToken || R360._pdf !== st) return;   // render obsoleto: no escribe en la barra del plano vigente
+    const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = `No se pudo mostrar la página ${pagina}`;
+  }
+}
+function r360PdfPagina(delta){
+  const st = R360._pdf, d = st.doc; if(!d) return;
+  const n = st.paginaPedida + delta; if(n < 1 || n > d.numPages) return;
+  st.paginaPedida = n;
+  r360RenderPdfMapa(st.url, n, R360._mapaToken).then(() => r360PintarMarcas());
+}
+
+// Marcas: una por punto ubicado en el plano visible. Se repintan sin tocar la
+// imagen de fondo. Posición en % (misma convención que los pines de observaciones).
+function r360PintarMarcas(){
+  const ov = document.getElementById('r360Overlay');
+  // Durante un arrastre no se reemplaza el overlay (soltaría la captura del puntero): se repinta al terminar
+  if(R360._drag){ R360._drag.repintar = true; return; }
+  if(ov){
+    const enPlano = R360.puntos.filter(p => p.plano_id === R360.planoId && p.x != null && p.y != null);
+    ov.innerHTML = enPlano.map(p => `<div class="r360-marca ${p.waypoint ? 'waypoint' : 'interp'} ${p.id === R360.visorPuntoId ? 'actual' : ''} ${p.id === R360.seleccionado ? 'sel' : ''}" data-id="${p.id}" style="left:${Number(p.x)}%;top:${Number(p.y)}%" title="#${p.orden}${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''}">${p.orden}</div>`).join('');
+  }
+  const mapa = document.getElementById('r360Mapa'); if(mapa) mapa.classList.toggle('armado', !!R360.seleccionado && r360PuedeUbicar());
+  r360PintarArmado();
+}
+function r360PintarArmado(){
+  const a = document.getElementById('r360Armado'); if(!a) return;
+  const p = R360.seleccionado ? r360Punto(R360.seleccionado) : null;
+  if(!p || !r360PuedeUbicar()){ a.innerHTML = ''; R360.seleccionado = null; return; }
+  a.innerHTML = `<div class="r360-armado">📍 Toca el plano donde se tomó el punto <b>#${p.orden}</b>${p.etiqueta ? ' (' + escAttr(p.etiqueta) + ')' : ''}<button class="btn" onclick="r360CancelarUbicacion()">Cancelar</button></div>`;
+}
+function r360Coords(e, ov){
+  const c = coordsPinDesdeEvento(e, ov);
+  return { x: Math.min(100, Math.max(0, c.x)), y: Math.min(100, Math.max(0, c.y)) };
+}
+// Interacción del overlay: toque en vacío = ubicar el punto seleccionado;
+// toque en una marca = abrir en el visor; arrastre de una marca = moverla.
+function r360EnlazarOverlay(ov){
+  if(!ov) return;
+  ov.addEventListener('pointerdown', e => {
+    const m = e.target.closest('.r360-marca'); if(!m) return;
+    if(R360._drag) return;                                   // ya hay un puntero arrastrando
+    e.preventDefault();
+    R360._drag = { id: m.dataset.id, el: m, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, movible: r360PuedeUbicar(), c: null, repintar: false };
+    try{ m.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  ov.addEventListener('pointermove', e => {
+    const d = R360._drag; if(!d || !d.movible || e.pointerId !== d.pointerId) return;
+    if(!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) return;
+    d.moved = true;
+    const c = r360Coords(e, ov); d.c = c;
+    d.el.style.left = c.x + '%'; d.el.style.top = c.y + '%';
+  });
+  const fin = async e => {
+    const d = R360._drag; if(!d || e.pointerId !== d.pointerId) return; R360._drag = null;
+    if(d.moved && d.c){
+      const ok = await r360GuardarPunto(d.id, { plano_id: R360.planoId, x: d.c.x, y: d.c.y, waypoint: true });
+      if(ok) r360RepintarTrasCambio(); else r360PintarMarcas();   // si falló, la marca vuelve a su sitio
+    } else if(e.type === 'pointerup'){
+      r360AbrirVisor(d.id);                                  // repinta marcas (incluye lo diferido durante el arrastre)
+    } else {
+      r360PintarMarcas();
+    }
+  };
+  ov.addEventListener('pointerup', fin);
+  ov.addEventListener('pointercancel', fin);
+  // Captura perdida sin pointerup (p. ej. el sistema tomó el gesto): se cancela el arrastre
+  ov.addEventListener('lostpointercapture', e => {
+    const d = R360._drag; if(!d || e.pointerId !== d.pointerId) return;
+    R360._drag = null; r360PintarMarcas();
+  });
+  ov.addEventListener('click', e => {
+    if(e.target.closest('.r360-marca')) return;
+    if(!r360PuedeUbicar()) return;
+    if(!R360.seleccionado){ toast('Abre una foto y pulsa «Ubicar en plano»; después toca el plano', 'info'); return; }
+    r360UbicarSeleccionado(r360Coords(e, ov));
+  });
+}
+// Ubica el punto seleccionado. La selección avanza y la marca se pinta ANTES de
+// esperar al servidor: un segundo toque rápido va al siguiente punto, no
+// reubica el mismo. Si el guardado falla se restaura todo.
+async function r360UbicarSeleccionado(c){
+  const id = R360.seleccionado, p = r360Punto(id);
+  if(!p){ R360.seleccionado = null; r360PintarMarcas(); return; }
+  let sig = null;
+  if(R360.modo === 'secuencia'){ const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === id); sig = lista[i + 1] || null; }
+  R360.seleccionado = sig ? sig.id : null;
+  const previo = { plano_id: p.plano_id, x: p.x, y: p.y, waypoint: p.waypoint };
+  const cambios = { plano_id: R360.planoId, x: c.x, y: c.y, waypoint: true };
+  Object.assign(p, cambios); r360PintarMarcas();                       // marca provisional
+  const ok = await r360GuardarPunto(id, cambios);
+  if(!ok){
+    Object.assign(p, previo);
+    if(!R360.seleccionado || R360.seleccionado === sig?.id) R360.seleccionado = id;   // vuelve a quedar armado
+    r360PintarMarcas(); return;
+  }
+  if(R360.modo === 'secuencia') toast(sig ? `#${p.orden} ubicado · ahora toca el plano para #${sig.orden} (o Cancelar)` : `#${p.orden} ubicado · era el último`, 'success');
+  else toast(`Punto #${p.orden} ubicado ✓`, 'success');
+  r360RepintarTrasCambio();
+}
+function r360ArmarUbicacion(id){
+  if(!r360PuedeUbicar() || !r360Punto(id)) return;
+  if(!R360.planos.length){ toast('Este proyecto no tiene planos: súbelos en Observaciones › Planos', 'error'); return; }
+  R360.seleccionado = id; r360PintarMarcas();
+  const m = document.getElementById('r360Mapa'); if(m && window.innerWidth < 900) m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function r360CancelarUbicacion(){ R360.seleccionado = null; r360PintarMarcas(); }
+async function r360QuitarDelPlano(id){
+  if(!r360PuedeUbicar()) return;
+  const p = r360Punto(id); if(!p) return;
+  const eraWaypoint = !!p.waypoint;
+  if(await r360GuardarPunto(id, { plano_id: null, x: null, y: null, waypoint: false })){
+    if(eraWaypoint) toast('Quitado del plano. Los puntos interpolados a partir de él conservan su posición; vuelve a Interpolar si hace falta.', 'info');
+    r360RepintarTrasCambio();
+  }
+}
+async function r360EditarEtiqueta(id){
+  const p = r360Punto(id); if(!p || !PUEDE_PUBLICAR_R360()) return;
+  const v = prompt('Etiqueta del punto (eje, ambiente, nivel…):', p.etiqueta || '');
+  if(v === null) return;
+  if(await r360GuardarPunto(id, { etiqueta: v.trim() || null })) r360RepintarTrasCambio();
+}
+
+// ── Secuencia: interpolación por índice entre waypoints del plano visible ───
+// Los puntos se ordenan por `orden` (= fecha de captura al subir). Entre dos
+// waypoints consecutivos (ubicados a mano en ESTE plano), cada punto intermedio
+// que no sea waypoint recibe una posición lineal según su índice. Los puntos
+// antes del primer waypoint o después del último no se tocan.
+function r360CalcularInterpolacion(){
+  const lista = r360PuntosOrdenados();
+  const wps = lista.map((p, i) => ({ p, i })).filter(o => o.p.waypoint && o.p.x != null && o.p.plano_id === R360.planoId);
+  if(wps.length < 2) return { motivo: `Se necesitan al menos 2 puntos ubicados a mano en este plano (hay ${wps.length})` };
+  const cambios = [];
+  for(let k = 0; k < wps.length - 1; k++){
+    const a = wps[k], b = wps[k + 1];
+    for(let i = a.i + 1; i < b.i; i++){
+      const p = lista[i];
+      if(p.waypoint && p.x != null) continue;          // ubicado a mano en otro plano: no se toca
+      const t = (i - a.i) / (b.i - a.i);
+      const x = +(Number(a.p.x) + (Number(b.p.x) - Number(a.p.x)) * t).toFixed(1);
+      const y = +(Number(a.p.y) + (Number(b.p.y) - Number(a.p.y)) * t).toFixed(1);
+      if(p.plano_id !== R360.planoId || Number(p.x) !== x || Number(p.y) !== y) cambios.push({ id: p.id, plano_id: R360.planoId, x, y, waypoint: false });
+    }
+  }
+  // Fuera del tramo [primer waypoint, último]: sin ubicar (quedan así) e
+  // interpolados antiguos de este plano (conservan su posición: se avisa).
+  const primero = wps[0].i, ultimo = wps[wps.length - 1].i;
+  let sinUbicar = 0, antiguos = 0;
+  lista.forEach((p, i) => {
+    if(i >= primero && i <= ultimo) return;
+    if(p.x == null) sinUbicar++;
+    else if(!p.waypoint && p.plano_id === R360.planoId) antiguos++;
+  });
+  return { cambios, waypoints: wps.length, sinUbicar, antiguos };
+}
+async function r360Interpolar(){
+  if(!r360PuedeUbicar()) return;
+  const r = r360CalcularInterpolacion();
+  if(r.motivo){ toast(r.motivo, 'error'); return; }
+  if(!r.cambios.length){ toast('No hay puntos por interpolar entre los waypoints (ya están ubicados)', 'info'); return; }
+  const avisos = [];
+  if(r.sinUbicar) avisos.push(`${r.sinUbicar} punto(s) fuera del tramo (antes del primer waypoint o después del último) siguen sin ubicar.`);
+  if(r.antiguos) avisos.push(`${r.antiguos} punto(s) interpolados antes, fuera del tramo actual, conservan su posición.`);
+  if(!confirm(`Se ubicarán ${r.cambios.length} punto(s) por interpolación entre ${r.waypoints} waypoints de este plano. ${avisos.join(' ')} Las posiciones colocadas a mano no cambian. ¿Continuar?`)) return;
+  let ok = 0, fallos = 0, ultimoError = null;
+  for(let i = 0; i < r.cambios.length; i += 6){
+    await Promise.all(r.cambios.slice(i, i + 6).map(async c => {
+      const cambios = { plano_id: c.plano_id, x: c.x, y: c.y, waypoint: false };
+      const { data, error } = await sb.from('puntos_360').update(cambios).eq('id', c.id).select('id');
+      if(error || !data || !data.length){ fallos++; ultimoError = error || new Error('el punto ya no existe'); return; }
+      const p = r360Punto(c.id); if(p) Object.assign(p, cambios);
+      ok++;
+    }));
+    if(ultimoError && esErrorDeRed(ultimoError)) break;
+  }
+  toast(fallos ? `${ok} ubicado(s), ${fallos} con error${ultimoError ? ': ' + ultimoError.message : ''}` : `${ok} punto(s) ubicados por interpolación ✓`, fallos ? 'error' : 'success');
+  // Fallo que no es de red (punto borrado, recorrido publicado, RLS): el estado local ya no es fiable → refresco
+  if(fallos && ultimoError && !esErrorDeRed(ultimoError) && R360.recorridoActivo) abrirRecorrido360(R360.recorridoActivo.id);
+  else r360RepintarTrasCambio();
+}
+
+// ── Visor Pannellum ─────────────────────────────────────────────────────────
+// La panorámica la descarga el módulo (fetch abortable, con reintento de
+// firma) y se entrega a Pannellum como blob: URL. Así: (1) cambiar de punto
+// aborta la descarga en curso en vez de dejar un visor zombi cargando 3-5 MB;
+// (2) la carga en Pannellum es local y casi inmediata; (3) las últimas
+// panorámicas quedan en memoria (BLOBS_MAX) y volver atrás no descarga nada.
+function r360AbortarDescarga(){
+  if(R360._visorAbort){ try{ R360._visorAbort.abort(); }catch(e){} R360._visorAbort = null; }
+}
+function r360BlobCache(path, blob){
+  if(blob){
+    R360._blobs.delete(path); R360._blobs.set(path, blob);
+    while(R360._blobs.size > R360.BLOBS_MAX) R360._blobs.delete(R360._blobs.keys().next().value);
+    return blob;
+  }
+  const b = R360._blobs.get(path);
+  if(b){ R360._blobs.delete(path); R360._blobs.set(path, b); }   // LRU
+  return b || null;
+}
+async function r360DescargarPanoramica(path, signal, onProgreso){
+  const cache = r360BlobCache(path); if(cache) return cache;
+  // Ya en vuelo (precarga u otro visor): se comparte, salvo que esa descarga
+  // esté abortada (su entrada desaparece en el mismo instante del abort).
+  const enVuelo = R360._descargas.get(path);
+  if(enVuelo && !enVuelo.signal?.aborted) return enVuelo.tarea;
+  const tarea = (async () => {
+    let url = await storage360.getUrl(path);
+    let resp = await fetch(url, { signal });
+    if(!resp.ok && (resp.status === 400 || resp.status === 403)){ url = await storage360.refirmar(path); resp = await fetch(url, { signal }); }
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    if(!resp.body || !onProgreso) return r360BlobCache(path, await resp.blob());
+    const total = +resp.headers.get('content-length') || 0, reader = resp.body.getReader(), chunks = [];
+    let recibido = 0;
+    for(;;){
+      const { done, value } = await reader.read(); if(done) break;
+      chunks.push(value); recibido += value.length; onProgreso(recibido, total);
+    }
+    return r360BlobCache(path, new Blob(chunks, { type: 'image/jpeg' }));
+  })();
+  const entrada = { tarea, signal };
+  R360._descargas.set(path, entrada);
+  // abort() despacha el evento de forma síncrona: la siguiente llamada del mismo tramo ya no la comparte
+  signal?.addEventListener('abort', () => { if(R360._descargas.get(path) === entrada) R360._descargas.delete(path); }, { once: true });
+  try{ return await tarea; } finally{ if(R360._descargas.get(path) === entrada) R360._descargas.delete(path); }
+}
+// Destruye el visor. Si todavía no terminó de cargar (Pannellum solo crea el
+// contexto WebGL y sus listeners globales al cargar, y destroy() no cancela
+// esa carga), espera a que cargue o falle y recién entonces lo destruye: así
+// no quedan contextos ni listeners huérfanos. Devuelve una promesa que los
+// llamadores pueden ignorar.
+function r360DestruirVisor(){
+  const v = R360.visor; if(!v) return Promise.resolve();
+  R360.visor = null;
+  // El host propio del visor sale del DOM YA: el destroy() de Pannellum (inmediato
+  // o diferido) vacía "su" contenedor, y así nunca toca al visor siguiente ni al
+  // mensaje de descarga que ocupa #r360Visor.
+  try{ v._r360Host?.remove(); }catch(e){}
+  const fin = () => {
+    try{ v.destroy(); }catch(e){}
+    if(v._r360BlobUrl){ try{ URL.revokeObjectURL(v._r360BlobUrl); }catch(e){} v._r360BlobUrl = null; }
+  };
+  let cargado = true; try{ cargado = v.isLoaded(); }catch(e){}
+  if(cargado){ fin(); return Promise.resolve(); }
+  return Promise.race([v._r360Listo || Promise.resolve(), new Promise(r => setTimeout(r, 10000))]).then(fin, fin);
+}
+async function r360AbrirVisor(id, opts = {}){
+  const p = r360Punto(id), cont = document.getElementById('r360Visor');
+  if(!p || !cont) return;
+  // ◀ ▶ conservan la orientación entre puntos consecutivos
+  if(opts.mantenerVista && R360.visor){ try{ if(R360.visor.isLoaded()) opts = { ...opts, yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
+  // Doble toque sobre el punto que YA se está descargando: no se aborta ni se reinicia desde 0 %
+  const enCurso = R360.visorPuntoId === id && !R360.visor && !!R360._visorAbort && !R360._visorAbort.signal.aborted;
+  R360.visorPuntoId = id;
+  if(!enCurso){ r360AbortarDescarga(); r360DestruirVisor(); }
+  const path = p[r360VarianteVisor()] || p.archivo_web || p.archivo_full;
+  r360PintarVisorBarra(); r360PintarMarcas(); r360MarcarThumbActual();
+  if(enCurso) return;
+  if(!path){ cont.innerHTML = '<div class="r360-visor-msg">Este punto no tiene imagen</div>'; return; }
+  cont.innerHTML = '<div class="r360-visor-msg" id="r360VisorMsg">Descargando panorámica…</div>';
+  if(opts.scroll !== false && window.innerWidth < 900) cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const ac = new AbortController(); R360._visorAbort = ac;
+  const progreso = (r, t) => {
+    const m = document.getElementById('r360VisorMsg');
+    if(m) m.textContent = t ? `Descargando panorámica… ${Math.round(r / t * 100)} %` : `Descargando panorámica… ${(r / 1048576).toFixed(1)} MB`;
+  };
+  let blob = null;
+  for(let intento = 0; intento < 2 && !blob; intento++){
+    try{ blob = await r360DescargarPanoramica(path, ac.signal, progreso); }
+    catch(e){
+      if(R360.visorPuntoId !== id || ac.signal.aborted) return;
+      if(e?.name === 'AbortError' && intento === 0) continue;   // era una descarga compartida (precarga) que abortaron: se reintenta con la propia señal
+      cont.innerHTML = `<div class="r360-visor-msg">No se pudo descargar la imagen${navigator.onLine ? '' : ' (sin señal)'}</div>`;
+      return;
+    }
+  }
+  if(!blob || R360.visorPuntoId !== id || ac.signal.aborted) return;   // el usuario cambió de punto mientras descargaba
+  if(R360._visorAbort === ac) R360._visorAbort = null;
+  r360CrearVisor(cont, p, blob, opts);
+}
+function r360CrearVisor(cont, p, blob, opts){
+  if(typeof pannellum === 'undefined'){ cont.innerHTML = '<div class="r360-visor-msg">El visor 360 no está disponible (pannellum no cargó)</div>'; return; }
+  cont.innerHTML = '';
+  const host = document.createElement('div'); host.className = 'r360-visor-host'; cont.appendChild(host);   // contenedor propio de ESTE visor
+  const bu = URL.createObjectURL(blob);
+  const cfg = {
+    type: 'equirectangular', panorama: bu, autoLoad: true, showControls: true, crossOrigin: 'anonymous',
+    hfov: opts.hfov ?? 100, minHfov: 40, maxHfov: 120, yaw: opts.yaw ?? 0, pitch: opts.pitch ?? 0,
+    friction: 0.15, draggable: true, mouseZoom: true, keyboardZoom: true,
+    compass: p.heading_norte != null, northOffset: Number(p.heading_norte) || 0,
+    strings: { loadingLabel: 'Cargando…', loadButtonLabel: 'Ver', bylineLabel: '', noPanoramaError: 'Sin panorámica',
+               fileAccessError: 'No se pudo acceder a la imagen (%s)', malformedURLError: 'URL no válida',
+               iOS8WebGLError: 'WebGL no disponible en este navegador', genericWebGLError: 'Este dispositivo no soporta WebGL',
+               textureSizeError: 'La imagen (%spx) supera el máximo de este dispositivo (%spx)', unknownError: 'Error desconocido' }
+  };
+  let v;
+  try{ v = pannellum.viewer(host, cfg); }
+  catch(e){ URL.revokeObjectURL(bu); cont.innerHTML = `<div class="r360-visor-msg">No se pudo iniciar el visor: ${escAttr(e?.message || e)}</div>`; return; }
+  v._r360Host = host;
+  v._r360BlobUrl = bu;
+  v._r360Listo = new Promise(res => { v.on('load', res); v.on('error', res); });
+  R360.visor = v;
+  v.on('load', () => {
+    if(v._r360BlobUrl){ URL.revokeObjectURL(v._r360BlobUrl); v._r360BlobUrl = null; }
+    if(R360.visor === v) r360Precargar(p.id);          // la siguiente se descarga solo cuando esta ya se ve
+  });
+  v.on('error', msg => {
+    if(v._r360BlobUrl){ URL.revokeObjectURL(v._r360BlobUrl); v._r360BlobUrl = null; }
+    console.warn('[360] visor:', msg);
+  });
+}
+// Precarga la siguiente panorámica a la caché en memoria (una a la vez; no
+// con ahorro de datos ni en 2G).
+function r360Precargar(id){
+  const con = navigator.connection;
+  if(con && (con.saveData || /2g/.test(con.effectiveType || ''))) return;
+  const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === id), sig = lista[i + 1];
+  if(!sig || !navigator.onLine) return;
+  const path = sig[r360VarianteVisor()] || sig.archivo_web;
+  if(!path || R360._blobs.has(path) || R360._descargas.has(path)) return;
+  if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} }
+  const ac = new AbortController(); R360._precarga = ac;
+  r360DescargarPanoramica(path, ac.signal).catch(() => {}).finally(() => { if(R360._precarga === ac) R360._precarga = null; });
+}
+function r360PintarVisorBarra(){
+  const b = document.getElementById('r360VisorBarra'); if(!b) return;
+  const p = r360Punto(R360.visorPuntoId);
+  if(!p){ b.innerHTML = ''; return; }
+  const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === p.id), prev = lista[i - 1], next = lista[i + 1];
+  const ubica = r360PuedeUbicar(), ubicado = !!p.plano_id && p.x != null;
+  const plano = ubicado ? R360.planos.find(x => x.id === p.plano_id) : null;
+  b.innerHTML = `
+    <button class="btn" ${prev ? `onclick="r360AbrirVisor('${prev.id}',{mantenerVista:true})"` : 'disabled'} title="Anterior">◀</button>
+    <div class="r360-visor-info"><b>#${p.orden}</b>${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''} <span style="color:#676879">(${i + 1}/${lista.length})</span><br>
+      <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${p.heading_norte != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span></div>
+    <button class="btn" ${next ? `onclick="r360AbrirVisor('${next.id}',{mantenerVista:true})"` : 'disabled'} title="Siguiente">▶</button>
+    ${ubica ? `<button class="btn" onclick="r360ArmarUbicacion('${p.id}')">📍 ${ubicado ? 'Reubicar' : 'Ubicar en plano'}</button>` : ''}
+    ${ubica && ubicado ? `<button class="btn" onclick="r360QuitarDelPlano('${p.id}')">Quitar del plano</button>` : ''}
+    ${PUEDE_PUBLICAR_R360() ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}`;
 }

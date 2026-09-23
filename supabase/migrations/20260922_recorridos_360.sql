@@ -94,6 +94,7 @@ create table if not exists public.puntos_360 (
   plano_id        uuid references public.planos(id) on delete set null,
   x               numeric(5,1),                 -- % del ancho del plano, como pin_x
   y               numeric(5,1),                 -- % del alto del plano, como pin_y
+  waypoint        boolean not null default false, -- ubicado A MANO; la interpolación (modo Secuencia) solo toca los que no lo son
   orden           integer not null default 0,
   etiqueta        text,
   rubro_id        uuid references public.rubros(id) on delete set null,
@@ -113,6 +114,8 @@ create table if not exists public.puntos_360 (
   created_at      timestamptz not null default now(),
   constraint puntos_360_recorrido_hash_key unique (recorrido_id, hash_sha256)
 );
+-- (por si la tabla ya existía de una versión previa de esta migración)
+alter table public.puntos_360 add column if not exists waypoint boolean not null default false;
 create index if not exists puntos_360_recorrido_orden_idx on public.puntos_360 (recorrido_id, orden);
 create index if not exists puntos_360_plano_idx           on public.puntos_360 (plano_id);
 create index if not exists puntos_360_proyecto_fecha_idx  on public.puntos_360 (proyecto_id, fecha_captura);
@@ -154,10 +157,11 @@ create trigger p360_a_proyecto before insert or update on public.puntos_360
   for each row execute function public.p360_a_proyecto();
 
 -- Trigger B (corre después de A, cuando proyecto_id ya es fiable):
--- Recorrido publicado -> posición, archivos, fecha de captura, hash y recorrido
--- del punto quedan congelados, y no se añaden puntos, salvo admin (global o del
--- proyecto de ORIGEN; si el punto cambia de recorrido, también del destino).
--- Etiqueta, notas, rubro, heading_norte y orden siguen editables.
+-- Recorrido publicado -> posición (plano, x, y, waypoint), archivos, fecha de
+-- captura, hash y recorrido del punto quedan congelados, y no se añaden puntos,
+-- salvo admin (global o del proyecto de ORIGEN; si el punto cambia de
+-- recorrido, también del destino). Etiqueta, notas, rubro, heading_norte y
+-- orden siguen editables.
 create or replace function public.p360_b_guard_publicado()
 returns trigger language plpgsql set search_path = public, pg_temp as $$
 declare v_estado text; v_estado_dest text; es_admin boolean;
@@ -175,15 +179,17 @@ begin
   select estado into v_estado from public.recorridos_360 where id = old.recorrido_id;
   if v_estado = 'publicado' and not es_admin and (
        new.recorrido_id  is distinct from old.recorrido_id
+    or new.plano_id      is distinct from old.plano_id
     or new.x             is distinct from old.x
     or new.y             is distinct from old.y
+    or new.waypoint      is distinct from old.waypoint
     or new.archivo_full  is distinct from old.archivo_full
     or new.archivo_web   is distinct from old.archivo_web
     or new.archivo_thumb is distinct from old.archivo_thumb
     or new.fecha_captura is distinct from old.fecha_captura
     or new.hash_sha256   is distinct from old.hash_sha256 )
   then
-    raise exception 'El recorrido está publicado: la posición, los archivos, la fecha de captura y el hash del punto solo los puede cambiar un administrador.'
+    raise exception 'El recorrido está publicado: la posición (plano, x, y), los archivos, la fecha de captura y el hash del punto solo los puede cambiar un administrador.'
       using errcode = '42501';
   end if;
   if new.recorrido_id is distinct from old.recorrido_id then
@@ -267,10 +273,31 @@ create policy "fotos360 eliminar admin" on storage.objects for delete to authent
   using ( bucket_id = 'fotos-360'
           and ( (select sst_es_admin_global()) or sst_rol_en_proyecto(r360_proyecto_de_ruta(name)) = 'admin' ) );
 
+-- Limpieza de subidas parciales: quien subió un objeto (owner = auth.uid()) puede
+-- borrarlo MIENTRAS siga siendo miembro del proyecto y ningún punto lo
+-- referencie (el punto_id va en el tercer segmento de la ruta). Así el uploader
+-- limpia sus sobrantes (dedupe, descarte en cola) pero no puede borrar los
+-- archivos de un punto ya registrado, aunque sea suyo: eso sigue siendo de
+-- admin y respeta el congelado al publicar. La condición de membresía cubre el
+-- caso del ex-miembro, para quien el NOT EXISTS (evaluado bajo su RLS, que ya
+-- no ve la fila) daría verdadero. Se comprueban owner (uuid, heredado) y
+-- owner_id (text, actual): Storage rellena ambos con el uid del JWT.
+create or replace function public.r360_punto_de_ruta(ruta text)
+returns uuid language sql stable strict set search_path = public, pg_temp as $$
+  select case when (storage.foldername(ruta))[3] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              then ((storage.foldername(ruta))[3])::uuid end
+$$;
+drop policy if exists "fotos360 eliminar propios sin punto" on storage.objects;
+create policy "fotos360 eliminar propios sin punto" on storage.objects for delete to authenticated
+  using ( bucket_id = 'fotos-360'
+          and ( owner = auth.uid() or owner_id = auth.uid()::text )
+          and sst_rol_en_proyecto(r360_proyecto_de_ruta(name)) is not null
+          and not exists ( select 1 from public.puntos_360 p where p.id = r360_punto_de_ruta(name) ) );
+
 -- ── Verificación tras aplicar ───────────────────────────────────────────────
 -- 1) Objetos y políticas:
 --   select tablename, policyname, cmd from pg_policies where tablename in ('recorridos_360','puntos_360') order by 1,3;  -- 8 filas
---   select policyname, cmd from pg_policies where schemaname='storage' and policyname like 'fotos360%' order by 2;         -- 4 filas
+--   select policyname, cmd from pg_policies where schemaname='storage' and policyname like 'fotos360%' order by 2;         -- 5 filas (2 DELETE)
 --   select id, public, file_size_limit, allowed_mime_types from storage.buckets where id='fotos-360';                     -- public = false
 --   select tgrelid::regclass, tgname from pg_trigger where tgrelid in ('public.puntos_360'::regclass,'public.recorridos_360'::regclass) and not tgisinternal order by 1,2;
 --     -- recorridos_360: r360_guard_recorrido · puntos_360: p360_a_proyecto, p360_b_guard_publicado
@@ -292,25 +319,37 @@ create policy "fotos360 eliminar admin" on storage.objects for delete to authent
 -- 5) Reglas de integridad (con un FISCALIZADOR del proyecto, recorrido publicado R con punto P):
 --   await sb.from('recorridos_360').update({estado:'borrador'}).eq('id', R)          // error 42501 (solo admin despublica)
 --   await sb.from('puntos_360').update({x: 10}).eq('id', P)                            // error 42501 (congelado)
+--   await sb.from('puntos_360').update({plano_id: '<otro plano>'}).eq('id', P)         // error 42501 (congelado: plano)
 --   await sb.from('puntos_360').update({etiqueta:'Eje 3'}).eq('id', P)                 // OK
 --   await sb.from('puntos_360').insert({recorrido_id: R, orden: 99})                   // error 42501 (publicado: sin altas)
 --   await sb.from('recorridos_360').update({publicado_por:'<otro uuid>'}).eq('id', R)  // OK pero publicado_por NO cambia (lo fija el servidor)
 --
--- 6) Disciplina de URLs (ninguna ruta pública construida a mano para 360):
+-- 6) Limpieza de sobrantes (con un RESIDENTE del proyecto). remove() NO devuelve error cuando la
+--    política niega el borrado: devuelve la lista de objetos borrados, así que se compara el largo.
+--   const ruta = '<proyecto>/<recorrido>/<uuid nuevo sin fila>/thumb.jpg';
+--   await sb.storage.from('fotos-360').upload(ruta, new Blob([new Uint8Array([0xFF,0xD8,0xFF,0xD9])],{type:'image/jpeg'}));
+--   (await sb.storage.from('fotos-360').remove([ruta])).data.length                          // 1  (propio y sin punto)
+--   (await sb.storage.from('fotos-360').remove(['<ruta thumb de un punto registrado>'])).data.length   // 0  (tiene fila: no)
+--
+-- 7) Disciplina de URLs (ninguna ruta pública construida a mano para 360):
 --   grep -n "object/public" js/recorridos360.js            -> sin resultados
 --   grep -n "fotos-360" index.html                         -> sin resultados (el bucket solo lo conoce storage360)
 
 -- ── Reversión ────────────────────────────────────────────────────────────────
 -- 1) Vaciar y borrar el bucket por la API de Storage (no basta con borrar filas de
---    storage.objects: dejaría los archivos huérfanos en el backend). En consola
---    con sesión de admin, o desde el panel de Storage:
---      await sb.storage.emptyBucket('fotos-360'); await sb.storage.deleteBucket('fotos-360');
+--    storage.objects: dejaría los archivos huérfanos en el backend). Desde el panel
+--    de Supabase (Storage › fotos-360 › Empty bucket, luego Delete bucket) o con la
+--    service_role key (CLI: `supabase storage rm -r ss:///fotos-360 --linked`).
+--    NO sirve la consola del navegador con un JWT de usuario: storage.buckets tiene
+--    RLS sin políticas, así que emptyBucket()/deleteBucket() responden "not found".
 -- 2) Luego, en SQL:
 -- drop policy if exists "fotos360 leer miembros" on storage.objects;
 -- drop policy if exists "fotos360 subir gestion y residente" on storage.objects;
 -- drop policy if exists "fotos360 actualizar gestion" on storage.objects;
 -- drop policy if exists "fotos360 eliminar admin" on storage.objects;
+-- drop policy if exists "fotos360 eliminar propios sin punto" on storage.objects;
 -- drop function if exists public.r360_proyecto_de_ruta(text);
+-- drop function if exists public.r360_punto_de_ruta(text);
 -- alter table public.observaciones drop column if exists punto_360_id, drop column if exists yaw, drop column if exists pitch;
 -- drop table if exists public.puntos_360;   -- arrastra sus triggers
 -- drop function if exists public.p360_a_proyecto(); drop function if exists public.p360_b_guard_publicado();

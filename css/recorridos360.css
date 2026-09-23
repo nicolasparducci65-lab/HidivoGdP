@@ -8,8 +8,11 @@
 .r360-estado.borrador{background:#f5f6f8;color:#676879}
 .r360-estado.publicado{background:#e6f4ee;color:#00854d}
 
+/* Rejilla de puntos (miniaturas) */
 .r360-puntos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.r360-punto{border:1px solid #e6e9ef;border-radius:8px;overflow:hidden;background:#fff}
+.r360-punto{border:1px solid #e6e9ef;border-radius:8px;overflow:hidden;background:#fff;cursor:pointer}
+.r360-punto:hover{border-color:#0073ea}
+.r360-punto.actual{border-color:#ffcb00;box-shadow:0 0 0 2px #ffcb00}
 .r360-punto img{width:100%;aspect-ratio:2/1;object-fit:cover;display:block;background:#f0f2f5}
 .r360-punto .r360-punto-info{padding:6px 8px;font-size:11px;color:#676879;line-height:1.4}
 .r360-punto .r360-punto-info b{color:#1a1a2e}
@@ -33,6 +36,49 @@
 .r360-aviso{background:#fdf6e3;border:1px solid #f0d98c;border-radius:8px;padding:8px 12px;font-size:12px;color:#7a5c00;margin-top:8px}
 .r360-error{background:#fdecef;border:1px solid #f5c2ca;border-radius:8px;padding:8px 12px;font-size:12px;color:#8a1c2b;margin-top:8px}
 
+/* Visor + mini-mapa (fase c) */
+.r360-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;padding:0 16px 12px}
+.r360-col-mapa,.r360-col-visor{min-width:0;align-self:start}
+.r360-mapa-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.r360-mapa-head select{flex:1;min-width:140px;font-size:12px;padding:5px 8px}
+.r360-modo{display:inline-flex;border:1px solid #c5c7d4;border-radius:8px;overflow:hidden}
+.r360-modo button{border:none;background:#fff;padding:5px 10px;font-size:12px;cursor:pointer;color:#323338}
+.r360-modo button.activo{background:#0073ea;color:#fff}
+.r360-mapa{position:relative;border:1px solid #e6e9ef;border-radius:10px;overflow:auto;max-height:62vh;background:#f5f6f8;touch-action:pan-x pan-y}
+.r360-mapa-inner{position:relative;display:inline-block;min-width:100%}
+.r360-mapa-inner img,.r360-mapa-inner canvas{display:block;width:100%;height:auto}
+.r360-overlay{position:absolute;inset:0;z-index:5}
+.r360-mapa.armado .r360-overlay{cursor:crosshair}
+.r360-marca{position:absolute;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#5b8def;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 6px rgba(0,0,0,.35);cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.r360-marca.waypoint{background:#00854d}
+.r360-marca.actual{outline:3px solid #ffcb00;z-index:2}
+.r360-marca.sel{outline:3px dashed #e2445c;z-index:3}
+.r360-mapa-vacio{padding:24px;text-align:center;color:#676879;font-size:12px}
+.r360-pdfnav{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px;background:#3d3d3d;color:#fff;font-size:12px;border-radius:0 0 8px 8px}
+.r360-pdfnav button{background:#555;color:#fff;border:none;border-radius:6px;padding:3px 10px;cursor:pointer}
+.r360-armado{display:flex;align-items:center;gap:8px;background:#fdecef;border:1px solid #f5c2ca;color:#8a1c2b;border-radius:8px;padding:6px 10px;font-size:12px;margin-bottom:8px}
+.r360-armado .btn{padding:3px 8px;font-size:11px;margin-left:auto}
+.r360-ayuda{font-size:11px;color:#676879;margin-top:6px;line-height:1.4}
+.r360-leyenda{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#676879;margin-top:6px}
+.r360-leyenda i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+/* height:auto explícito: pannellum.css pone .pnlm-container{height:100%} sobre este mismo div y ganaría a aspect-ratio */
+.r360-visor{position:relative;width:100%;height:auto;aspect-ratio:2/1;min-height:240px;max-height:70vh;background:#111;border-radius:10px;overflow:hidden}
+/* Cada visor vive en su propio host: el destroy() de Pannellum vacía "su" contenedor y así nunca toca al visor siguiente */
+.r360-visor-host{position:absolute;inset:0}
+.r360-visor .pnlm-container{background:#111}
+.r360-visor-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:13px;text-align:center;padding:12px}
+.r360-visor-barra{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px}
+.r360-visor-barra .btn{padding:5px 10px;font-size:12px}
+.r360-visor-info{flex:1;min-width:140px;line-height:1.35}
+.r360-visor-info span{color:#676879;font-size:11px}
+.r360-visor-hint{color:#676879;font-size:12px;padding:6px 0}
+
+@media (max-width:900px){
+  .r360-layout{grid-template-columns:1fr}
+  .r360-col-visor{order:-1}
+  .r360-visor{aspect-ratio:auto;height:55vh}
+  .r360-mapa{max-height:55vh}
+}
 @media (max-width:600px){
   .r360-grid{grid-template-columns:1fr}
   .r360-puntos{grid-template-columns:repeat(2,1fr)}

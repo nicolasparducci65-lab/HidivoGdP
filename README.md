@@ -35,21 +35,46 @@ no traen EXIF: la app usará la fecha del archivo y lo dejará anotado en el pun
    Nunca se sube el original. Si el dispositivo no puede decodificar: *"Sube este lote desde PC"*.
 5. Encola en IndexedDB (`hidivo-offline` / `pendientes`, `tipo: 'punto360'`) y sube en
    segundo plano con la cola existente: progreso por foto, reintentos (5), pausa manual.
+   Descartar un ítem limpia sus objetos (las 3 rutas, sin depender de la memoria de la
+   sesión); sin señal deja una lápida `tipo: 'punto360_limpieza'` que el bucle ejecuta al
+   volver la conexión.
 
 **Storage:** bucket **privado** `fotos-360`, rutas `<proyecto_id>/<recorrido_id>/<punto_id>/{full,web,thumb}.jpg`,
-JPEG, 8 MB por objeto. Políticas por proyecto derivadas del primer segmento de la ruta.
-Toda lectura pasa por `storage360` (URLs firmadas de 12 h, **una** firma por recorrido,
-caché en memoria, refirma única ante error de carga; `getBlob` para informes; `getShareUrl`
-solo admin/fiscalizador). Prohibido construir rutas `/object/public/` para este bucket.
+JPEG, 8 MB por objeto. Políticas por proyecto derivadas del primer segmento de la ruta
+(leer = miembro; subir = admin/fiscalizador/residente; sobrescribir = admin/fiscalizador;
+borrar = admin, **o el propio uploader mientras ningún punto referencie el objeto**, para
+limpiar subidas parciales: `remove()` no falla cuando la política niega, devuelve solo lo
+borrado, y el módulo compara y lo deja en consola). Toda lectura pasa por `storage360`
+(URLs firmadas de 12 h, **una** firma por recorrido, caché en memoria, refirma única ante
+error de carga; `getBlob` para informes; `getShareUrl` solo admin/fiscalizador). Prohibido
+construir rutas `/object/public/` para este bucket.
 
 **Roles:** ver = cualquier miembro del proyecto; crear recorridos y subir puntos =
-admin/fiscalizador/residente; editar/publicar = admin/fiscalizador; eliminar = admin. Un
-recorrido **publicado** congela posición, archivos, fecha de captura, hash y recorrido de sus
-puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si no, el congelado
-se evadiría despublicando). `publicado_en`/`publicado_por` los fija el servidor y el
-`proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un punto deben
-coincidir con sus propios ids (todo por triggers `BEFORE`). Módulo opcional por proyecto
-(ficha del proyecto).
+admin/fiscalizador/residente; ubicar en el plano, etiquetar y publicar = admin/fiscalizador
+(política UPDATE copiada de observaciones: **el residente sube pero no ubica**); eliminar =
+admin. Un recorrido **publicado** congela posición, archivos, fecha de captura, hash y
+recorrido de sus puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si
+no, el congelado se evadiría despublicando). `publicado_en`/`publicado_por` los fija el
+servidor y el `proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un
+punto deben coincidir con sus propios ids (todo por triggers `BEFORE`). Módulo **apagado por
+defecto**: se activa por proyecto en la ficha del proyecto (mientras no esté activo no hay
+ítem de menú ni aviso).
+
+**Visor y mini-mapa (fase c):** visor Pannellum (variante `full` si `MAX_TEXTURE_SIZE` ≥ 5760,
+si no `web`; brújula si el punto trae `heading_norte`). La panorámica la descarga el módulo
+con `fetch` abortable (cambiar de punto cancela la descarga; ante 400/403 refirma y reintenta
+una vez) y se entrega a Pannellum como `blob:`; las 3 últimas quedan en memoria y la siguiente
+se precarga cuando la actual ya se ve (no con ahorro de datos ni 2G). Un visor que aún no
+cargó no se destruye hasta que cargue (Pannellum no cancela su carga y dejaría contextos
+WebGL huérfanos). Mini-mapa sobre los planos del proyecto (imagen o PDF vía pdf.js con render
+serializado, misma convención `x/y` en % que los pines de observaciones): marcas por punto,
+arrastrables; toque en marca abre la foto. Los refrescos (sincronización, eliminar punto) son
+parciales: no destruyen visor, mapa ni selección. Modos:
+- **Por punto:** «Ubicar en plano» en el visor y toque en el plano (queda `waypoint = true`).
+- **Secuencia:** se ubican a mano ≥ 2 puntos (tras cada toque se selecciona el siguiente por
+  `orden`) y **Interpolar** reparte los intermedios en línea recta por índice entre waypoints
+  consecutivos del plano visible, sin tocar los ubicados a mano; los anteriores al primer
+  waypoint o posteriores al último quedan sin ubicar.
 
 **Librerías vendorizadas** (sin CDN, precacheadas por el SW): `vendor/pannellum` 2.5.6 (MIT)
 y `vendor/exifr` 7.1.3 (MIT).
@@ -58,9 +83,11 @@ y `vendor/exifr` 7.1.3 (MIT).
 
 `supabase/migrations/20260922_recorridos_360.sql` **no se ejecuta automáticamente**: revisar y
 aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
-- 8 políticas en `recorridos_360`/`puntos_360`, 4 en `storage.objects` (`fotos360 …`), bucket
-  con `public = false`, triggers `r360_guard_recorrido`, `p360_a_proyecto` y
+- 8 políticas en `recorridos_360`/`puntos_360`, 5 en `storage.objects` (`fotos360 …`, dos de
+  DELETE), bucket con `public = false`, triggers `r360_guard_recorrido`, `p360_a_proyecto` y
   `p360_b_guard_publicado`, columnas `punto_360_id`/`yaw`/`pitch` en `observaciones`.
+- Un residente borra con `remove()` un objeto propio sin fila (devuelve 1) y no uno con fila
+  (devuelve 0), bloque 6 del pie.
 - (a) `GET` anónimo a `/object/public/fotos-360/...` → error y firmar con la clave anon → error;
   (b) un residente de otro proyecto no puede firmar rutas ajenas; (c) una URL firmada con
   `expiresIn = 5` responde 200 y, pasados 7 s, 400 (medido con `fetch`).
@@ -69,7 +96,7 @@ aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
 
 ### Estado por fases
 (a) migración + bucket ✔ · (b) carga, metadatos, variantes, cola y `storage360` ✔ ·
-(c) visor Pannellum, mini-mapa, modos Por punto / Secuencia · (d) observación desde 360 ·
+(c) visor Pannellum, mini-mapa, modos Por punto / Secuencia ✔ · (d) observación desde 360 ·
 (e) comparar y línea de tiempo · (f) SW/offline, `scripts/frames_360.sh`.
 
 Fuera de alcance (preparado, no implementado): checklists por hito/rubro, agente IA de visión,
