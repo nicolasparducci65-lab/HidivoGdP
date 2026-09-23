@@ -7,7 +7,11 @@
 -- sobre proyecto_id:
 --   SELECT  -> cualquier miembro del proyecto o admin global
 --   INSERT  -> admin, fiscalizador o residente del proyecto
---   UPDATE  -> admin o fiscalizador del proyecto
+--   UPDATE  -> admin o fiscalizador del proyecto. En puntos_360, ADEMÁS, el
+--              residente mientras el recorrido esté en 'borrador', y solo sobre
+--              posición (plano_id, x, y, waypoint), orden, etiqueta, rubro_id,
+--              heading_norte y notas (lista blanca en el trigger
+--              p360_c_guard_residente: RLS no distingue columnas).
 --   DELETE  -> admin del proyecto
 -- Las reglas de integridad que RLS no puede expresar (congelado al publicar,
 -- proyecto inmutable, rutas atadas al punto, publicado_* fijados por el
@@ -204,6 +208,30 @@ drop trigger if exists p360_b_guard_publicado on public.puntos_360;
 create trigger p360_b_guard_publicado before insert or update on public.puntos_360
   for each row execute function public.p360_b_guard_publicado();
 
+-- Trigger C (corre después de B): el residente, cuando la política
+-- p360_update_residente_borrador le deja actualizar (recorrido en borrador),
+-- solo puede cambiar posición (plano_id, x, y, waypoint), orden, etiqueta,
+-- rubro_id, heading_norte y notas. Lista BLANCA: cualquier otra columna
+-- (archivos, fecha de captura, hash, GPS, cámara, recorrido, proyecto, id…)
+-- que difiera entre OLD y NEW se rechaza. Comparación por jsonb sin esas
+-- claves, así una columna futura queda protegida por defecto.
+create or replace function public.p360_c_guard_residente()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+declare permitidas text[] := array['plano_id','x','y','waypoint','orden','etiqueta','rubro_id','heading_norte','notas'];
+begin
+  if auth.uid() is null then return new; end if;   -- service role / mantenimiento
+  if sst_es_admin_global() then return new; end if;
+  if coalesce(sst_rol_en_proyecto(old.proyecto_id), '') <> 'residente' then return new; end if;
+  if (to_jsonb(new) - permitidas) is distinct from (to_jsonb(old) - permitidas) then
+    raise exception 'Como residente solo puedes cambiar la posición (plano, x, y), el orden, la etiqueta, el rubro, el norte y las notas del punto.'
+      using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists p360_c_guard_residente on public.puntos_360;
+create trigger p360_c_guard_residente before update on public.puntos_360
+  for each row execute function public.p360_c_guard_residente();
+
 alter table public.puntos_360 enable row level security;
 revoke all on public.puntos_360 from anon;
 grant select, insert, update, delete on public.puntos_360 to authenticated;
@@ -219,6 +247,17 @@ drop policy if exists "p360_update" on public.puntos_360;
 create policy "p360_update" on public.puntos_360 for update to authenticated
   using ( (select sst_es_admin_global()) or sst_rol_en_proyecto(proyecto_id) = any (array['admin','fiscalizador']) )
   with check ( (select sst_es_admin_global()) or sst_rol_en_proyecto(proyecto_id) = any (array['admin','fiscalizador']) );
+-- Residente: UPDATE solo mientras el recorrido del punto esté en 'borrador'
+-- (las políticas son permisivas: se suma a p360_update). Qué columnas puede
+-- tocar lo limita el trigger p360_c_guard_residente. En 'publicado' esta
+-- política no aplica y el UPDATE del residente no alcanza filas (0 filas, sin
+-- error). Publicar / volver a borrador siguen en r360_update / r360_guard_recorrido.
+drop policy if exists "p360_update_residente_borrador" on public.puntos_360;
+create policy "p360_update_residente_borrador" on public.puntos_360 for update to authenticated
+  using ( sst_rol_en_proyecto(proyecto_id) = 'residente'
+          and exists (select 1 from public.recorridos_360 r where r.id = recorrido_id and r.estado = 'borrador') )
+  with check ( sst_rol_en_proyecto(proyecto_id) = 'residente'
+               and exists (select 1 from public.recorridos_360 r where r.id = recorrido_id and r.estado = 'borrador') );
 drop policy if exists "p360_delete" on public.puntos_360;
 create policy "p360_delete" on public.puntos_360 for delete to authenticated
   using ( (select sst_es_admin_global()) or sst_rol_en_proyecto(proyecto_id) = 'admin' );
@@ -296,11 +335,11 @@ create policy "fotos360 eliminar propios sin punto" on storage.objects for delet
 
 -- ── Verificación tras aplicar ───────────────────────────────────────────────
 -- 1) Objetos y políticas:
---   select tablename, policyname, cmd from pg_policies where tablename in ('recorridos_360','puntos_360') order by 1,3;  -- 8 filas
+--   select tablename, policyname, cmd from pg_policies where tablename in ('recorridos_360','puntos_360') order by 1,3;  -- 9 filas (puntos_360: 2 de UPDATE)
 --   select policyname, cmd from pg_policies where schemaname='storage' and policyname like 'fotos360%' order by 2;         -- 5 filas (2 DELETE)
 --   select id, public, file_size_limit, allowed_mime_types from storage.buckets where id='fotos-360';                     -- public = false
 --   select tgrelid::regclass, tgname from pg_trigger where tgrelid in ('public.puntos_360'::regclass,'public.recorridos_360'::regclass) and not tgisinternal order by 1,2;
---     -- recorridos_360: r360_guard_recorrido · puntos_360: p360_a_proyecto, p360_b_guard_publicado
+--     -- recorridos_360: r360_guard_recorrido · puntos_360: p360_a_proyecto, p360_b_guard_publicado, p360_c_guard_residente
 --   select column_name from information_schema.columns where table_name='observaciones' and column_name in ('punto_360_id','yaw','pitch');
 --
 -- 2) Bucket privado (a): ni la ruta pública ni la firma con la clave anon devuelven la imagen:
@@ -323,6 +362,13 @@ create policy "fotos360 eliminar propios sin punto" on storage.objects for delet
 --   await sb.from('puntos_360').update({etiqueta:'Eje 3'}).eq('id', P)                 // OK
 --   await sb.from('puntos_360').insert({recorrido_id: R, orden: 99})                   // error 42501 (publicado: sin altas)
 --   await sb.from('recorridos_360').update({publicado_por:'<otro uuid>'}).eq('id', R)  // OK pero publicado_por NO cambia (lo fija el servidor)
+--
+-- 5b) Residente en borrador / publicado (con la sesión de un RESIDENTE del proyecto; recorrido B en
+--     'borrador' con punto Q, recorrido R publicado con punto P). Con .select('id') se ve si el
+--     UPDATE alcanzó filas: RLS que no aplica = 0 filas SIN error; trigger = error 42501.
+--   (await sb.from('puntos_360').update({etiqueta:'Eje 2', x: 40, y: 55}).eq('id', Q).select('id')).data.length   // 1  (borrador: permitido)
+--   (await sb.from('puntos_360').update({fecha_captura: new Date().toISOString()}).eq('id', Q).select('id')).error?.code   // '42501' (columna fuera de la lista blanca)
+--   (await sb.from('puntos_360').update({etiqueta:'Eje 3'}).eq('id', P).select('id')).data.length   // 0  (publicado: la política no aplica)
 --
 -- 6) Limpieza de sobrantes (con un RESIDENTE del proyecto). remove() NO devuelve error cuando la
 --    política niega el borrado: devuelve la lista de objetos borrados, así que se compara el largo.
@@ -351,7 +397,7 @@ create policy "fotos360 eliminar propios sin punto" on storage.objects for delet
 -- drop function if exists public.r360_proyecto_de_ruta(text);
 -- drop function if exists public.r360_punto_de_ruta(text);
 -- alter table public.observaciones drop column if exists punto_360_id, drop column if exists yaw, drop column if exists pitch;
--- drop table if exists public.puntos_360;   -- arrastra sus triggers
--- drop function if exists public.p360_a_proyecto(); drop function if exists public.p360_b_guard_publicado();
+-- drop table if exists public.puntos_360;   -- arrastra sus triggers y políticas (incluida p360_update_residente_borrador)
+-- drop function if exists public.p360_a_proyecto(); drop function if exists public.p360_b_guard_publicado(); drop function if exists public.p360_c_guard_residente();
 -- drop table if exists public.recorridos_360; -- arrastra su trigger
 -- drop function if exists public.r360_guard_recorrido();

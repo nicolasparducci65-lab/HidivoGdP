@@ -50,9 +50,14 @@ error de carga; `getBlob` para informes; `getShareUrl` solo admin/fiscalizador).
 construir rutas `/object/public/` para este bucket.
 
 **Roles:** ver = cualquier miembro del proyecto; crear recorridos y subir puntos =
-admin/fiscalizador/residente; ubicar en el plano, etiquetar y publicar = admin/fiscalizador
-(política UPDATE copiada de observaciones: **el residente sube pero no ubica**); eliminar =
-admin. Un recorrido **publicado** congela posición, archivos, fecha de captura, hash y
+admin/fiscalizador/residente; ubicar en el plano, etiquetar y publicar = admin/fiscalizador.
+El **residente** además actualiza puntos **mientras el recorrido está en borrador**, solo en
+posición (`plano_id`, `x`, `y`, `waypoint`), `orden`, `etiqueta`, `rubro_id`, `heading_norte` y
+`notas` (política `p360_update_residente_borrador` + lista blanca del trigger
+`p360_c_guard_residente`; en publicado su UPDATE no alcanza filas). Nota: la interfaz del
+módulo todavía ofrece «Ubicar en plano», arrastre e interpolación solo a admin/fiscalizador
+(`r360PuedeUbicar`); abrirla al residente en borrador es un ajuste pendiente del módulo.
+Eliminar = admin. Un recorrido **publicado** congela posición, archivos, fecha de captura, hash y
 recorrido de sus puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si
 no, el congelado se evadiría despublicando). `publicado_en`/`publicado_por` los fija el
 servidor y el `proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un
@@ -86,9 +91,12 @@ y `vendor/exifr` 7.1.3 (MIT).
 
 `supabase/migrations/20260922_recorridos_360.sql` **no se ejecuta automáticamente**: revisar y
 aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
-- 8 políticas en `recorridos_360`/`puntos_360`, 5 en `storage.objects` (`fotos360 …`, dos de
-  DELETE), bucket con `public = false`, triggers `r360_guard_recorrido`, `p360_a_proyecto` y
-  `p360_b_guard_publicado`, columnas `punto_360_id`/`yaw`/`pitch` en `observaciones`.
+- 9 políticas en `recorridos_360`/`puntos_360` (dos de UPDATE en puntos), 5 en `storage.objects`
+  (`fotos360 …`, dos de DELETE), bucket con `public = false`, triggers `r360_guard_recorrido`,
+  `p360_a_proyecto`, `p360_b_guard_publicado` y `p360_c_guard_residente`, columnas
+  `punto_360_id`/`yaw`/`pitch` en `observaciones`.
+- Residente sobre un recorrido en borrador: actualiza etiqueta/posición (1 fila), falla con 42501
+  al tocar `fecha_captura`; sobre uno publicado su UPDATE devuelve 0 filas (bloque 5b del pie).
 - Un residente borra con `remove()` un objeto propio sin fila (devuelve 1) y no uno con fila
   (devuelve 0), bloque 6 del pie.
 - (a) `GET` anónimo a `/object/public/fotos-360/...` → error y firmar con la clave anon → error;
