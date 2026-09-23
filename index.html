@@ -2468,6 +2468,9 @@ async function login(){
 }
 
 async function logout(){
+  // La caché de rubros del Libro (contrato y avance por proyecto) no debe quedar en un
+  // dispositivo compartido tras cerrar sesión; se borra pase lo que pase con signOut.
+  try{ Object.keys(localStorage).filter(k=>k.startsWith(CACHE_RUBROS_LIBRO)).forEach(k=>localStorage.removeItem(k)); }catch(e){}
   await sb.auth.signOut();
   currentUser = null; currentPerfil = null;
   document.getElementById('appScreen').style.display='none';
@@ -3736,7 +3739,7 @@ function limpiarEstadoProyecto(){
   window._planImportRubros = null; window._editDescripcionId = null; window._invitarCanalId = null; window._miembroProyectoId = null;
   // Libro de obra
   window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
-  libroRubrosGuardados = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
+  libroRubrosGuardados = {}; libroRubrosRef = {}; window._libroRubrosCatalogo = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
   // Órdenes de cambio
   _ocItems = []; _ocEditando = null; _ocRubros = [];
   // Formatos de calidad (editor de plantilla y llenado)
@@ -4453,6 +4456,10 @@ let libroRubrosSeleccionados = [];
 // Cantidades ya guardadas en el registro que se está editando (rubro_id → cantidad).
 // Permite que marcar/desmarcar un rubro restaure su valor en vez de dejarlo en 0.
 let libroRubrosGuardados = {};
+// Referencia contractual por rubro para el modal (rubro_id → {contrato, acumulado, pendiente,
+// enCola, unidad, offline}). La arma armarReferenciasRubrosLibro y la pinta
+// pintarReferenciaRubroLibro; se vacía al abrir el modal, al guardar y al cambiar de proyecto.
+let libroRubrosRef = {};
 
 async function cargarLibroObra(){
   if(!currentProyecto) return;
@@ -5388,6 +5395,7 @@ async function guardarRegistroOffline(payload){
     autorId: currentUser?.id
   };
   await idbGuardar(item);
+  libroRubrosRef = {}; libroRubrosGuardados = {};
   cerrarModal('modalLibro');
   toast('📴 Sin señal: registro guardado en este dispositivo. Se sincronizará solo al volver la conexión.','info');
   actualizarIndicadorOffline();
@@ -5431,6 +5439,11 @@ async function guardarSolicitudOffline(titulo, tipoSol, descripcion){
 }
 
 let _sincronizandoOffline = false;
+// Ítems de la cola cuyo registro y cantidades YA están en el servidor pero siguen en
+// IndexedDB mientras suben sus fotos: la referencia del Libro no debe sumarlos otra vez.
+// En memoria a propósito: al recargar la página el ítem vuelve a contarse como pendiente,
+// coherente con que el sync lo reintentará.
+window._offlineYaEnServidor = new Set();
 
 async function sincronizarRegistrosOffline(){
   if(_sincronizandoOffline || !navigator.onLine) return;
@@ -5444,6 +5457,7 @@ async function sincronizarRegistrosOffline(){
   if(!pendientes.length || saltables === pendientes.length){ _sincronizandoOffline = false; actualizarIndicadorOffline(); return; }
   actualizarIndicadorOffline('Sincronizando...');
   let ok = 0, fallos = 0, ok360 = 0;
+  const proyectosLibroOk = new Set(); // proyectos con registros del libro subidos: su caché de rubros se refresca al final
   // Registros de campo (libro, observación, solicitud) primero: son pequeños y no deben esperar
   // detrás de decenas de MB de fotos 360 ni caer con el break de un corte de red durante una foto.
   const prioridad = i => i.tipo==='punto360' ? 2 : (i.tipo==='punto360_limpieza' ? 1 : 0);
@@ -5492,6 +5506,8 @@ async function sincronizarRegistrosOffline(){
           await sb.from('rubros').update({cantidad_ejecutada:(rub?.cantidad_ejecutada||0)+r.cantidad}).eq('id',r.id);
         }
       }
+      // Desde aquí el servidor ya contiene todo lo que este ítem representaba
+      window._offlineYaEnServidor.add(item.idLocal);
       for(let i=0; i<(item.fotos||[]).length; i++){
         const f = item.fotos[i];
         try{
@@ -5504,8 +5520,11 @@ async function sincronizarRegistrosOffline(){
         notificarFiscalizadorViaDM(`📖 Registro N°${payload.numero_registro} del libro de obra por aprobar`, `Fecha: ${payload.fecha} (registrado sin señal)`);
       }
       await idbBorrar(item.idLocal);
+      window._offlineYaEnServidor.delete(item.idLocal);
+      proyectosLibroOk.add(item.proyecto_id);
       ok++;
     }catch(e){
+      window._offlineYaEnServidor.delete(item.idLocal);
       console.warn('Sincronización offline:', e);
       fallos++;
       if(esErrorDeRed(e)) break; // se fue la señal otra vez: reintentar después
@@ -5515,6 +5534,8 @@ async function sincronizarRegistrosOffline(){
   actualizarIndicadorOffline();
   if(ok){
     invalidarCacheProyectos();
+    // La cola ya no aporta lo sincronizado: la caché "al último sync" debe incluirlo
+    proyectosLibroOk.forEach(pid => cargarRubrosConReferenciaLibro(pid).catch(()=>{}));
     toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
     try{
       if(currentPage==='libro') cargarLibroObra();
@@ -5627,21 +5648,38 @@ function esAprobadorLibro(){
   return ['admin','fiscalizador'].includes(currentPerfil?.rol);
 }
 
-async function aprobarRegistroLibro(id, numero){
+async function aprobarRegistroLibro(id, numero, btn){
   if(!esAprobadorLibro()) return;
-  if(!confirm(`¿Aprobar el Registro N° ${numero}?\n\nQuedará sellado con tu nombre y no podrá editarse.`)) return;
-  const { error } = await sb.from('libro_obra').update({
-    estado_aprobacion:'aprobado', aprobado_por: currentUser?.id,
-    aprobado_at: new Date().toISOString(), observacion_aprobacion: null
-  }).eq('id', id);
-  if(error){ toast('Error: '+error.message,'error'); return; }
-  await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'aprobado', autor_id:currentUser?.id});
-  notificarPorPush('libro', `Registro N° ${numero} del libro de obra aprobado ✅`, '');
-  notificarPorEmail('libro', 'Registro aprobado', '', numero);
-  invalidarCacheProyectos();
-  toast(`Registro N° ${numero} aprobado ✓`,'success');
-  cargarLibroObra();
-  cargarNotificacionesGlobales();
+  // Guard de reentrada: la consulta de avisos precede al confirm, así que un segundo toque
+  // en ✓ con red lenta abriría dos confirm y duplicaría aprobación y notificaciones.
+  const enCurso = window._aprobandoLibro || (window._aprobandoLibro = new Set());
+  if(enCurso.has(id)) return;
+  enCurso.add(id);
+  if(btn) btn.disabled = true;
+  try{
+    // Misma referencia contractual que en el modal y el detalle: si algún rubro supera el
+    // contrato, el fiscalizador lo ve antes de sellar. Advierte, no bloquea.
+    const avisos = await avisosContratoRegistroLibro(id);
+    const bloqueAvisos = avisos.length ? `\n\n⚠ Supera el contrato:\n${avisos.map(a=>'• '+a).join('\n')}` : '';
+    if(!confirm(`¿Aprobar el Registro N° ${numero}?${bloqueAvisos}\n\nQuedará sellado con tu nombre y no podrá editarse.`)) return;
+    const { error } = await sb.from('libro_obra').update({
+      estado_aprobacion:'aprobado', aprobado_por: currentUser?.id,
+      aprobado_at: new Date().toISOString(), observacion_aprobacion: null
+    }).eq('id', id);
+    if(error){ toast('Error: '+error.message,'error'); return; }
+    await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'aprobado', autor_id:currentUser?.id});
+    notificarPorPush('libro', `Registro N° ${numero} del libro de obra aprobado ✅`, '');
+    notificarPorEmail('libro', 'Registro aprobado', '', numero);
+    invalidarCacheProyectos();
+    cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // "por aprobar" de la caché sin señal
+    toast(`Registro N° ${numero} aprobado ✓`,'success');
+    // Se espera el re-render: el guard cubre hasta que la fila pierde el botón ✓
+    await cargarLibroObra();
+    cargarNotificacionesGlobales();
+  } finally {
+    enCurso.delete(id);
+    if(btn) btn.disabled = false;
+  }
 }
 
 async function observarRegistroLibro(id, numero){
@@ -5669,6 +5707,7 @@ async function reabrirRegistroLibro(id, numero){
   await sb.from('libro_obra').update({estado_aprobacion:'pendiente', aprobado_por:null, aprobado_at:null}).eq('id', id);
   await sb.from('libro_obra_aprobaciones').insert({registro_id:id, accion:'reabierto', autor_id:currentUser?.id});
   invalidarCacheProyectos();
+  cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // "por aprobar" de la caché sin señal
   toast(`Registro N° ${numero} reabierto`,'success');
   cargarLibroObra();
 }
@@ -5680,7 +5719,7 @@ function accionesAprobacionLibro(r){
     return currentPerfil?.rol==='admin'
       ? `<button class="btn" style="padding:3px 8px;font-size:11px" title="Reabrir (admin)" onclick="event.stopPropagation();reabrirRegistroLibro('${r.id}',${num})">🔓</button>` : '';
   }
-  return `<button class="btn" style="padding:3px 8px;font-size:11px;color:#00854d;border-color:#00854d" title="Aprobar" onclick="event.stopPropagation();aprobarRegistroLibro('${r.id}',${num})">✓</button>
+  return `<button class="btn" style="padding:3px 8px;font-size:11px;color:#00854d;border-color:#00854d" title="Aprobar" onclick="event.stopPropagation();aprobarRegistroLibro('${r.id}',${num},this)">✓</button>
     <button class="btn" style="padding:3px 8px;font-size:11px;color:#e2445c;border-color:#e2445c" title="Observar" onclick="event.stopPropagation();observarRegistroLibro('${r.id}',${num})">⚠</button>`;
 }
 
@@ -5807,7 +5846,8 @@ function climaIcon(clima){
 async function verDetalleLibro(id){
   const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
   const { data: fotos } = await sb.from('libro_obra_fotos').select('*').eq('registro_id',id).order('orden');
-  const { data: rubros } = await sb.from('libro_obra_rubros').select('*, rubros(codigo,descripcion,unidad)').eq('registro_id',id);
+  const { data: rubros } = await sb.from('libro_obra_rubros').select('*, rubros(codigo,descripcion,unidad,cantidad_contrato,cantidad_ejecutada)').eq('registro_id',id);
+  const refsRubros = r ? await referenciasRegistroLibro(r, rubros) : [];
 
   const fotosHtml = fotos&&fotos.length ? fotos.map(f=>`
     <div style="position:relative">
@@ -5815,10 +5855,13 @@ async function verDetalleLibro(id){
       ${f.descripcion?`<div style="font-size:11px;color:#676879;margin-top:4px;text-align:center">${escAttr(f.descripcion)}</div>`:''}
     </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin fotos</div>';
 
-  const rubrosHtml = rubros&&rubros.length ? rubros.map(rv=>`
-    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f6f8">
-      <span style="font-size:13px">${rv.rubros?.codigo||''} — ${rv.rubros?.descripcion||''}</span>
-      <span style="font-weight:600;color:#0073ea">${rv.cantidad_dia} ${rv.rubros?.unidad||''}</span>
+  const rubrosHtml = refsRubros.length ? refsRubros.map(({fila: rv, r: rr})=>`
+    <div style="padding:8px 0;border-bottom:1px solid #f5f6f8">
+      <div style="display:flex;justify-content:space-between">
+        <span style="font-size:13px">${escAttr(rv.rubros?.codigo||'')} — ${escAttr(rv.rubros?.descripcion||'')}</span>
+        <span style="font-weight:600;color:#0073ea">${fmtCantidadRef(rv.cantidad_dia)} ${escAttr(rv.rubros?.unidad||'')}</span>
+      </div>
+      ${htmlReferenciaRubroLibro(rr)}
     </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin rubros registrados</div>';
 
   document.getElementById('detalleLibroBody').innerHTML = `
@@ -5849,6 +5892,10 @@ async function abrirModalLibro(){
   libroFotosSeleccionadas = [];
   libroRubrosSeleccionados = [];
   libroRubrosGuardados = {};
+  libroRubrosRef = {};
+  // Si se canceló una edición, el modal conservaba título, botón y _editandoRegistroId
+  // de esa edición y "Guardar" habría sobrescrito aquel registro: volver a modo creación.
+  restaurarModoCreacionLibro();
 
   // Número de registro
   const { count } = await sb.from('libro_obra').select('id',{count:'exact',head:true}).eq('proyecto_id',currentProyecto);
@@ -5869,9 +5916,21 @@ async function abrirModalLibro(){
   document.getElementById('libroMaterialesLista').innerHTML = '<div style="color:#676879;font-size:12px;padding:4px">Sin materiales agregados</div>';
   await cargarCatalogoItems();
 
-  // Cargar rubros del proyecto
-  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad').eq('proyecto_id',currentProyecto).order('orden');
-  renderRubrosLibroModal(rubros||[]);
+  // Cargar rubros del proyecto con su referencia contractual (sin señal: caché del
+  // dispositivo + lo que espera en la cola offline)
+  const carga = await cargarRubrosConReferenciaLibro(currentProyecto);
+  libroRubrosRef = armarReferenciasRubrosLibro(carga);
+  if(carga.offline && !carga.rubros.length){
+    document.getElementById('libroRubrosLista').innerHTML = '<div style="color:#676879;font-size:13px">📴 Sin señal y sin rubros guardados en este dispositivo. Abre este formulario con conexión una vez para tenerlos disponibles sin señal.</div>';
+  } else {
+    renderRubrosLibroModal(carga.rubros);
+    if(carga.offline){
+      // Fecha de la caché para que el usuario juzgue qué tan vieja es la referencia
+      const cuando = carga.sincronizadoEn ? new Date(carga.sincronizadoEn).toLocaleString('es-EC',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+      document.getElementById('libroRubrosLista').insertAdjacentHTML('afterbegin',
+        `<div style="color:#b8860b;background:#fdf6e3;font-size:12px;padding:6px 8px;border-radius:6px;margin-bottom:6px">📴 Sin señal: referencias del último sync${cuando ? ' ('+cuando+')' : ''}</div>`);
+    }
+  }
 
   document.getElementById('modalLibro').classList.add('show');
 }
@@ -5911,19 +5970,28 @@ function escAttr(texto){
 
 function renderRubrosLibroModal(rubros){
   if(!rubros.length){ document.getElementById('libroRubrosLista').innerHTML='<div style="color:#676879;font-size:13px">No hay rubros en este proyecto</div>'; return; }
+  // Código, descripción y unidad no viajan por el atributo onchange (un salto de línea o un
+  // '&#39;' en la descripción rompían o inyectaban el handler): quedan en un mapa por id.
+  const catalogo = {};
+  rubros.forEach(r=>{ catalogo[r.id] = {codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad}; });
+  window._libroRubrosCatalogo = catalogo;
   document.getElementById('libroRubrosLista').innerHTML = rubros.map(r=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f6f8;flex-wrap:wrap" id="rubro-row-${r.id}">
-      <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}','${escaparParaAtributo(r.codigo)}','${escaparParaAtributo(r.descripcion)}','${escaparParaAtributo(r.unidad)}')" style="width:16px;height:16px;cursor:pointer"/>
+      <input type="checkbox" id="chk-${r.id}" onchange="toggleRubroLibro('${r.id}')" style="width:16px;height:16px;cursor:pointer"/>
       <span style="font-size:12px;color:#676879;min-width:30px">${escAttr(r.codigo)}</span>
       <span style="font-size:13px;flex:1">${escAttr(r.descripcion)}</span>
-      <span style="font-size:11px;color:#676879">${r.unidad||''}</span>
-      <input type="number" id="qty-${r.id}" placeholder="0" step="0.01" min="0" style="width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;display:none" onchange="actualizarCantidadRubro('${r.id}',this.value)"/>
-      <span id="ref-${r.id}" style="flex-basis:100%;font-size:11px;color:#676879;display:none;padding-left:26px"></span>
+      <span style="font-size:11px;color:#676879">${escAttr(r.unidad||'')}</span>
+      <input type="number" id="qty-${r.id}" placeholder="0" step="0.01" min="0" style="width:80px;padding:5px 8px;border:1px solid #c5c7d4;border-radius:6px;font-size:12px;display:none" oninput="actualizarCantidadRubro('${r.id}',this.value)"/>
+      <span id="ref-${r.id}" style="flex-basis:100%;font-size:11px;color:#676879;display:none;margin-left:26px;line-height:1.5"></span>
     </div>`).join('');
 }
 
 function toggleRubroLibro(id, codigo, descripcion, unidad){
   const qtyEl = document.getElementById('qty-'+id);
+  // Textos del rubro desde el mapa que llenó renderRubrosLibroModal (los parámetros
+  // quedan como respaldo para llamadas directas)
+  const cat = window._libroRubrosCatalogo?.[id];
+  if(cat){ codigo = cat.codigo; descripcion = cat.descripcion; unidad = cat.unidad; }
   const exists = libroRubrosSeleccionados.find(r=>r.id===id);
   if(exists){
     libroRubrosSeleccionados = libroRubrosSeleccionados.filter(r=>r.id!==id);
@@ -5936,11 +6004,211 @@ function toggleRubroLibro(id, codigo, descripcion, unidad){
     if(guardada) qtyEl.value = guardada;
     qtyEl.style.display='block'; qtyEl.focus();
   }
+  pintarReferenciaRubroLibro(id);
 }
 
 function actualizarCantidadRubro(id, val){
   const r = libroRubrosSeleccionados.find(r=>r.id===id);
   if(r) r.cantidad = parseFloat(val)||0;
+  pintarReferenciaRubroLibro(id);
+}
+
+// ── LIBRO DE OBRA: referencia contractual por rubro ──
+// Una sola función (referenciaRubroLibro) arma "Contrato · Acumulado · Saldo" y el
+// "Con este registro"; la usan el modal (crear y editar), el detalle del registro y la
+// confirmación de aprobación. Advierte si se supera el contrato; nunca bloquea el guardado.
+function numeroRef(v){
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function fmtCantidadRef(v){
+  return numeroRef(v).toLocaleString('es-EC',{maximumFractionDigits:4});
+}
+// ref: {contrato, acumulado, pendiente, enCola, unidad, offline}; cantidad: la de ESTE registro.
+// acumulado NO incluye lo guardado en este registro (en edición/detalle se descuenta antes),
+// así "Con este registro" no cuenta dos veces. Devuelve texto y estado; no toca el DOM.
+function referenciaRubroLibro(ref, cantidad){
+  ref = ref || {};
+  const contrato = numeroRef(ref.contrato), acumulado = numeroRef(ref.acumulado);
+  const pendiente = numeroRef(ref.pendiente), enCola = numeroRef(ref.enCola), q = numeroRef(cantidad);
+  const u = ref.unidad ? ' '+ref.unidad : '';
+  const sinContrato = !(contrato > 0);
+  const pct = v => (v/contrato*100).toLocaleString('es-EC',{maximumFractionDigits:1}) + ' %';
+  const partes = [ sinContrato ? 'Sin cantidad contractual' : `Contrato: ${fmtCantidadRef(contrato)}${u}` ];
+  const detalles = [];
+  if(!sinContrato) detalles.push(pct(acumulado));
+  if(pendiente > 0) detalles.push(`${fmtCantidadRef(pendiente)}${u} por aprobar`);
+  if(enCola > 0) detalles.push(`${fmtCantidadRef(enCola)}${u} en cola sin sincronizar`);
+  partes.push(`Acumulado${ref.offline ? ' al último sync' : ''}: ${fmtCantidadRef(acumulado)}${u}${detalles.length ? ' ('+detalles.join('; ')+')' : ''}`);
+  if(!sinContrato) partes.push(`Saldo: ${fmtCantidadRef(contrato - acumulado)}${u}`);
+  const total = acumulado + q;
+  // Redondeado a la escala de la base y de pantalla (4 decimales) para que aviso y número
+  // coincidan: absorbe el ruido flotante y evita "supera en 0"
+  const exceso = sinContrato ? 0 : Math.max(0, Math.round((total - contrato)*1e4)/1e4);
+  return {
+    texto: partes.join(' · '),
+    conEste: q > 0 ? `Con este registro: ${fmtCantidadRef(total)}${u}${sinContrato ? '' : ' ('+pct(total)+')'}` : '',
+    aviso: exceso > 0 ? `Supera el contrato en ${fmtCantidadRef(exceso)}${u}` : '',
+    supera: exceso > 0, exceso, total, sinContrato
+  };
+}
+// Texto de una línea (modal, detalle y aprobación comparten el mismo orden de partes).
+function lineaReferenciaRubroLibro(r){
+  return [r.texto, r.conEste, r.aviso ? '⚠ '+r.aviso : ''].filter(Boolean).join(' · ');
+}
+// Pinta (o esconde) la referencia bajo el rubro en el modal según libroRubrosRef y la
+// cantidad actual del rubro en libroRubrosSeleccionados. Ámbar si supera el contrato.
+function pintarReferenciaRubroLibro(id){
+  const el = document.getElementById('ref-'+id);
+  if(!el) return;
+  const ref = libroRubrosRef[id];
+  const sel = libroRubrosSeleccionados.find(r=>r.id===id);
+  if(!ref || !sel){ el.style.display = 'none'; el.textContent = ''; return; }
+  const r = referenciaRubroLibro(ref, sel.cantidad);
+  el.textContent = lineaReferenciaRubroLibro(r);
+  el.style.display = 'block';
+  if(r.supera){ el.style.color = '#b8860b'; el.style.background = '#fdf6e3'; el.style.padding = '3px 8px'; el.style.borderRadius = '6px'; }
+  else { el.style.color = '#676879'; el.style.background = ''; el.style.padding = ''; el.style.borderRadius = ''; }
+}
+// Misma referencia como HTML seguro (detalle del registro).
+function htmlReferenciaRubroLibro(r){
+  const estilo = r.supera ? 'color:#b8860b;background:#fdf6e3;padding:3px 8px;border-radius:6px' : 'color:#676879';
+  return `<div style="font-size:11px;line-height:1.5;margin-top:2px;${estilo}">${escAttr(lineaReferenciaRubroLibro(r))}</div>`;
+}
+
+// Suma por rubro de lo registrado en registros NO aprobados del proyecto (pendiente de
+// aprobación). excluirRegistroId: el registro que se edita o se mira no se cuenta a sí mismo.
+async function pendientesPorRubroLibro(proyectoId, excluirRegistroId){
+  const { data: regs, error } = await sb.from('libro_obra').select('id')
+    .eq('proyecto_id', proyectoId).or('estado_aprobacion.is.null,estado_aprobacion.neq.aprobado');
+  if(error) throw error;
+  const ids = (regs||[]).map(r=>r.id).filter(rid=>rid!==excluirRegistroId);
+  const porRubro = {};
+  // Por lotes: la lista de ids viaja en la URL
+  for(let i=0; i<ids.length; i+=100){
+    const { data: filas, error: e2 } = await sb.from('libro_obra_rubros').select('rubro_id,cantidad_dia').in('registro_id', ids.slice(i, i+100));
+    if(e2) throw e2;
+    (filas||[]).forEach(f=>{ porRubro[f.rubro_id] = (porRubro[f.rubro_id]||0) + numeroRef(f.cantidad_dia); });
+  }
+  return porRubro;
+}
+
+// Caché por proyecto de rubros + pendientes para el formulario sin señal (opcional: si
+// localStorage falla, simplemente no hay caché).
+const CACHE_RUBROS_LIBRO = 'hidivo-rubros-libro:';
+function guardarCacheRubrosLibro(proyectoId, datos){
+  try{ localStorage.setItem(CACHE_RUBROS_LIBRO+proyectoId, JSON.stringify({sincronizadoEn: new Date().toISOString(), ...datos})); }
+  catch(e){ console.warn('Libro: no se pudo guardar la caché de rubros:', e?.message||e); }
+}
+function leerCacheRubrosLibro(proyectoId){
+  try{ const raw = localStorage.getItem(CACHE_RUBROS_LIBRO+proyectoId); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+// Cantidades por rubro que esperan en la cola offline (IndexedDB) en registros del libro de
+// este proyecto. pendiente: lo que al sincronizar nacerá sin aprobar (autor no aprobador).
+async function colaOfflineLibroPorRubro(proyectoId){
+  let items = [];
+  try{ items = await idbTodos(); }catch(e){ return {}; }
+  const porRubro = {};
+  items.filter(i => (i.tipo||'libro')==='libro' && i.proyecto_id===proyectoId && !window._offlineYaEnServidor?.has(i.idLocal)).forEach(i=>{
+    (i.rubros||[]).forEach(r=>{
+      const o = porRubro[r.id] || (porRubro[r.id] = {cantidad:0, pendiente:0});
+      o.cantidad += numeroRef(r.cantidad);
+      if(!i.esAprobador) o.pendiente += numeroRef(r.cantidad);
+    });
+  });
+  return porRubro;
+}
+// Rubros del proyecto con contrato, acumulado (cantidad_ejecutada tal como la calcula la app)
+// y pendiente de aprobación. Con señal: servidor, y refresca la caché del dispositivo (solo
+// al crear, donde los pendientes son los del proyecto completo; también se llama sin await
+// tras cada cambio del libro hecho desde este dispositivo para que "al último sync" lo
+// incluya). Sin señal o con error de red al pedir los rubros: caché. En ambos casos suma la
+// cola offline: lo encolado aún no está en el servidor.
+async function cargarRubrosConReferenciaLibro(proyectoId, excluirRegistroId){
+  let rubros = null, pendientePorRubro = null, offline = !navigator.onLine, sincronizadoEn = null;
+  if(!offline){
+    let error = null, data = null;
+    try{ ({ data, error } = await sb.from('rubros').select('id,codigo,descripcion,unidad,cantidad_contrato,cantidad_ejecutada').eq('proyecto_id', proyectoId).order('orden')); }
+    catch(e){ error = e; }
+    if(error && esErrorDeRed(error)){ offline = true; }
+    else if(error){ console.warn('Libro: rubros no disponibles:', error?.message||error); rubros = []; }
+    else {
+      rubros = data||[];
+      // Los rubros ya llegaron: si la consulta de pendientes falla (también por un corte de
+      // red entre ambas) se conservan con su acumulado fresco y solo falta el detalle
+      // "por aprobar"; la caché no se escribe con pendientes incompletos.
+      try{ pendientePorRubro = await pendientesPorRubroLibro(proyectoId, excluirRegistroId); }
+      catch(e){ console.warn('Libro: pendientes por rubro no disponibles:', e?.message||e); }
+      if(pendientePorRubro && !excluirRegistroId) guardarCacheRubrosLibro(proyectoId, {rubros, pendientePorRubro});
+    }
+  }
+  if(offline){
+    const cache = leerCacheRubrosLibro(proyectoId);
+    rubros = cache?.rubros||[]; sincronizadoEn = cache?.sincronizadoEn||null;
+    // La caché se escribe al crear (pendientes del proyecto completo): en edición incluiría
+    // el registro que se edita y "Con este registro" lo contaría dos veces → sin ese detalle.
+    pendientePorRubro = excluirRegistroId ? {} : (cache?.pendientePorRubro||{});
+  }
+  const enColaPorRubro = await colaOfflineLibroPorRubro(proyectoId);
+  return { rubros: rubros||[], pendientePorRubro: pendientePorRubro||{}, enColaPorRubro, offline, sincronizadoEn };
+}
+// rubro_id → referencia lista para pintar. En edición descuenta del acumulado lo ya guardado
+// en ESTE registro (libroRubrosGuardados); lo pendiente ya viene sin este registro.
+function armarReferenciasRubrosLibro(carga){
+  const refs = {};
+  (carga.rubros||[]).forEach(r=>{
+    const guardada = numeroRef(libroRubrosGuardados[r.id]);
+    const cola = carga.enColaPorRubro?.[r.id] || {cantidad:0, pendiente:0};
+    refs[r.id] = {
+      unidad: r.unidad||'',
+      contrato: numeroRef(r.cantidad_contrato),
+      acumulado: numeroRef(r.cantidad_ejecutada) - guardada + numeroRef(cola.cantidad),
+      pendiente: numeroRef(carga.pendientePorRubro?.[r.id]) + numeroRef(cola.pendiente),
+      enCola: numeroRef(cola.cantidad),
+      offline: !!carga.offline
+    };
+  });
+  return refs;
+}
+// Referencias de los rubros de un registro ya guardado (detalle y aprobación). El acumulado
+// del rubro ya incluye este registro: se descuenta cantidad_dia y vuelve como "Con este
+// registro", igual que en edición. Devuelve [{fila, ref, r}].
+async function referenciasRegistroLibro(registro, filasRubros){
+  let pendientes = {};
+  try{ pendientes = await pendientesPorRubroLibro(registro.proyecto_id, registro.id); }
+  catch(e){ console.warn('Libro: pendientes por rubro no disponibles:', e?.message||e); }
+  return (filasRubros||[]).map(fila=>{
+    const info = fila.rubros||{};
+    const q = numeroRef(fila.cantidad_dia);
+    const ref = { unidad: info.unidad||'', contrato: numeroRef(info.cantidad_contrato),
+      acumulado: numeroRef(info.cantidad_ejecutada) - q, pendiente: numeroRef(pendientes[fila.rubro_id]), enCola: 0, offline: false };
+    return { fila, ref, r: referenciaRubroLibro(ref, q) };
+  });
+}
+// Avisos "supera el contrato" de un registro, para la confirmación de aprobación.
+async function avisosContratoRegistroLibro(id){
+  try{
+    const { data: reg } = await sb.from('libro_obra').select('id,proyecto_id').eq('id', id).single();
+    if(!reg) return [];
+    const { data: filas } = await sb.from('libro_obra_rubros').select('rubro_id,cantidad_dia, rubros(codigo,unidad,cantidad_contrato,cantidad_ejecutada)').eq('registro_id', id);
+    const refs = await referenciasRegistroLibro(reg, filas);
+    return refs.filter(x=>x.r.supera).map(x=>{
+      const u = x.ref.unidad ? ' '+x.ref.unidad : '';
+      return `${x.fila.rubros?.codigo||'—'}: ${x.r.aviso} (${fmtCantidadRef(x.r.total)} de ${fmtCantidadRef(x.ref.contrato)}${u})`;
+    });
+  }catch(e){ console.warn('Libro: avisos de contrato no disponibles:', e?.message||e); return []; }
+}
+// Devuelve el modal del Libro a modo creación (título, botón y registro en edición).
+function restaurarModoCreacionLibro(){
+  window._editandoRegistroId = null;
+  const titulo = document.querySelector('#modalLibro .modal-title');
+  if(titulo) titulo.textContent = '📖 Nuevo registro — Libro de Obra';
+  const btn = document.getElementById('btnGuardarLibro');
+  if(!btn) return;
+  btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
+  btn.onclick = guardarRegistroLibro;
+  btn.disabled = false;
 }
 
 function manejarFotosLibro(input){
@@ -6076,7 +6344,10 @@ async function guardarRegistroLibro(){
   }
 
   invalidarCacheProyectos();
+  // Reescribe la caché "al último sync" con este registro ya en el servidor (sin await)
+  cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{});
   toast('Registro guardado con éxito ✓','success');
+  libroRubrosRef = {}; libroRubrosGuardados = {};
   cerrarModal('modalLibro');
   btnGuardar.disabled=false;
   btnGuardar.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
@@ -14564,6 +14835,7 @@ async function abrirEditarRegistro(id){
   libroRubrosSeleccionados = [];
   libroEquiposSeleccionados = [];
   libroMaterialesSeleccionados = [];
+  libroRubrosRef = {};
   window._editandoRegistroId = id;
 
   // Cargar items existentes del registro
@@ -14608,13 +14880,10 @@ async function abrirEditarRegistro(id){
     renderItemsLista('material');
   }, 150);
 
-  // Cargar rubros y marcar los que ya están en el registro
-  const { data: rubros } = await sb.from('rubros').select('id,codigo,descripcion,unidad,cantidad_ejecutada,cantidad_contrato').eq('proyecto_id',currentProyecto).order('orden');
+  // Cargar los rubros de este registro y guardar el snapshot de cantidades de ESTE
+  // registro (lo usa toggleRubroLibro para restaurar el valor si el usuario desmarca
+  // y vuelve a marcar, y la referencia para no contarlo dos veces).
   const { data: rubrosExistentes } = await sb.from('libro_obra_rubros').select('rubro_id, cantidad_dia').eq('registro_id', id);
-
-  // Pre-cargar rubros existentes en libroRubrosSeleccionados y guardar el
-  // snapshot de cantidades de ESTE registro (lo usa toggleRubroLibro para
-  // restaurar el valor si el usuario desmarca y vuelve a marcar).
   libroRubrosGuardados = {};
   (rubrosExistentes||[]).forEach(r=>{ libroRubrosGuardados[r.rubro_id] = parseFloat(r.cantidad_dia)||0; });
   libroRubrosSeleccionados = (rubrosExistentes||[]).map(r=>({
@@ -14622,27 +14891,24 @@ async function abrirEditarRegistro(id){
     cantidad: parseFloat(r.cantidad_dia)||0
   }));
 
-  renderRubrosLibroModal(rubros||[]);
+  // Rubros del proyecto con referencia contractual: el acumulado descuenta lo guardado en
+  // este registro y lo pendiente excluye este registro, así "Con este registro" no cuenta
+  // dos veces. (Depende de libroRubrosGuardados: va después del snapshot.)
+  const carga = await cargarRubrosConReferenciaLibro(currentProyecto, id);
+  libroRubrosRef = armarReferenciasRubrosLibro(carga);
+  renderRubrosLibroModal(carga.rubros||[]);
 
   // Marcar checkboxes y cantidades de rubros existentes después del render.
-  const rubroPorId = {};
-  (rubros||[]).forEach(r=>{ rubroPorId[r.id] = r; });
   setTimeout(()=>{
     (rubrosExistentes||[]).forEach(r=>{
       const chk = document.getElementById('chk-'+r.rubro_id);
       const qty = document.getElementById('qty-'+r.rubro_id);
-      const ref = document.getElementById('ref-'+r.rubro_id);
       if(chk){ chk.checked = true; }
       // El input se muestra con style.display, igual que toggleRubroLibro:
       // antes se usaba una clase .visible que no existe en el CSS y el input
       // quedaba oculto con la cantidad invisible.
       if(qty){ qty.style.display = 'block'; qty.value = r.cantidad_dia||0; }
-      const info = rubroPorId[r.rubro_id];
-      if(ref && info){
-        const u = info.unidad||'';
-        ref.textContent = `Guardado en este registro: ${r.cantidad_dia||0} ${u} · Acumulado del rubro: ${info.cantidad_ejecutada||0} ${u} · Contrato: ${info.cantidad_contrato||0} ${u}`;
-        ref.style.display = 'block';
-      }
+      pintarReferenciaRubroLibro(r.rubro_id);
     });
   }, 100);
 
@@ -14747,17 +15013,12 @@ async function guardarEdicionRegistro(){
   }
 
   invalidarCacheProyectos();
+  cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // caché "al último sync" con la edición
   toast('Registro actualizado ✓','success');
-  window._editandoRegistroId = null;
-
-  // Restaurar modal a modo creación
-  document.querySelector('#modalLibro .modal-title').textContent = '📖 Nuevo registro — Libro de Obra';
-  const btn = document.getElementById('btnGuardarLibro');
-  btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
-  btn.onclick = guardarRegistroLibro;
+  libroRubrosRef = {}; libroRubrosGuardados = {};
+  restaurarModoCreacionLibro();
 
   cerrarModal('modalLibro');
-  btnGuardar.disabled=false;
   cargarLibroObra();
 }
 
@@ -14795,6 +15056,7 @@ async function confirmarEliminarRegistro(id, num){
   }
 
   invalidarCacheProyectos();
+  cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // caché "al último sync" sin este registro
   toast('Registro eliminado y rubros actualizados','success');
   cerrarModal('modalDetalleLibro');
   cargarLibroObra();
