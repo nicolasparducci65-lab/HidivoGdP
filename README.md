@@ -85,6 +85,16 @@ parciales: no destruyen visor, mapa ni selección. Modos:
   consecutivos del plano visible, sin tocar los ubicados a mano; los anteriores al primer
   waypoint o posteriores al último quedan sin ubicar.
 
+**Depuración 360:** botón «🐞 Depuración 360» en la pantalla del módulo (admin/fiscalizador)
+que guarda una bandera en `localStorage` del contexto actual; en la app instalada de iOS hay
+que pulsarlo dentro de la app (no comparte almacenamiento con Safari), donde además sirve
+`?r360debug=1` / `?r360debug=0`. Panel flotante plegable con las últimas 200 líneas
+(consola del módulo, `window.onerror` y `unhandledrejection`, `MAX_TEXTURE_SIZE` y variante,
+por punto abierto número/variante/MB/ms, cada refirma con motivo, tamaño de la caché),
+persistidas en `localStorage` con rotación; al reabrir anota en qué línea terminó la sesión
+anterior. Botones «Copiar registro» y «Limpiar», y control «vencimiento de firmas: 5 s»
+(equivale a `?r360exp=5`, persiste). Apagado no tiene ningún efecto.
+
 **Librerías vendorizadas** (sin CDN, precacheadas por el SW): `vendor/pannellum` 2.5.6 (MIT)
 y `vendor/exifr` 7.1.3 (MIT).
 

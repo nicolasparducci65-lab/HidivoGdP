@@ -43,6 +43,144 @@ const R360 = {
   }catch(e){}
 })();
 
+// ── Panel de depuración 360 ─────────────────────────────────────────────────
+// Se activa con el botón «Depuración 360» (admin/fiscalizador) que guarda una
+// bandera en localStorage del contexto actual (la app instalada en iOS no
+// comparte almacenamiento con Safari: allí hay que pulsar el botón dentro de
+// la app). ?r360debug=1 la activa y ?r360debug=0 la apaga (útil en Safari).
+// Apagado no tiene ningún efecto: no se envuelve la consola ni se escribe nada.
+// Registro: últimas 200 líneas, persistidas en localStorage para sobrevivir a
+// una recarga por memoria; al reabrir se anota en qué línea terminó la sesión
+// anterior.
+const R360DBG = { KEY: 'r360_debug', LOG_KEY: 'r360_debug_log', EXP_KEY: 'r360_exp', PLEG_KEY: 'r360_debug_plegado', MAX: 200,
+                  activo: false, lineas: [], _orig: null, _panel: null, _onError: null, _onRej: null };
+function r360DbgLS(k, v){
+  try{
+    if(v === undefined) return localStorage.getItem(k);
+    if(v === null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+  }catch(e){ return null; }
+}
+function r360DbgActivo(){ return r360DbgLS(R360DBG.KEY) === '1'; }
+function r360DbgHora(){ const d = new Date(); return d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0'); }
+function r360DbgFmt(a){
+  if(a instanceof Error) return a.message || String(a);
+  if(a && typeof a === 'object'){ try{ return JSON.stringify(a).slice(0, 300); }catch(e){ return String(a); } }
+  return String(a);
+}
+function r360DbgLog(nivel, msg){
+  const icono = (nivel === 'warn') ? '⚠' : (nivel === 'error') ? '✖' : '·';
+  R360DBG.lineas.push(`${r360DbgHora()} ${icono} ${msg}`);
+  if(R360DBG.lineas.length > R360DBG.MAX) R360DBG.lineas.splice(0, R360DBG.lineas.length - R360DBG.MAX);
+  r360DbgLS(R360DBG.LOG_KEY, JSON.stringify(R360DBG.lineas));
+  r360DbgPintar();
+}
+// Registro del módulo: no hace nada con el panel apagado
+function r360Dbg(msg){ if(R360DBG.activo) r360DbgLog('log', msg); }
+function r360DbgCache(){
+  if(!R360DBG.activo) return;
+  let bytes = 0; R360._blobs.forEach(e => { bytes += e.blob?.size || 0; });
+  r360DbgLog('log', `caché de panorámicas: ${R360._blobs.size}/${R360.BLOBS_MAX} · ${(bytes / 1048576).toFixed(1)} MB`);
+}
+function r360DbgInit(){
+  try{
+    const q = new URLSearchParams(location.search).get('r360debug');
+    if(q === '1') r360DbgLS(R360DBG.KEY, '1'); else if(q === '0') r360DbgLS(R360DBG.KEY, null);
+  }catch(e){}
+  if(r360DbgLS(R360DBG.EXP_KEY) === '1') R360.FIRMA_SEGUNDOS = 5;   // control «firmas 5 s» del panel, persistido
+  if(r360DbgActivo()) r360DbgArrancar();
+}
+function r360DbgArrancar(){
+  if(R360DBG.activo) return;
+  R360DBG.activo = true;
+  try{ R360DBG.lineas = JSON.parse(r360DbgLS(R360DBG.LOG_KEY) || '[]'); }catch(e){ R360DBG.lineas = []; }
+  if(!Array.isArray(R360DBG.lineas)) R360DBG.lineas = [];
+  const ultima = R360DBG.lineas.length ? R360DBG.lineas[R360DBG.lineas.length - 1] : null;
+  // Consola: solo los mensajes del módulo (prefijo [360]); la consola real sigue recibiendo todo
+  R360DBG._orig = {};
+  ['log', 'info', 'warn', 'error'].forEach(n => {
+    const orig = console[n]; R360DBG._orig[n] = orig;
+    console[n] = function(...a){
+      try{ orig.apply(console, a); }catch(e){}
+      try{ if(typeof a[0] === 'string' && a[0].startsWith('[360]')) r360DbgLog(n, a.map(r360DbgFmt).join(' ')); }catch(e){}
+    };
+  });
+  R360DBG._onError = e => r360DbgLog('error', `window.onerror: ${e.message} (${String(e.filename || '').split('/').pop()}:${e.lineno})`);
+  R360DBG._onRej = e => r360DbgLog('error', 'unhandledrejection: ' + r360DbgFmt(e.reason?.message || e.reason));
+  window.addEventListener('error', R360DBG._onError);
+  window.addEventListener('unhandledrejection', R360DBG._onRej);
+  r360DbgCrearPanel();
+  if(ultima) r360DbgLog('log', `── la sesión anterior terminó en: ${ultima} ──`);
+  const standalone = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  r360DbgLog('log', `inicio · ${navigator.userAgent.slice(0, 100)} · instalada=${standalone} · online=${navigator.onLine} · memoria=${navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'n/d'}`);
+  const max = r360MaxTextura();
+  r360DbgLog('log', `MAX_TEXTURE_SIZE=${max} → variante ${max >= R360.FULL[0] ? 'full (5760×2880)' : 'web (4096×2048)'} · vencimiento de firmas ${R360.FIRMA_SEGUNDOS} s`);
+}
+function r360DbgParar(){
+  if(!R360DBG.activo) return;
+  R360DBG.activo = false;
+  if(R360DBG._orig){ Object.entries(R360DBG._orig).forEach(([n, f]) => { console[n] = f; }); R360DBG._orig = null; }
+  if(R360DBG._onError) window.removeEventListener('error', R360DBG._onError);
+  if(R360DBG._onRej) window.removeEventListener('unhandledrejection', R360DBG._onRej);
+  R360DBG._panel?.remove(); R360DBG._panel = null;
+}
+function r360DbgToggle(){
+  if(!PUEDE_PUBLICAR_R360()) return;
+  if(r360DbgActivo()){ r360DbgLS(R360DBG.KEY, null); r360DbgParar(); toast('Depuración 360 desactivada', 'info'); }
+  else { r360DbgLS(R360DBG.KEY, '1'); r360DbgArrancar(); toast('Depuración 360 activada: queda guardada en este dispositivo', 'info'); }
+  document.querySelectorAll('.r360-dbg-btn').forEach(b => { b.textContent = `🐞 Depuración 360: ${r360DbgActivo() ? 'ON' : 'OFF'}`; });
+}
+function r360DbgBotonHtml(){
+  return PUEDE_PUBLICAR_R360() ? `<button class="btn r360-dbg-btn" style="font-size:11px;padding:4px 8px" onclick="r360DbgToggle()">🐞 Depuración 360: ${r360DbgActivo() ? 'ON' : 'OFF'}</button>` : '';
+}
+function r360DbgCrearPanel(){
+  if(R360DBG._panel) return;
+  const p = document.createElement('div'); p.id = 'r360DbgPanel'; p.className = 'r360-dbg';
+  const plegado = r360DbgLS(R360DBG.PLEG_KEY) === '1';
+  p.innerHTML = `<div class="r360-dbg-head">
+      <button class="r360-dbg-pleg" onclick="r360DbgPlegar()" title="Plegar / desplegar">${plegado ? '▸' : '▾'}</button>
+      <b>Depuración 360</b> <span id="r360DbgN"></span>
+      <label title="Equivale a abrir la app con ?r360exp=5"><input type="checkbox" id="r360DbgExp" onchange="r360DbgExp(this.checked)" ${R360.FIRMA_SEGUNDOS === 5 ? 'checked' : ''}/> vencimiento de firmas: 5 s</label>
+      <button onclick="r360DbgCopiar()">Copiar registro</button>
+      <button onclick="r360DbgLimpiar()">Limpiar</button>
+      <button onclick="r360DbgToggle()" title="Desactivar la depuración">✕</button>
+    </div>
+    <pre id="r360DbgPre" class="r360-dbg-pre" style="display:${plegado ? 'none' : 'block'}"></pre>`;
+  document.body.appendChild(p); R360DBG._panel = p;
+  r360DbgPintar();
+}
+function r360DbgPintar(){
+  const pre = document.getElementById('r360DbgPre'), n = document.getElementById('r360DbgN');
+  if(n) n.textContent = `· ${R360DBG.lineas.length} líneas`;
+  if(!pre || pre.style.display === 'none') return;
+  pre.textContent = R360DBG.lineas.join('\n');
+  pre.scrollTop = pre.scrollHeight;
+}
+function r360DbgPlegar(){
+  const pre = document.getElementById('r360DbgPre'), b = document.querySelector('#r360DbgPanel .r360-dbg-pleg'); if(!pre) return;
+  const plegar = pre.style.display !== 'none';
+  pre.style.display = plegar ? 'none' : 'block'; if(b) b.textContent = plegar ? '▸' : '▾';
+  r360DbgLS(R360DBG.PLEG_KEY, plegar ? '1' : '0');
+  r360DbgPintar();
+}
+async function r360DbgCopiar(){
+  const texto = R360DBG.lineas.join('\n');
+  try{ await navigator.clipboard.writeText(texto); toast('Registro copiado al portapapeles', 'success'); return; }catch(e){}
+  try{   // iOS antiguo / sin permiso: selección + execCommand
+    const ta = document.createElement('textarea'); ta.value = texto; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;font-size:16px'; document.body.appendChild(ta);
+    ta.focus(); ta.select(); ta.setSelectionRange(0, texto.length);
+    const ok = document.execCommand('copy'); ta.remove();
+    toast(ok ? 'Registro copiado al portapapeles' : 'No se pudo copiar', ok ? 'success' : 'error');
+  }catch(e){ toast('No se pudo copiar', 'error'); }
+}
+function r360DbgLimpiar(){ R360DBG.lineas = []; r360DbgLS(R360DBG.LOG_KEY, null); r360DbgPintar(); }
+function r360DbgExp(on){
+  R360.FIRMA_SEGUNDOS = on ? 5 : 43200;
+  r360DbgLS(R360DBG.EXP_KEY, on ? '1' : null);
+  storage360.limpiarCache();
+  r360Dbg(`vencimiento de firmas: ${R360.FIRMA_SEGUNDOS} s (caché de firmas vaciada; las miniaturas y el visor deben refirmar solos)`);
+}
+
 // Roles (copia de las políticas de observaciones): el residente SUBE puntos
 // pero no los actualiza; ubicar en el plano, etiquetar y publicar son de
 // admin/fiscalizador; eliminar es de admin.
@@ -106,7 +244,11 @@ const storage360 = {
     _firmas360.set(path, { url: data.signedUrl, expira: Date.now() + Math.max(expiresIn - 60, 1) * 1000 });
     return data.signedUrl;
   },
-  async refirmar(path){ _firmas360.delete(path); return storage360.getUrl(path); },
+  async refirmar(path, motivo){
+    _firmas360.delete(path);
+    r360Dbg(`refirma${motivo ? ' (' + motivo + ')' : ''}: …/${String(path).split('/').slice(-2).join('/')}`);
+    return storage360.getUrl(path);
+  },
   // Para informes y exportes: se incrusta la imagen, nunca la URL firmada.
   async getBlob(path){
     const { data, error } = await sb.storage.from(R360.BUCKET).download(path);
@@ -144,7 +286,7 @@ function r360SetImg(img, path){
   img.onerror = async () => {
     if(img.dataset.r360Reintento === '1'){ img.onerror = null; img.alt = 'Imagen no disponible'; img.style.opacity = '.4'; return; }
     img.dataset.r360Reintento = '1';
-    try{ img.src = await storage360.refirmar(path); }catch(e){ img.onerror = null; }
+    try{ img.src = await storage360.refirmar(path, 'img onerror'); }catch(e){ img.onerror = null; }
   };
   storage360.getUrl(path).then(u => { img.src = u; }).catch(() => { img.alt = 'Sin acceso'; });
 }
@@ -619,7 +761,7 @@ async function cargarRecorridos360(){
   <div class="card">
     <div class="card-header">
       <div><div class="card-title">🌐 Recorridos 360</div><div class="card-subtitle">${R360.recorridos.length} recorrido(s)</div></div>
-      ${puede ? '<button class="btn primary" onclick="r360NuevoRecorridoForm()">+ Nuevo recorrido</button>' : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${r360DbgBotonHtml()}${puede ? '<button class="btn primary" onclick="r360NuevoRecorridoForm()">+ Nuevo recorrido</button>' : ''}</div>
     </div>
     <div id="r360NuevoForm" style="display:none;padding:12px 16px;border-bottom:1px solid #e6e9ef">
       <div style="display:grid;grid-template-columns:140px 1fr;gap:10px">
@@ -737,7 +879,8 @@ async function abrirRecorrido360(id, opts = {}){
           <span class="r360-estado ${rec.estado}" style="margin-left:6px">${rec.estado === 'publicado' ? 'PUBLICADO' : 'BORRADOR'}</span></div>
         <div class="card-subtitle">${escAttr(rec.fecha || '')} · <span id="r360NumPuntos">${R360.puntos.length}</span> punto(s)${rec.descripcion ? ' · ' + escAttr(rec.descripcion) : ''}</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${r360DbgBotonHtml()}
         ${puedeTogglar ? `<button class="btn" onclick="r360TogglePublicado()">${rec.estado === 'publicado' ? 'Volver a borrador' : '✅ Publicar'}</button>` : ''}
       </div>
     </div>
@@ -1200,12 +1343,13 @@ function r360AbortarDescarga(){
 // proyecto (limpiarEstadoR360).
 function r360RevocarEntrada(e){ if(e && e.url){ try{ URL.revokeObjectURL(e.url); }catch(_){} e.url = null; } }
 function r360OlvidarBlob(path){ const e = R360._blobs.get(path); if(e){ r360RevocarEntrada(e); R360._blobs.delete(path); } }
-function r360VaciarCacheBlobs(){ R360._blobs.forEach(r360RevocarEntrada); R360._blobs.clear(); }
+function r360VaciarCacheBlobs(){ if(!R360._blobs.size) return; R360._blobs.forEach(r360RevocarEntrada); R360._blobs.clear(); r360DbgCache(); }
 function r360BlobCache(path, blob){
   if(blob){
     r360OlvidarBlob(path);
     R360._blobs.set(path, { blob, url: null });
     while(R360._blobs.size > R360.BLOBS_MAX) r360OlvidarBlob(R360._blobs.keys().next().value);
+    r360DbgCache();
     return blob;
   }
   const e = R360._blobs.get(path); if(!e) return null;
@@ -1234,7 +1378,7 @@ async function r360DescargarPanoramica(path, signal, onProgreso){
   const tarea = (async () => {
     let url = await storage360.getUrl(path);
     let resp = await fetch(url, { signal });
-    if(!resp.ok && (resp.status === 400 || resp.status === 403)){ url = await storage360.refirmar(path); resp = await fetch(url, { signal }); }
+    if(!resp.ok && (resp.status === 400 || resp.status === 403)){ url = await storage360.refirmar(path, 'HTTP ' + resp.status); resp = await fetch(url, { signal }); }
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     if(!resp.body || !onProgreso) return r360BlobCache(path, await resp.blob());
     const total = +resp.headers.get('content-length') || 0, reader = resp.body.getReader(), chunks = [];
@@ -1291,6 +1435,7 @@ async function r360AbrirVisor(id, opts = {}){
   cont.innerHTML = '<div class="r360-visor-msg" id="r360VisorMsg">Descargando panorámica…</div>';
   if(opts.scroll !== false && window.innerWidth < 900) cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const ac = new AbortController(); R360._visorAbort = ac;
+  const t0 = performance.now(), enCache = R360._blobs.has(path);
   const progreso = (r, t) => {
     const m = document.getElementById('r360VisorMsg');
     if(m) m.textContent = t ? `Descargando panorámica… ${Math.round(r / t * 100)} %` : `Descargando panorámica… ${(r / 1048576).toFixed(1)} MB`;
@@ -1307,7 +1452,7 @@ async function r360AbrirVisor(id, opts = {}){
   }
   if(!blob || R360.visorPuntoId !== id || ac.signal.aborted) return;   // el usuario cambió de punto mientras descargaba
   if(R360._visorAbort === ac) R360._visorAbort = null;
-  r360CrearVisor(cont, p, path, blob, opts);
+  r360CrearVisor(cont, p, path, blob, { ...opts, _dbg: { t0, tDesc: Math.round(performance.now() - t0), enCache } });
 }
 function r360CrearVisor(cont, p, path, blob, opts){
   if(typeof pannellum === 'undefined'){ cont.innerHTML = '<div class="r360-visor-msg">El visor 360 no está disponible (pannellum no cargó)</div>'; return; }
@@ -1334,11 +1479,12 @@ function r360CrearVisor(cont, p, path, blob, opts){
   R360.visor = v;
   v.on('load', () => {
     r360RevocarUrlVisor(v);                              // la textura ya está en GPU: el blob: URL sobra
+    if(opts._dbg) r360Dbg(`punto #${p.orden}: ${path.endsWith('full.jpg') ? 'full' : 'web'} · ${(blob.size / 1048576).toFixed(2)} MB · descarga ${opts._dbg.tDesc} ms${opts._dbg.enCache ? ' (caché)' : ''} · visible a los ${Math.round(performance.now() - opts._dbg.t0)} ms`);
     if(R360.visor === v) r360Precargar(p.id);          // la siguiente se descarga solo cuando esta ya se ve
   });
   v.on('error', msg => {
     r360RevocarUrlVisor(v);
-    console.warn('[360] visor:', msg);
+    console.warn(`[360] visor punto #${p.orden}:`, msg);
   });
 }
 // Precarga la siguiente panorámica a la caché en memoria (una a la vez; no
@@ -1370,3 +1516,6 @@ function r360PintarVisorBarra(){
     ${ubica && ubicado ? `<button class="btn" onclick="r360QuitarDelPlano('${p.id}')">Quitar del plano</button>` : ''}
     ${PUEDE_PUBLICAR_R360() ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}`;
 }
+
+// Arranque del panel de depuración (sin ningún efecto si está apagado)
+r360DbgInit();
