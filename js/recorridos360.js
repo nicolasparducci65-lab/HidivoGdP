@@ -749,8 +749,10 @@ async function cargarRecorridos360(){
   const formAbierto = document.getElementById('r360NuevoForm');
   if(formAbierto && formAbierto.style.display !== 'none') return;
   if(error){
-    // 42P01 = la tabla no existe: la migración 20260922_recorridos_360.sql aún no se aplicó
-    cont.innerHTML = error.code === '42P01'
+    // Migración 20260922_recorridos_360.sql sin aplicar: PostgREST responde PGRST205 ("Could not
+    // find the table … in the schema cache"); una consulta directa daría 42P01. Aviso amistoso.
+    const sinMigracion = ['PGRST205', '42P01'].includes(error.code) || /schema cache|does not exist|no existe/i.test(error.message || '');
+    cont.innerHTML = sinMigracion
       ? '<div class="r360-aviso" style="margin:16px">El módulo Recorridos 360 todavía no está habilitado en la base de datos (falta aplicar la migración <code>20260922_recorridos_360.sql</code>). Avisa al administrador.</div>'
       : `<div class="r360-error" style="margin:16px">No se pudieron cargar los recorridos: ${escAttr(error.message)}</div>`;
     return;
