@@ -739,13 +739,16 @@ async function cargarRecorridos360(){
   if(!cont) return;
   if(!r360ModuloActivo()){ cont.innerHTML = ''; return; }
   if(!currentProyecto){ cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-title">Selecciona un proyecto</div></div>'; return; }
-  if(R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto){ return abrirRecorrido360(R360.recorridoActivo.id); }
+  // Entrar a la sección (menú, «Volver a recorridos», «atrás» del historial) muestra
+  // SIEMPRE la lista: el recorrido abierto, si lo había, se descarta.
+  r360DescartarRecorridoAbierto();
   const proy = currentProyecto;
   const { data, error } = await sb.from('recorridos_360').select('*, puntos_360(count)')
     .eq('proyecto_id', proy).order('fecha', { ascending: false }).order('created_at', { ascending: false });
-  // Mientras se consultaba pudo cambiar el proyecto, abrirse un recorrido o empezar a
-  // escribirse uno nuevo: una lista tardía no pisa nada de eso
-  if(proy !== currentProyecto || (R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto)) return;
+  // Mientras se consultaba pudo cambiar el proyecto, abrirse un recorrido (o estar
+  // reabriéndose uno desde el historial) o empezar a escribirse uno nuevo: una
+  // lista tardía no pisa nada de eso
+  if(proy !== currentProyecto || R360._aperturaPendiente || (R360.recorridoActivo && R360.recorridoActivo.proyecto_id === currentProyecto)) return;
   const formAbierto = document.getElementById('r360NuevoForm');
   if(formAbierto && formAbierto.style.display !== 'none') return;
   if(error){
@@ -862,10 +865,15 @@ async function abrirRecorrido360(id, opts = {}){
     sb.from('puntos_360').select('*').eq('recorrido_id', id).order('orden'),
     sb.from('planos').select('id,nombre,url,tipo').eq('proyecto_id', currentProyecto).order('created_at')
   ]);
+  if(R360._aperturaPendiente === id) R360._aperturaPendiente = null;
   if(e1 || !rec){ toast('No se pudo abrir el recorrido', 'error'); R360.recorridoActivo = null; return cargarRecorridos360(); }
   if(e2) toast('Puntos: ' + e2.message, 'error');
   if(rec.proyecto_id !== currentProyecto){ R360.recorridoActivo = null; return cargarRecorridos360(); }
   R360.recorridoActivo = rec; R360.puntos = puntos || []; R360.planos = planos || [];
+  // Entrada en el historial del navegador: «atrás» vuelve a la lista (o a la sección
+  // anterior) y «adelante» reabre este recorrido. No se registra al restaurar desde
+  // popstate ni al re-render completo del mismo recorrido (Publicar).
+  if(!opts.sinHistorial && typeof registrarNavegacion === 'function' && !r360Restaurando() && history.state?.r360 !== id) registrarNavegacion('recorridos360', { r360: id });
   if(R360.visorPuntoId && !r360Punto(R360.visorPuntoId)) R360.visorPuntoId = null;
   const puede = PUEDE_EDITAR_R360(), esAdmin = ES_ADMIN_R360();
   const bloqueado = rec.estado === 'publicado' && !esAdmin;
@@ -882,6 +890,7 @@ async function abrirRecorrido360(id, opts = {}){
         <div class="card-subtitle">${escAttr(rec.fecha || '')} · <span id="r360NumPuntos">${R360.puntos.length}</span> punto(s)${rec.descripcion ? ' · ' + escAttr(rec.descripcion) : ''}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" onclick="r360VolverALista()" title="Volver a la lista de recorridos">← Volver a recorridos</button>
         ${r360DbgBotonHtml()}
         ${puedeTogglar ? `<button class="btn" onclick="r360TogglePublicado()">${rec.estado === 'publicado' ? 'Volver a borrador' : '✅ Publicar'}</button>` : ''}
       </div>
@@ -938,10 +947,25 @@ async function abrirRecorrido360(id, opts = {}){
   const inicial = R360.visorPuntoId || (window.innerWidth >= 900 ? r360PuntosOrdenados()[0]?.id : null);
   if(inicial) r360AbrirVisor(inicial, { scroll: false, ...(inicial === idPrevio && vista ? vista : {}) });
 }
-function r360VolverALista(){
+// Cierra el recorrido abierto (visor, descargas, caché, selección, arrastre) sin pintar nada.
+function r360DescartarRecorridoAbierto(){
+  if(!R360.recorridoActivo && !R360.visor && !R360.visorPuntoId && !R360._visorAbort) return;
   R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null; r360CancelarArrastre();
   r360AbortarDescarga(); r360DestruirVisor(); r360VaciarCacheBlobs(); R360._mapaToken++;
+}
+function r360Restaurando(){ return typeof _restaurandoHistorial !== 'undefined' && !!_restaurandoHistorial; }
+// «Volver a recorridos» (botón de la cabecera y miga de pan): lista + entrada
+// propia en el historial, así «atrás» desde la lista reabre el recorrido.
+function r360VolverALista(){
+  r360DescartarRecorridoAbierto();
   cargarRecorridos360();
+  if(typeof registrarNavegacion === 'function' && !r360Restaurando()) registrarNavegacion('recorridos360');
+}
+// popstate (index.html): la entrada restaurada es la lista (id null; navTo ya
+// la mostró) o un recorrido abierto, que se reabre sin volver a hacer push.
+function r360RestaurarHistorial(id){
+  R360._aperturaPendiente = id || null;
+  if(id) abrirRecorrido360(id, { sinHistorial: true });
 }
 
 // Rejilla de puntos (se puede repintar sin tocar el resto de la página).

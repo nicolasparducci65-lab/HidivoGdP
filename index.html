@@ -3186,10 +3186,13 @@ let _histIdx = 0;
 let _histMax = 0;
 let _restaurandoHistorial = false;
 
-function registrarNavegacion(page){
+// `extra` permite a un módulo añadir su propio sub-estado a la entrada (p. ej.
+// Recorridos 360 guarda {r360: id} al abrir un recorrido, para que «atrás»
+// vuelva a la lista y «adelante» reabra el recorrido).
+function registrarNavegacion(page, extra){
   _histIdx += 1;
   _histMax = _histIdx; // un push nuevo descarta las entradas "hacia adelante"
-  history.pushState({ seccion: page, proyecto_id: currentProyecto || null, idx: _histIdx }, '');
+  history.pushState({ seccion: page, proyecto_id: currentProyecto || null, idx: _histIdx, ...(extra || {}) }, '');
   actualizarBotonesHistorial();
 }
 
@@ -3227,6 +3230,8 @@ window.addEventListener('popstate', async (e)=>{
     }
     // Restaurar la sección sin volver a hacer push
     navTo(st.seccion, document.querySelector(`.nav-item[onclick*="${st.seccion}"]`));
+    // Sub-estado de Recorridos 360: la entrada puede ser la lista (sin r360) o un recorrido abierto
+    if(st.seccion==='recorridos360' && typeof r360RestaurarHistorial==='function') r360RestaurarHistorial(st.r360||null);
     _histIdx = (typeof st.idx === 'number') ? st.idx : 0;
   } finally {
     _restaurandoHistorial = false;

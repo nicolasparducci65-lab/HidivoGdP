@@ -78,7 +78,10 @@ la decisión `MAX_TEXTURE_SIZE → full/web` y, abriendo la app con `?r360exp=5`
 firmadas vencen a los 5 s para probar el refirmado automático. Mini-mapa sobre los planos del proyecto (imagen o PDF vía pdf.js con render
 serializado, misma convención `x/y` en % que los pines de observaciones): marcas por punto,
 arrastrables; toque en marca abre la foto. Los refrescos (sincronización, eliminar punto) son
-parciales: no destruyen visor, mapa ni selección. Modos:
+parciales: no destruyen visor, mapa ni selección. Navegación: entrar a la sección desde el menú
+muestra siempre la lista (descarta el recorrido abierto); «← Volver a recorridos» en la cabecera;
+abrir un recorrido registra una entrada en el historial del navegador (`{r360: id}` sobre el
+esquema de `registrarNavegacion`), así «atrás» vuelve a la lista y «adelante» lo reabre. Modos:
 - **Por punto:** «Ubicar en plano» en el visor y toque en el plano (queda `waypoint = true`).
 - **Secuencia:** se ubican a mano ≥ 2 puntos (tras cada toque se selecciona el siguiente por
   `orden`) y **Interpolar** reparte los intermedios en línea recta por índice entre waypoints
