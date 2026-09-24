@@ -57,7 +57,11 @@ posición (`plano_id`, `x`, `y`, `waypoint`), `orden`, `etiqueta`, `rubro_id`, `
 `p360_c_guard_residente`; en publicado su UPDATE no alcanza filas). Nota: la interfaz del
 módulo todavía ofrece «Ubicar en plano», arrastre e interpolación solo a admin/fiscalizador
 (`r360PuedeUbicar`); abrirla al residente en borrador es un ajuste pendiente del módulo.
-Eliminar = admin. Un recorrido **publicado** congela posición, archivos, fecha de captura, hash y
+Eliminar = admin: «🗑 Eliminar recorrido» en la cabecera (confirmación con título, fecha y
+número de puntos) y «🗑 Eliminar punto» en la ficha del punto; en publicado piden una segunda
+confirmación; borran primero las tres variantes de cada foto del bucket (y lo subido por fotos
+aún en cola, que también se quitan de la cola) y después las filas; si fallan los archivos no se
+toca ninguna fila. Un recorrido **publicado** congela posición, archivos, fecha de captura, hash y
 recorrido de sus puntos y no admite puntos nuevos; **volver a borrador** es solo de admin (si
 no, el congelado se evadiría despublicando). `publicado_en`/`publicado_por` los fija el
 servidor y el `proyecto_id` de recorridos y puntos es inmutable; las rutas `archivo_*` de un

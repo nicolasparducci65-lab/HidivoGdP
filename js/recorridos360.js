@@ -893,6 +893,7 @@ async function abrirRecorrido360(id, opts = {}){
         <button class="btn" onclick="r360VolverALista()" title="Volver a la lista de recorridos">← Volver a recorridos</button>
         ${r360DbgBotonHtml()}
         ${puedeTogglar ? `<button class="btn" onclick="r360TogglePublicado()">${rec.estado === 'publicado' ? 'Volver a borrador' : '✅ Publicar'}</button>` : ''}
+        ${esAdmin ? '<button class="btn" style="color:#e2445c" onclick="r360EliminarRecorrido()" title="Borra el recorrido, sus puntos y sus archivos">🗑 Eliminar recorrido</button>' : ''}
       </div>
     </div>
     ${puede && !bloqueado ? `
@@ -1035,21 +1036,62 @@ async function r360TogglePublicado(){
   else r360RefrescarTrasSync(true);   // el usuario ya volvió a la lista (no pisa un formulario ni otro recorrido)
 }
 
+// ── Eliminación (solo admin): PRIMERO los objetos del bucket, DESPUÉS las filas ──
+// Si fallan los objetos no se toca ninguna fila (no quedan archivos huérfanos);
+// si fallan las filas se avisa y basta reintentar (remove() de objetos ya
+// inexistentes no da error). En un recorrido publicado se pide una segunda
+// confirmación.
+async function r360BorrarObjetos(rutas){
+  let borrados = 0;
+  for(let i = 0; i < rutas.length; i += 100) borrados += await storage360.borrar(rutas.slice(i, i + 100), true);
+  return borrados;
+}
 async function r360EliminarPunto(id){
   if(!ES_ADMIN_R360()) return;
   const p = r360Punto(id); if(!p) return;
-  if(!confirm(`¿Eliminar el punto #${p.orden} y sus 3 archivos?`)) return;
-  const recId = p.recorrido_id;
-  const { error } = await sb.from('puntos_360').delete().eq('id', id);
-  if(error){ toast('Error: ' + error.message, 'error'); return; }
+  const rec = R360.recorridoActivo, recId = p.recorrido_id;
+  if(!confirm(`¿Eliminar el punto #${p.orden}${p.etiqueta ? ' («' + p.etiqueta + '»)' : ''} del ${r360Fecha(p.fecha_captura)} y sus 3 archivos? No se puede deshacer.`)) return;
+  if(rec?.estado === 'publicado' && !confirm('El recorrido está PUBLICADO. ¿Eliminar el punto de todos modos?')) return;
   // Rutas reconstruidas desde los ids (no desde la fila): solo se borran los objetos de ESTE punto
   const rutas = ['full', 'web', 'thumb'].map(v => storage360.ruta(p.proyecto_id, p.recorrido_id, p.id, v));
-  try{ await storage360.borrar(rutas); }catch(e){ console.warn('[360] borrar storage:', e?.message || e); }
+  try{ const n = await r360BorrarObjetos(rutas); r360Dbg(`eliminar punto #${p.orden}: ${n}/3 objetos borrados`); }
+  catch(e){ toast('No se pudieron borrar los archivos del punto; no se eliminó: ' + (e?.message || e), 'error'); return; }
+  const { data, error } = await sb.from('puntos_360').delete().eq('id', id).select('id');
+  if(error){ toast('Archivos borrados, pero la fila del punto no: ' + error.message + '. Vuelve a intentar.', 'error'); return; }
   rutas.forEach(r360OlvidarBlob);
-  toast('Punto eliminado', 'success');
-  // Refresco ligero (quita el punto, cierra su visor si era el visible) solo si el usuario sigue en ese recorrido
+  toast(data?.length ? `Punto #${p.orden} eliminado` : 'El punto ya no existía; se actualiza la lista', data?.length ? 'success' : 'info');
+  // Refresco ligero: quita el punto de la lista y cierra su visor si era el visible
   if(R360.recorridoActivo?.id === recId) abrirRecorrido360(recId);
   else r360RefrescarTrasSync(true);
+}
+async function r360EliminarRecorrido(){
+  if(!ES_ADMIN_R360()) return;
+  const rec = R360.recorridoActivo; if(!rec) return;
+  if(bloquearSiCerrado()) return;
+  // Inventario completo desde el servidor (no solo lo pintado) y fotos aún en cola local
+  const { data: puntos, error: ePts } = await sb.from('puntos_360').select('id, orden').eq('recorrido_id', rec.id);
+  if(ePts){ toast('No se pudo leer el recorrido: ' + ePts.message, 'error'); return; }
+  const enCola = await r360ItemsCola(rec.id);
+  const n = (puntos || []).length;
+  if(!confirm(`¿Eliminar el recorrido «${rec.titulo}» del ${rec.fecha} con ${n} punto(s) y sus ${n * 3} archivos${enCola.length ? ` (y ${enCola.length} foto(s) aún en cola en este dispositivo)` : ''}? No se puede deshacer.`)) return;
+  if(rec.estado === 'publicado' && !confirm('El recorrido está PUBLICADO. ¿Eliminarlo de todos modos? Se perderán sus fotos y posiciones.')) return;
+  // 1) objetos del bucket: 3 variantes por punto + lo que hubieran subido las fotos en cola
+  const rutas = [];
+  (puntos || []).forEach(p => ['full', 'web', 'thumb'].forEach(v => rutas.push(storage360.ruta(rec.proyecto_id, rec.id, p.id, v))));
+  enCola.forEach(it => rutas.push(...Object.values(r360RutasItem(it))));
+  if(n) toast(`Eliminando ${n} punto(s)…`, 'info');
+  try{ const b = await r360BorrarObjetos(rutas); r360Dbg(`eliminar recorrido «${rec.titulo}»: ${b}/${rutas.length} objetos borrados`); }
+  catch(e){ toast('No se pudieron borrar los archivos; el recorrido se conserva: ' + (e?.message || e), 'error'); return; }
+  // 2) cola local de este recorrido (ya sin recorrido al que subir)
+  for(const it of enCola){ try{ await idbBorrar(it.idLocal); }catch(e){} delete R360._progreso[it.idLocal]; }
+  // 3) filas: puntos y luego el recorrido
+  const { error: e1 } = await sb.from('puntos_360').delete().eq('recorrido_id', rec.id);
+  if(e1){ toast('Archivos borrados, pero los puntos no: ' + e1.message + '. Vuelve a intentar.', 'error'); return; }
+  const { data: d2, error: e2 } = await sb.from('recorridos_360').delete().eq('id', rec.id).select('id');
+  if(e2){ toast('Puntos borrados, pero el recorrido no: ' + e2.message + '. Vuelve a intentar.', 'error'); return; }
+  actualizarIndicadorOffline();
+  toast(d2?.length ? `Recorrido «${rec.titulo}» eliminado` : 'El recorrido ya no existía', d2?.length ? 'success' : 'info');
+  r360VolverALista();
 }
 
 // ── Guardar cambios de un punto (ubicación, etiqueta) ───────────────────────
@@ -1549,7 +1591,8 @@ function r360PintarVisorBarra(){
     <button class="btn" ${next ? `onclick="r360AbrirVisor('${next.id}',{mantenerVista:true})"` : 'disabled'} title="Siguiente">▶</button>
     ${ubica ? `<button class="btn" onclick="r360ArmarUbicacion('${p.id}')">📍 ${ubicado ? 'Reubicar' : 'Ubicar en plano'}</button>` : ''}
     ${ubica && ubicado ? `<button class="btn" onclick="r360QuitarDelPlano('${p.id}')">Quitar del plano</button>` : ''}
-    ${PUEDE_PUBLICAR_R360() ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}`;
+    ${PUEDE_PUBLICAR_R360() ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}
+    ${ES_ADMIN_R360() ? `<button class="btn" style="color:#e2445c" onclick="r360EliminarPunto('${p.id}')" title="Borra el punto y sus 3 archivos">🗑 Eliminar punto</button>` : ''}`;
 }
 
 // Arranque del panel de depuración (sin ningún efecto si está apagado)
