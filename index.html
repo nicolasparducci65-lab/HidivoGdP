@@ -3149,7 +3149,11 @@ function navTo(page, btn){
   if(page==='rubros'&&currentProyecto) cargarRubros();
   if(page==='libro'&&currentProyecto) cargarLibroObra();
   if(page==='curvaS'&&currentProyecto) cargarCurvaS();
-  if(page==='fiscalizacion'&&currentProyecto) cargarFiscalizacion();
+  // Observaciones: desde el menú (y al restaurar historial) siempre la lista; Planos solo
+  // con su botón o desde un flujo explícito (verObsEnPlano). Sin proyecto también se llama:
+  // pinta "Selecciona un proyecto" en vez de dejar la lista del proyecto anterior (p. ej. al
+  // volver por historial a una entrada sin proyecto).
+  if(page==='fiscalizacion') cargarFiscalizacion('observaciones');
   if(page==='recorridos360'&&currentProyecto&&typeof cargarRecorridos360==='function') cargarRecorridos360();
   if(page==='solicitudes'&&currentProyecto) cargarSolicitudes();
   if(page==='planillas'&&currentProyecto) cargarPlanillas();
@@ -3226,6 +3230,11 @@ window.addEventListener('popstate', async (e)=>{
         await cambiarProyecto(objetivo);
       } else {
         currentProyecto = null;
+        // El selector y el buscador también vuelven a "sin proyecto" (asignar .value por
+        // código no dispara onchange, así que no se llama cambiarProyecto(''))
+        const sel = document.getElementById('selectProyecto');
+        if(sel) sel.value = '';
+        sincronizarBuscadorProyecto();
       }
     }
     // Restaurar la sección sin volver a hacer push
@@ -3703,7 +3712,7 @@ async function cambiarProyecto(id){
   if(currentPage==='rubros') cargarRubros();
   if(currentPage==='libro') cargarLibroObra();
   if(currentPage==='curvaS') cargarCurvaS();
-  if(currentPage==='fiscalizacion') cargarFiscalizacion();
+  if(currentPage==='fiscalizacion') cargarFiscalizacion('observaciones'); // cambiar de proyecto = entrar de nuevo: la lista
   if(currentPage==='recorridos360'&&typeof cargarRecorridos360==='function') cargarRecorridos360();
   if(currentPage==='solicitudes') cargarSolicitudes();
   if(currentPage==='planillas') cargarPlanillas();
@@ -5544,7 +5553,7 @@ async function sincronizarRegistrosOffline(){
     toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
     try{
       if(currentPage==='libro') cargarLibroObra();
-      if(currentPage==='fiscalizacion') cargarObservaciones();
+      refrescarFiscalizacion(); // solo en la sección; en Planos repinta los pins (la observación offline promete "el pin aparecerá al sincronizar")
       if(currentPage==='solicitudes') cargarSolicitudes();
       // Recorridos 360 solo se refresca (parcialmente) si se subieron fotos 360: no se destruye el visor por un libro o una observación
       if(typeof r360RefrescarTrasSync==='function') r360RefrescarTrasSync(ok360);
@@ -7167,12 +7176,21 @@ function parseMSProjectXML(xml){
 }
 
 // ── FISCALIZACIÓN ──
-let fiscalTab = 'planos'; // 'planos' | 'observaciones'
+// Subpestaña activa de la sección Observaciones. La lista es el estado de entrada: navTo
+// (menú, notificaciones, historial) y cambiarProyecto llaman cargarFiscalizacion('observaciones');
+// Planos solo se abre con su botón (switchFiscalTab) o desde un flujo explícito (verObsEnPlano).
+let fiscalTab = 'observaciones'; // 'planos' | 'observaciones'
 let planoActivo = null; // {id, nombre, url}
 let obsFiltrando = 'todas'; // 'todas' | 'abierta' | 'en_proceso' | 'resuelta'
 let pinModo = false; // modo para colocar pin en el plano
+// Generación del contenedor #fiscalBody: cada renderFiscalizacionShell la sube y los
+// cargadores asíncronos (planos/observaciones) no escriben si el contenedor ya fue
+// reemplazado (p. ej. verObsEnPlano cambia a Planos mientras la lista aún se consulta).
+let _fiscalRender = 0;
 
-async function cargarFiscalizacion(){
+// tab: subpestaña con la que se ENTRA a la sección; sin argumento se recarga la actual.
+async function cargarFiscalizacion(tab){
+  if(tab){ fiscalTab = tab; planoActivo = null; pinModo = false; }
   if(!currentProyecto){
     document.getElementById('fiscalizacionContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Selecciona un proyecto</div></div>';
     return;
@@ -7183,6 +7201,7 @@ async function cargarFiscalizacion(){
 }
 
 function renderFiscalizacionShell(){
+  _fiscalRender += 1;
   document.getElementById('fiscalizacionContent').innerHTML = `
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
     <div style="display:flex;background:#f5f6f8;border-radius:8px;padding:3px;gap:2px">
@@ -7217,6 +7236,16 @@ function switchFiscalTab(tab){
   else cargarObservaciones();
 }
 
+// Refresco tras crear/responder/cambiar/eliminar una observación o sincronizar la cola
+// offline: respeta la subpestaña activa. En la lista vuelve a consultarla; en Planos solo
+// repinta los pins del plano abierto (la lista nunca se pinta sobre el visor). Fuera de la
+// sección no hace nada: navTo → cargarFiscalizacion('observaciones') repinta al entrar.
+function refrescarFiscalizacion(){
+  if(currentPage!=='fiscalizacion') return;
+  if(fiscalTab==='observaciones') cargarObservaciones();
+  else if(planoActivo) cargarPinsPlano(planoActivo.id);
+}
+
 function estadoObsLabel(e){
   return {todas:'Todas',abierta:'🔴 Abierta',en_proceso:'🟡 En proceso',resuelta:'✅ Resuelta'}[e]||e;
 }
@@ -7227,8 +7256,10 @@ function estadoObsColor(e){
 
 // ── PLANOS ──
 async function cargarPlanos(){
+  const gen = _fiscalRender;
   const { data: planos } = await sb.from('planos').select('*').eq('proyecto_id', currentProyecto).order('created_at');
   const body = document.getElementById('fiscalBody');
+  if(gen!==_fiscalRender || !body) return; // la sección ya se volvió a dibujar: respuesta tardía
   if(!planos||!planos.length){
     body.innerHTML = '<div class="empty-state"><div class="empty-icon">📐</div><div class="empty-title">Sin planos</div><div class="empty-sub">Sube el primer plano del proyecto</div></div>';
     return;
@@ -7307,7 +7338,7 @@ async function eliminarPlano(id, url){
   if(path) await sb.storage.from('hidivo-archivos').remove([path]);
   await sb.from('planos').delete().eq('id', id);
   toast('Plano eliminado','success');
-  cargarPlanos();
+  if(fiscalTab==='planos') cargarPlanos(); // no pisar la lista si se cambió de subpestaña durante el borrado
 }
 
 function verPlano(id, url, nombre, tipo){
@@ -7511,10 +7542,12 @@ document.addEventListener('keydown', e=>{
 });
 
 async function cargarObservaciones(){
+  const gen = _fiscalRender;
   let q = sb.from('observaciones').select('*').eq('proyecto_id', currentProyecto).order('created_at', {ascending:false});
   if(obsFiltrando!=='todas') q = q.eq('estado', obsFiltrando);
   const { data: obs } = await q;
   const body = document.getElementById('fiscalBody');
+  if(gen!==_fiscalRender || !body) return; // la sección ya se volvió a dibujar: respuesta tardía
   if(!obs||!obs.length){
     body.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Sin observaciones</div><div class="empty-sub">Crea la primera observación del proyecto</div></div>';
     return;
@@ -7527,6 +7560,7 @@ async function cargarObservaciones(){
   const { data: planosProy } = await sb.from('planos').select('id,nombre').eq('proyecto_id', currentProyecto);
   const planoNombre = {};
   (planosProy||[]).forEach(p=>planoNombre[p.id]=p.nombre);
+  if(gen!==_fiscalRender) return; // se cambió de subpestaña/proyecto durante las consultas
   body.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">
     ${obs.map(o=>`
     <div style="background:#fff;border:1px solid #e6e9ef;border-radius:12px;padding:16px;cursor:pointer;transition:all .15s"
@@ -7671,7 +7705,7 @@ async function guardarRespuesta(){
   await notificarPorEmail('observacion', window._obsActiva.titulo, texto||'Se registró una respuesta en esta observación.', window._obsActiva.numero);
   await notificarPorPush('observacion', `Respuesta: ${window._obsActiva.titulo}`, texto||'Se registró una respuesta en esta observación.');
   verObservacion(window._obsActiva.id);
-  cargarObservaciones();
+  refrescarFiscalizacion(); // lista o pins según la subpestaña (el modal puede venir de un pin del plano)
 }
 
 async function cambiarEstadoObs(id, estadoActual){
@@ -7691,7 +7725,7 @@ async function cambiarEstadoObs(id, estadoActual){
     await notificarPorEmail('observacion', obsCambiada.titulo, detalle, obsCambiada.numero);
     await notificarPorPush('observacion', `Cambio de estado: ${obsCambiada.titulo}`, detalle);
   }
-  cargarObservaciones();
+  refrescarFiscalizacion();
 }
 
 async function eliminarObservacion(id){
@@ -7706,7 +7740,7 @@ async function eliminarObservacion(id){
   await sb.from('observacion_respuestas').delete().eq('observacion_id',id);
   await sb.from('observaciones').delete().eq('id',id);
   toast('Observación eliminada','success');
-  cargarObservaciones();
+  refrescarFiscalizacion();
 }
 
 // ── MODAL NUEVA OBSERVACIÓN ──
@@ -8043,6 +8077,8 @@ async function verObsEnPlano(obsId){
   if(!pl){ toast('El plano de esta observación ya no existe','error'); return; }
   cerrarModal('modalObsDetalle');
   window._resaltarObsId = obsId;
+  // navTo entra a la lista; este flujo abre Planos de forma EXPLÍCITA. La lista que navTo
+  // dejó consultando no pisa el visor: renderFiscalizacionShell sube _fiscalRender.
   if(currentPage!=='fiscalizacion') navTo('fiscalizacion', document.querySelector('.nav-item[onclick*="fiscalizacion"]'));
   fiscalTab = 'planos';
   renderFiscalizacionShell();
@@ -8161,7 +8197,7 @@ async function guardarObservacionNueva(){
   await notificarResidenteViaDM('observacion', titulo, desc);
   await notificarPorEmail('observacion', titulo, desc, siguienteNumero);
   await notificarPorPush('observacion', `Nueva observación: ${titulo}`, desc);
-  cargarObservaciones();
+  refrescarFiscalizacion(); // en Planos (pin → Guardar) repinta los pins en vez de pisar el visor con la lista
 }
 
 
