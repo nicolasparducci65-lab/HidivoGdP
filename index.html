@@ -7315,12 +7315,15 @@ function iconoTipoPlano(tipo){
 async function subirPlano(input){
   const file = input.files[0];
   if(!file) return;
-  const path = `planos/${currentProyecto}/${Date.now()}_${file.name}`;
+  // Proyecto en el que se INICIÓ la subida: si el usuario cambia de proyecto mientras el
+  // archivo sube, la fila va al mismo proyecto que la carpeta del storage, no al nuevo.
+  const proyectoId = currentProyecto;
+  const path = `planos/${proyectoId}/${Date.now()}_${file.name}`;
   const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert:true});
   if(upErr){ toast('Error subiendo plano: '+upErr.message,'error'); return; }
   const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
   const { error } = await sb.from('planos').insert({
-    proyecto_id: currentProyecto,
+    proyecto_id: proyectoId,
     nombre: file.name,
     url: urlData.publicUrl,
     tipo: file.type,
@@ -7329,7 +7332,9 @@ async function subirPlano(input){
   if(error){ toast('Error guardando plano: '+error.message,'error'); return; }
   toast('Plano subido ✓','success');
   input.value='';
-  cargarPlanos();
+  // Recargar la grilla solo si el proyecto sigue siendo el activo y la subpestaña es Planos
+  // (si mientras subía se pulsó Observaciones o se cambió de proyecto, no pisar la lista)
+  if(proyectoId===currentProyecto && fiscalTab==='planos') cargarPlanos();
 }
 
 async function eliminarPlano(id, url){
@@ -7346,7 +7351,8 @@ function verPlano(id, url, nombre, tipo){
   const visor = document.getElementById('planoVisor');
   if(!visor) return;
 
-  if(tipo.includes('pdf') || nombre.toLowerCase().endsWith('.pdf')){
+  const esPdf = tipo.includes('pdf') || nombre.toLowerCase().endsWith('.pdf');
+  if(esPdf){
     visor.innerHTML = `
       <div style="width:100%;height:600px;overflow-y:auto;overflow-x:hidden;border-radius:12px;background:#525659" id="pdfScrollContainer">
         <div style="position:relative;display:inline-block;width:100%" id="pdfCanvasWrapper">
@@ -7375,7 +7381,10 @@ function verPlano(id, url, nombre, tipo){
         </div>
       </div>`;
   }
-  cargarPinsPlano(id);
+  // Imagen: pins de inmediato. PDF: los pinta renderizarPDF al terminar el render (sobre la
+  // geometría real del canvas); una pasada extra aquí consumiría _resaltarObsId y la pintada
+  // final de "Ver en plano" quedaría sin el pin resaltado.
+  if(!esPdf) cargarPinsPlano(id);
 }
 
 let pdfDoc = null;
@@ -7404,14 +7413,22 @@ async function asegurarPdfJs(){
 }
 
 async function renderizarPDF(url, pagina){
+  // El plano activo puede cambiar durante cualquier await (clic rápido A → B, salir de la
+  // sección): cada paso comprueba que `url` siga siendo la del plano activo antes de tocar
+  // pdfDoc, el canvas, la info de página o el visor (también en el catch).
+  const vigente = () => planoActivo?.url === url;
   try {
     await asegurarPdfJs();   // puede rechazar (CDN bloqueado / sin señal): cae al iframe de abajo
+    if(!vigente()) return;
     if(!pdfDoc || pdfDoc._url !== url){
-      pdfDoc = await pdfjsLib.getDocument(url).promise;
+      const doc = await pdfjsLib.getDocument(url).promise;
+      if(!vigente()){ doc.destroy?.(); return; } // respuesta tardía de un plano que ya no se muestra
+      pdfDoc = doc;
       pdfDoc._url = url;
       pdfPaginaActual = 1;
     }
     const page = await pdfDoc.getPage(pagina);
+    if(!vigente()) return;
     const canvas = document.getElementById('pdfCanvas');
     if(!canvas) return;
     const container = document.getElementById('pdfScrollContainer');
@@ -7424,11 +7441,13 @@ async function renderizarPDF(url, pagina){
     const wrapper = document.getElementById('pdfCanvasWrapper');
     if(wrapper) wrapper.style.height = scaledViewport.height + 'px';
     await page.render({canvasContext: canvas.getContext('2d'), viewport: scaledViewport}).promise;
+    if(!vigente()) return; // el usuario abrió otro plano mientras se dibujaba
     const pageInfo = document.getElementById('pdfPageInfo');
     if(pageInfo) pageInfo.textContent = `Página ${pagina} de ${pdfDoc.numPages}`;
     if(planoActivo) cargarPinsPlano(planoActivo.id);
   } catch(e){
     console.error('Error PDF.js:', e);
+    if(!vigente()) return; // el fallo es de un plano que ya no se muestra: no pisar el visor del actual con su iframe
     const visor = document.getElementById('planoVisor');
     if(visor) visor.innerHTML = `<iframe src="${url}" style="width:100%;height:600px;border:none;border-radius:12px"></iframe>`;
   }
@@ -7445,6 +7464,9 @@ function cambiarPaginaPDF(delta){
 async function cargarPinsPlano(planoId){
   const { data: obs } = await sb.from('observaciones')
     .select('*').eq('plano_id', planoId).not('pin_x','is',null);
+  // Respuesta tardía de otro plano (clic rápido A → B) o plano ya cerrado: no pintar sus
+  // pins sobre el overlay del plano activo
+  if(planoActivo?.id!==planoId) return;
   const overlay = document.getElementById('pinsOverlay');
   if(!overlay||!obs) return;
   overlay.style.pointerEvents = 'none';
