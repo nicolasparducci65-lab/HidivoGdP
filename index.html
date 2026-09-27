@@ -1190,6 +1190,20 @@
     <div class="modal-footer" id="ocModalFooter"></div>
   </div>
 </div>
+<!-- MODAL VISTA PREVIA IMPORTACIÓN DE ÍTEMS DE OC (va después de modalOC para quedar encima) -->
+<div class="modal-overlay" id="modalImportOC">
+  <div class="modal" style="width:780px;max-width:98vw">
+    <div class="modal-header">
+      <div class="modal-title">📥 Vista previa: ítems desde Excel</div>
+      <button class="btn" onclick="cerrarImportOC()" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" id="importOCBody" style="max-height:65vh;overflow:auto"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarImportOC()">Cancelar</button>
+      <button class="btn primary" id="btnConfirmarImportOC" onclick="aplicarImportOC()">Confirmar importación</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalGarantia">
   <div class="modal" style="max-width:520px">
     <div class="modal-header"><h3 id="garTituloModal">Nueva garantía</h3>
@@ -3755,7 +3769,7 @@ function limpiarEstadoProyecto(){
   window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
   libroRubrosGuardados = {}; libroRubrosRef = {}; window._libroRubrosCatalogo = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
   // Órdenes de cambio
-  _ocItems = []; _ocEditando = null; _ocRubros = [];
+  _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null;
   // Formatos de calidad (editor de plantilla y llenado)
   _camposPlantillaActual = []; _plantillaLlenadoActual = null; _respuestaLlenadoId = null; _valoresLlenado = {}; _fotosLlenadoNuevas = {};
   window._fotosLlenadoExistentes = []; window._residenteLlenadoNombre = null;
@@ -4071,6 +4085,124 @@ function renderRubros(rubros){
     </div>`;
 }
 
+// Lee un Excel con la plantilla de rubros y devuelve sus filas normalizadas.
+// Lo comparten el importador de rubros y el de ítems de órdenes de cambio.
+// Devuelve {filas}, {error} (aviso simple) o {rechazo} (archivo rechazado entero).
+function leerPlantillaRubros(data){
+  const wb = XLSX.read(data, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+  if(!rows.length) return { error:'Excel vacío' };
+
+  // Detectar fila de encabezado principal
+  let headerRow = -1;
+  let startRow = 0;
+  for(let i=0;i<Math.min(10,rows.length);i++){
+    const r = rows[i].map(c=>String(c||'').toLowerCase().trim());
+    if(r.some(c=>c==='descripción'||c==='descripcion'||c==='rubro'||c==='detalle')){
+      headerRow = i;
+      startRow = i+1;
+      break;
+    }
+  }
+
+  // Columnas desde fila de encabezado — se declara ANTES de usarse
+  const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c||'').toLowerCase().trim()) : [];
+  const colIdx = {
+    codigo:   headers.findIndex(h=>h==='código'||h==='codigo'||h==='cód. rubro'||h==='cod. rubro'||h==='código rubro'||h==='codigo rubro'),
+    numero:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='item'),
+    descrip:  headers.findIndex(h=>h==='descripción'||h==='descripcion'||h==='rubro'||h==='detalle'||h.includes('descrip')),
+    unidad:   headers.findIndex(h=>h==='unidad'||h==='u'||h==='u.'||h.includes('unid')),
+    cantidad: headers.findIndex(h=>h==='cantidad'||h.includes('cant')||h==='vol'),
+    precio:   headers.findIndex(h=>h==='p.u. ($)'||h==='p.u.'||h==='p.u'||h==='pu'||h.includes('precio')||h.includes('p.unit')||h.includes('unitario')),
+    fechaIni: headers.findIndex(h=>h==='fecha inicio'||h.includes('inicio')||h.includes('start')||h.includes('desde')),
+    fechaFin: headers.findIndex(h=>h==='fecha fin'||h.includes('fin')||h.includes('end')||h.includes('hasta')),
+  };
+  // Si no hay columna de Código real, usar N°/Item como respaldo (comportamiento anterior)
+  if(colIdx.codigo===-1) colIdx.codigo = colIdx.numero;
+
+  // Fallback si no se detectaron columnas
+  if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
+  if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio=colIdx.cantidad+1;
+
+  // Saltar filas de subencabezado después de detectar columnas
+  while(startRow < rows.length){
+    const r = rows[startRow];
+    const desc = String(r[colIdx.descrip>=0?colIdx.descrip:2]||'').trim();
+    const tieneNumero = r.some(c=>typeof c==='number'&&c>0);
+    const esSubHeader = !desc || /^(opcional|obligatorio|ej:|número|automático|dd\/)/i.test(desc);
+    if(!esSubHeader || tieneNumero) break;
+    startRow++;
+  }
+
+  const dataRows = rows.slice(startRow).filter(r=>{
+    const desc = String(r[colIdx.descrip]||'').trim();
+    if(!desc) return false;
+    // Ignorar filas que son notas, encabezados o solo números
+    const descLow = desc.toLowerCase();
+    if(descLow.includes('completa los campos')) return false;
+    if(descLow.includes('instruc')) return false;
+    if(descLow.includes('total general')) return false;
+    if(descLow==='descripción'||descLow==='descripcion') return false;
+    if(descLow.includes('obligatori')) return false;
+    if(descLow.includes('hidivo')) return false;
+    // Ignorar si la descripción es solo un número (fila de índice)
+    if(/^\d+$/.test(desc)) return false;
+    // Ignorar si la descripción es "N°" o similar
+    if(/^n[°o]?$/i.test(desc)) return false;
+    return true;
+  });
+
+  if(!dataRows.length) return { error:'No se encontraron rubros en el Excel' };
+
+  // Función para parsear fecha Excel (número de serie o string)
+  function parseFechaExcel(val){
+    if(!val) return null;
+    if(typeof val==='number'){
+      const d = new Date(Math.round((val-25569)*86400*1000));
+      return d.toISOString().split('T')[0];
+    }
+    const s = String(val).trim();
+    if(s.match(/^\d{4}-\d{2}-\d{2}$/)) return s;
+    if(s.match(/^\d{2}\/\d{2}\/\d{4}$/)){
+      const [d,m,y]=s.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+    return null;
+  }
+
+  // Filas normalizadas. filaExcel es el número de fila real de la hoja,
+  // para que los rechazos señalen exactamente dónde está el problema.
+  const filas = dataRows.map((r,i)=>({
+    filaExcel: rows.indexOf(r)+1,
+    orden: i+1,
+    codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
+    descripcion: String(r[colIdx.descrip]).trim(),
+    unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
+    cantidad_contrato: parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0,
+    precio_unitario: parseFloat(String(r[colIdx.precio]).replace(',','.'))||0,
+    fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
+    fecha_fin: parseFechaExcel(r[colIdx.fechaFin])
+  }));
+
+  // RECHAZOS: la clave natural es (proyecto, código). Sin código no hay
+  // forma de saber si un rubro ya existe; con código repetido, tampoco.
+  const sinCodigo = filas.filter(f=>!f.codigo);
+  if(sinCodigo.length){
+    return { rechazo: `${sinCodigo.length} fila(s) sin código. Cada rubro necesita un código único dentro del proyecto.\n\nFilas del Excel: ${sinCodigo.map(f=>f.filaExcel).join(', ')}` };
+  }
+  const primeraFila = {}; const repetidos = [];
+  filas.forEach(f=>{
+    if(primeraFila[f.codigo]) repetidos.push(`"${f.codigo}" (filas ${primeraFila[f.codigo]} y ${f.filaExcel})`);
+    else primeraFila[f.codigo] = f.filaExcel;
+  });
+  if(repetidos.length){
+    return { rechazo: `Código repetido dentro del Excel:\n• ${repetidos.join('\n• ')}` };
+  }
+
+  return { filas };
+}
+
 async function importarRubrosExcel(input){
   const file = input.files[0];
   if(!file) return;
@@ -4080,122 +4212,12 @@ async function importarRubrosExcel(input){
   const reader = new FileReader();
   reader.onload = async(e)=>{
     try {
-      const data = new Uint8Array(e.target.result);
-      const wb = XLSX.read(data, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-
-      if(!rows.length){ toast('Excel vacío','error'); return; }
-
-      // Detectar fila de encabezado principal
-      let headerRow = -1;
-      let startRow = 0;
-      for(let i=0;i<Math.min(10,rows.length);i++){
-        const r = rows[i].map(c=>String(c||'').toLowerCase().trim());
-        if(r.some(c=>c==='descripción'||c==='descripcion'||c==='rubro'||c==='detalle')){
-          headerRow = i;
-          startRow = i+1;
-          break;
-        }
-      }
-
-      // Columnas desde fila de encabezado — se declara ANTES de usarse
-      const headers = headerRow>=0 ? rows[headerRow].map(c=>String(c||'').toLowerCase().trim()) : [];
-      const colIdx = {
-        codigo:   headers.findIndex(h=>h==='código'||h==='codigo'||h==='cód. rubro'||h==='cod. rubro'||h==='código rubro'||h==='codigo rubro'),
-        numero:   headers.findIndex(h=>h==='n°'||h==='n'||h==='#'||h==='item'),
-        descrip:  headers.findIndex(h=>h==='descripción'||h==='descripcion'||h==='rubro'||h==='detalle'||h.includes('descrip')),
-        unidad:   headers.findIndex(h=>h==='unidad'||h==='u'||h==='u.'||h.includes('unid')),
-        cantidad: headers.findIndex(h=>h==='cantidad'||h.includes('cant')||h==='vol'),
-        precio:   headers.findIndex(h=>h==='p.u. ($)'||h==='p.u.'||h==='p.u'||h==='pu'||h.includes('precio')||h.includes('p.unit')||h.includes('unitario')),
-        fechaIni: headers.findIndex(h=>h==='fecha inicio'||h.includes('inicio')||h.includes('start')||h.includes('desde')),
-        fechaFin: headers.findIndex(h=>h==='fecha fin'||h.includes('fin')||h.includes('end')||h.includes('hasta')),
-      };
-      // Si no hay columna de Código real, usar N°/Item como respaldo (comportamiento anterior)
-      if(colIdx.codigo===-1) colIdx.codigo = colIdx.numero;
-
-      // Fallback si no se detectaron columnas
-      if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
-      if(colIdx.precio===-1 && colIdx.cantidad>=0) colIdx.precio=colIdx.cantidad+1;
-
-      // Saltar filas de subencabezado después de detectar columnas
-      while(startRow < rows.length){
-        const r = rows[startRow];
-        const desc = String(r[colIdx.descrip>=0?colIdx.descrip:2]||'').trim();
-        const tieneNumero = r.some(c=>typeof c==='number'&&c>0);
-        const esSubHeader = !desc || /^(opcional|obligatorio|ej:|número|automático|dd\/)/i.test(desc);
-        if(!esSubHeader || tieneNumero) break;
-        startRow++;
-      }
-
-      const dataRows = rows.slice(startRow).filter(r=>{
-        const desc = String(r[colIdx.descrip]||'').trim();
-        if(!desc) return false;
-        // Ignorar filas que son notas, encabezados o solo números
-        const descLow = desc.toLowerCase();
-        if(descLow.includes('completa los campos')) return false;
-        if(descLow.includes('instruc')) return false;
-        if(descLow.includes('total general')) return false;
-        if(descLow==='descripción'||descLow==='descripcion') return false;
-        if(descLow.includes('obligatori')) return false;
-        if(descLow.includes('hidivo')) return false;
-        // Ignorar si la descripción es solo un número (fila de índice)
-        if(/^\d+$/.test(desc)) return false;
-        // Ignorar si la descripción es "N°" o similar
-        if(/^n[°o]?$/i.test(desc)) return false;
-        return true;
-      });
-
-      if(!dataRows.length){ toast('No se encontraron rubros en el Excel','error'); return; }
-
-      // Función para parsear fecha Excel (número de serie o string)
-      function parseFechaExcel(val){
-        if(!val) return null;
-        if(typeof val==='number'){
-          const d = new Date(Math.round((val-25569)*86400*1000));
-          return d.toISOString().split('T')[0];
-        }
-        const s = String(val).trim();
-        if(s.match(/^\d{4}-\d{2}-\d{2}$/)) return s;
-        if(s.match(/^\d{2}\/\d{2}\/\d{4}$/)){
-          const [d,m,y]=s.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-        }
-        return null;
-      }
-
-      // Filas normalizadas. filaExcel es el número de fila real de la hoja,
-      // para que los rechazos señalen exactamente dónde está el problema.
-      const filas = dataRows.map((r,i)=>({
-        filaExcel: rows.indexOf(r)+1,
-        orden: i+1,
-        codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
-        descripcion: String(r[colIdx.descrip]).trim(),
-        unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
-        cantidad_contrato: parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0,
-        precio_unitario: parseFloat(String(r[colIdx.precio]).replace(',','.'))||0,
-        fecha_inicio: parseFechaExcel(r[colIdx.fechaIni]),
-        fecha_fin: parseFechaExcel(r[colIdx.fechaFin])
-      }));
-
-      // RECHAZOS: la clave natural es (proyecto, código). Sin código no hay
-      // forma de saber si un rubro ya existe; con código repetido, tampoco.
-      const sinCodigo = filas.filter(f=>!f.codigo);
-      if(sinCodigo.length){
-        alert(`🛑 IMPORTACIÓN RECHAZADA\n\n${sinCodigo.length} fila(s) sin código. Cada rubro necesita un código único dentro del proyecto.\n\nFilas del Excel: ${sinCodigo.map(f=>f.filaExcel).join(', ')}`);
-        return;
-      }
-      const primeraFila = {}; const repetidos = [];
-      filas.forEach(f=>{
-        if(primeraFila[f.codigo]) repetidos.push(`"${f.codigo}" (filas ${primeraFila[f.codigo]} y ${f.filaExcel})`);
-        else primeraFila[f.codigo] = f.filaExcel;
-      });
-      if(repetidos.length){
-        alert(`🛑 IMPORTACIÓN RECHAZADA\n\nCódigo repetido dentro del Excel:\n• ${repetidos.join('\n• ')}`);
-        return;
-      }
+      const leido = leerPlantillaRubros(new Uint8Array(e.target.result));
+      if(leido.error){ toast(leido.error,'error'); return; }
+      if(leido.rechazo){ alert(`🛑 IMPORTACIÓN RECHAZADA\n\n${leido.rechazo}`); return; }
 
       // VISTA PREVIA: nada se escribe hasta que el usuario confirma.
-      const plan = await construirPlanImportacion(filas);
+      const plan = await construirPlanImportacion(leido.filas);
       if(!plan) return;
       renderPreviewImportacion(plan);
 
@@ -4226,16 +4248,9 @@ function importValorIgual(campo, a, b){
   return String(a??'').trim() === String(b??'').trim();
 }
 
-// Construye el plan: qué se actualiza (y qué cambia), qué es nuevo, qué se
-// conserva por estar ausente del Excel, y qué merece advertencia.
-async function construirPlanImportacion(filas){
-  const { data: existentes, error: e1 } = await sb.from('rubros').select('*')
-    .eq('proyecto_id', currentProyecto);
-  if(e1){ toast('No se pudieron leer los rubros actuales: '+e1.message,'error'); return null; }
-
-  // Señales de ejecución: cantidad trabajada, planillas aprobadas/pagadas con
-  // cantidad, u órdenes de cambio aprobadas. Un cambio de precio o cantidad
-  // en esos rubros normalmente va por orden de cambio, no por importación.
+// Señales de ejecución de los rubros del proyecto: planillas aprobadas/pagadas
+// con cantidad y órdenes de cambio aprobadas. Devuelve null (y avisa) si falla.
+async function senalesEjecucionRubros(){
   const { data: enPlan, error: e2 } = await sb.from('planilla_rubros')
     .select('rubro_id,cantidad_acumulada,planillas_pago!inner(estado,proyecto_id)')
     .eq('planillas_pago.proyecto_id', currentProyecto)
@@ -4246,8 +4261,25 @@ async function construirPlanImportacion(filas){
     .eq('ordenes_cambio.proyecto_id', currentProyecto)
     .eq('ordenes_cambio.estado', 'aprobada');
   if(e3){ toast('No se pudieron leer las órdenes de cambio: '+e3.message,'error'); return null; }
-  const conPlanilla = new Set((enPlan||[]).filter(p=>(p.cantidad_acumulada||0)>0).map(p=>p.rubro_id));
-  const conOC = new Set((enOC||[]).map(o=>o.rubro_id));
+  return {
+    conPlanilla: new Set((enPlan||[]).filter(p=>(p.cantidad_acumulada||0)>0).map(p=>p.rubro_id)),
+    conOC: new Set((enOC||[]).map(o=>o.rubro_id))
+  };
+}
+
+// Construye el plan: qué se actualiza (y qué cambia), qué es nuevo, qué se
+// conserva por estar ausente del Excel, y qué merece advertencia.
+async function construirPlanImportacion(filas){
+  const { data: existentes, error: e1 } = await sb.from('rubros').select('*')
+    .eq('proyecto_id', currentProyecto);
+  if(e1){ toast('No se pudieron leer los rubros actuales: '+e1.message,'error'); return null; }
+
+  // Señales de ejecución: cantidad trabajada, planillas aprobadas/pagadas con
+  // cantidad, u órdenes de cambio aprobadas. Un cambio de precio o cantidad
+  // en esos rubros normalmente va por orden de cambio, no por importación.
+  const senales = await senalesEjecucionRubros();
+  if(!senales) return null;
+  const { conPlanilla, conOC } = senales;
 
   const porCodigo = {};
   (existentes||[]).forEach(r=>{ if(r.codigo) porCodigo[r.codigo] = r; });
@@ -4532,11 +4564,12 @@ async function abrirEditorOC(id=null){
   _ocRubros = rubs||[];
   _ocEditando = null;
   _ocItems = [];
+  _planImportOC = null;
   if(id){
     const { data: oc } = await sb.from('ordenes_cambio').select('*').eq('id', id).single();
     const { data: items } = await sb.from('orden_cambio_items').select('*').eq('orden_id', id).order('created_at');
     _ocEditando = oc;
-    _ocItems = (items||[]).map(i=>({tipo:i.tipo, rubro_id:i.rubro_id, codigo:i.codigo, descripcion:i.descripcion, unidad:i.unidad, precio_unitario:i.precio_unitario, cantidad:i.cantidad}));
+    _ocItems = (items||[]).map(i=>({id:i.id, created_at:i.created_at, tipo:i.tipo, rubro_id:i.rubro_id, codigo:i.codigo, descripcion:i.descripcion, unidad:i.unidad, precio_unitario:i.precio_unitario, cantidad:i.cantidad}));
   }
   const oc = _ocEditando;
   const soloLectura = oc && ['aprobada','rechazada'].includes(oc.estado);
@@ -4548,10 +4581,14 @@ async function abrirEditorOC(id=null){
       <input type="text" class="form-control" id="ocTitulo" value="${escAttr(oc?.titulo||'')}" ${soloLectura?'disabled':''}/></div>
     <div class="form-group"><label class="form-label">Justificación técnica</label>
       <textarea class="form-control" id="ocJustificacion" rows="2" ${soloLectura?'disabled':''}>${escAttr(oc?.justificacion||'')}</textarea></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 8px">
       <b style="font-size:14px">Ítems de la orden</b>
-      ${soloLectura?'':`<span><button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('nuevo')">+ Rubro nuevo</button>
-      <button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('modificacion')">± Modificar cantidad</button></span>`}
+      ${soloLectura?'':`<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('nuevo')">+ Rubro nuevo</button>
+      <button class="btn" style="font-size:12px;padding:4px 10px" onclick="agregarItemOC('modificacion')">± Modificar cantidad</button>
+      ${oc?.estado==='borrador' ? `<button class="btn" style="font-size:12px;padding:4px 10px" onclick="document.getElementById('inputImportarItemsOC').click()">📥 Importar ítems desde Excel</button>
+      <input type="file" id="inputImportarItemsOC" accept=".xlsx,.xls" style="display:none" onchange="importarItemsOCExcel(this)"/>
+      <button class="btn" style="font-size:12px;padding:4px 10px" onclick="descargarPlantillaRubros()" title="Descargar plantilla Excel">Plantilla</button>`
+      : !oc ? '<span style="font-size:11px;color:#676879">Guarda el borrador para importar desde Excel</span>' : ''}</span>`}
     </div>
     <div id="ocItemsCont"></div>
     <div style="text-align:right;font-size:15px;margin-top:10px">Monto total de la orden: <b id="ocMontoTotal">$0.00</b></div>
@@ -4859,6 +4896,328 @@ async function imprimirOC(id){
   `);
   ventana.document.close();
   setTimeout(()=>{ ventana.print(); }, 400);
+}
+
+// ── IMPORTACIÓN DE ÍTEMS DE OC DESDE EXCEL ──
+// Misma plantilla que el importador de rubros (leerPlantillaRubros). Solo en
+// una OC guardada en borrador. Cada fila se clasifica por código contra los
+// rubros del proyecto y nada se escribe hasta confirmar la vista previa. No
+// toca el presupuesto: los impactos se aplican al aprobar la OC, como siempre.
+//
+// Semántica del módulo que se respeta: un ítem de modificación guarda la
+// DIFERENCIA de cantidad (±) al precio vigente del rubro. Por eso una fila
+// cuyo precio difiere del vigente no se puede importar (queda bloqueada).
+let _planImportOC = null;
+
+// Comparación de descripciones: sin mayúsculas, tildes ni puntuación
+const normTextoOC = s => String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const redondear4OC = v => Math.round((Number(v)||0)*1e4)/1e4;
+const igual4OC = (a,b) => (Number(a)||0).toFixed(4) === (Number(b)||0).toFixed(4);
+
+function cerrarImportOC(){
+  _planImportOC = null;
+  document.getElementById('importOCBody').innerHTML = '';
+  cerrarModal('modalImportOC');
+}
+
+async function importarItemsOCExcel(input){
+  const file = input.files[0];
+  if(!file) return;
+  input.value='';
+  _planImportOC = null;
+  if(!puedeGestionarRubros()){ toast('Solo admin o fiscalizador pueden importar ítems','error'); return; }
+  if(bloquearSiCerrado()) return;
+  if(_ocEditando?.estado!=='borrador'){ toast('Solo se importan ítems en una orden de cambio en borrador','error'); return; }
+  try {
+    const leido = leerPlantillaRubros(new Uint8Array(await file.arrayBuffer()));
+    if(leido.error){ toast(leido.error,'error'); return; }
+    if(leido.rechazo){ alert(`🛑 IMPORTACIÓN RECHAZADA\n\n${leido.rechazo}`); return; }
+    const plan = await construirPlanImportOC(leido.filas);
+    if(!plan) return;
+    _planImportOC = plan;
+    renderPreviewImportOC();
+    document.getElementById('modalImportOC').classList.add('show');
+  } catch(err){
+    console.error(err);
+    toast('Error leyendo el Excel: '+err.message,'error');
+  }
+}
+
+async function construirPlanImportOC(filas){
+  const { data: rubros, error } = await sb.from('rubros')
+    .select('id,orden,codigo,descripcion,unidad,precio_unitario,cantidad_contrato,monto_contrato,cantidad_ejecutada')
+    .eq('proyecto_id', currentProyecto).order('orden');
+  if(error){ toast('No se pudieron leer los rubros actuales: '+error.message,'error'); return null; }
+  const senales = await senalesEjecucionRubros();
+  if(!senales) return null;
+  const plan = clasificarImportOC(filas, rubros||[], _ocItems, senales.conPlanilla);
+  plan.ocId = _ocEditando.id;
+  plan.montoVigente = (rubros||[]).reduce((s,r)=>s+(r.monto_contrato||0), 0);
+  return plan;
+}
+
+// Clasificación pura (sin red): filas del Excel × rubros del proyecto × ítems
+// que ya tiene la OC. Un código con más de un rubro queda ambiguo hasta que el
+// usuario elija; nunca se adivina.
+function clasificarImportOC(filas, rubros, items, conPlanilla){
+  const porCodigo = {};
+  rubros.forEach(r=>{
+    const c = String(r.codigo??'').trim();
+    if(c) (porCodigo[c] = porCodigo[c]||[]).push(r);
+  });
+  const plan = { rubros, items, conPlanilla, filas: filas.map(f=>({
+    f, candidatosRubro: porCodigo[f.codigo]||[], eleccionRubro:'', candidatosItem:[], eleccionItem:''
+  })) };
+  plan.filas.forEach(fila=>resolverFilaImportOC(fila, plan));
+  return plan;
+}
+
+function itemIgualImportOC(it, fila){
+  if(!igual4OC(it.cantidad, fila.cantidad) || !igual4OC(it.precio_unitario, fila.precio)) return false;
+  if(fila.clase==='modificacion') return true;
+  return String(it.codigo??'').trim()===fila.f.codigo
+    && String(it.descripcion??'').trim()===fila.f.descripcion
+    && String(it.unidad??'').trim()===String(fila.f.unidad??'').trim();
+}
+
+// Recalcula todo lo derivado de una fila a partir de sus elecciones.
+function resolverFilaImportOC(fila, plan){
+  const f = fila.f;
+  Object.assign(fila, { clase:'', rubro:null, item:null, accion:'', pendiente:false, itemPrevio:false,
+    candidatosItem:[], cantidad:0, precio:0, monto:0, advertencia:'', motivo:'' });
+
+  let rubro = fila.candidatosRubro[0]||null;
+  if(fila.candidatosRubro.length>1){
+    if(fila.eleccionRubro==='omitir'){ fila.clase='omitida'; return; }
+    rubro = fila.candidatosRubro.find(r=>r.id===fila.eleccionRubro)||null;
+    if(!rubro){ fila.clase='ambigua'; fila.pendiente=true; return; }
+  }
+
+  if(rubro){
+    const previos = plan.items.filter(it=>it.tipo==='modificacion' && it.rubro_id===rubro.id);
+    fila.rubro = rubro;
+    fila.itemPrevio = previos.length>0;
+    fila.precio = Number(rubro.precio_unitario)||0;
+    fila.cantidad = redondear4OC((f.cantidad_contrato||0) - (Number(rubro.cantidad_contrato)||0));
+    if(!igual4OC(f.precio_unitario, rubro.precio_unitario)){
+      fila.clase = 'bloqueada';
+      fila.motivo = 'El precio del Excel difiere del vigente y una orden de cambio solo modifica cantidades';
+      return;
+    }
+    if(fila.cantidad===0){ fila.clase='sin_cambio'; return; }
+    fila.clase = 'modificacion';
+    fila.monto = fila.cantidad * fila.precio;
+    const ejec = Number(rubro.cantidad_ejecutada)||0;
+    fila.advertencia = [
+      ejec>0 ? `${ejec.toLocaleString('es-EC')} ${rubro.unidad||''} ejecutados` : null,
+      plan.conPlanilla.has(rubro.id) ? 'en planilla aprobada/pagada' : null,
+      ejec>(f.cantidad_contrato||0) ? 'la cantidad nueva queda por debajo de lo ejecutado' : null
+    ].filter(Boolean).join(', ');
+    if(previos.length===1) fila.item = previos[0];
+    else if(previos.length>1) fila.candidatosItem = previos;
+  } else {
+    fila.clase = 'nuevo';
+    fila.cantidad = f.cantidad_contrato||0;
+    fila.precio = f.precio_unitario||0;
+    fila.monto = fila.cantidad * fila.precio;
+    const nuevos = plan.items.filter(it=>it.tipo==='nuevo');
+    const porCod = nuevos.filter(it=>String(it.codigo??'').trim()===f.codigo);
+    if(porCod.length===1) fila.item = porCod[0];
+    else if(porCod.length>1) fila.candidatosItem = porCod;
+    else {
+      // Ítems hechos a mano sin código: se proponen por descripción idéntica,
+      // pero la decisión (actualizar o conservar ambos) es del usuario.
+      const d = normTextoOC(f.descripcion);
+      fila.candidatosItem = nuevos.filter(it=>!String(it.codigo??'').trim() && d && normTextoOC(it.descripcion)===d);
+    }
+  }
+
+  if(fila.candidatosItem.length){
+    if(fila.eleccionItem==='') fila.pendiente = true;
+    else if(fila.eleccionItem!=='ambos') fila.item = fila.candidatosItem[Number(fila.eleccionItem)]||null;
+  }
+  fila.accion = !fila.item ? 'agregar' : itemIgualImportOC(fila.item, fila) ? 'igual' : 'actualizar';
+}
+
+function resumenImportOC(plan){
+  const de = c => plan.filas.filter(x=>x.clase===c);
+  const importables = plan.filas.filter(x=>(x.clase==='nuevo'||x.clase==='modificacion') && !x.pendiente);
+  // Un mismo ítem de la OC no puede recibir dos filas del Excel
+  const vistos = new Set(), enConflicto = new Set();
+  importables.forEach(x=>{ if(!x.item) return; if(vistos.has(x.item)) enConflicto.add(x.item); vistos.add(x.item); });
+  const precioRubro = {}; plan.rubros.forEach(r=>{ precioRubro[r.id] = Number(r.precio_unitario)||0; });
+  const montoItem = it => (it.cantidad||0) * (it.tipo==='nuevo' ? (it.precio_unitario||0) : (precioRubro[it.rubro_id] ?? (it.precio_unitario||0)));
+  const conservados = plan.items.filter(it=>!vistos.has(it));
+  const impactoExcel = importables.reduce((s,x)=>s+x.monto, 0);
+  return {
+    nuevos: de('nuevo').length, modificaciones: de('modificacion').length,
+    ambiguas: plan.filas.filter(x=>x.candidatosRubro.length>1).length,
+    sinCambio: de('sin_cambio').length, bloqueadas: de('bloqueada').length, omitidas: de('omitida').length,
+    pendientes: plan.filas.filter(x=>x.pendiente).length,
+    enConflicto, importables,
+    aEscribir: importables.filter(x=>x.accion!=='igual'),
+    yaIguales: importables.filter(x=>x.accion==='igual').length,
+    conservados: conservados.length,
+    impactoExcel,
+    totalOC: conservados.reduce((s,it)=>s+montoItem(it), 0) + impactoExcel
+  };
+}
+
+function elegirImportOC(i, campo, valor){
+  const fila = _planImportOC?.filas[i];
+  if(!fila) return;
+  if(campo==='rubro'){ fila.eleccionRubro = valor; fila.eleccionItem = ''; }
+  else fila.eleccionItem = valor;
+  resolverFilaImportOC(fila, _planImportOC);
+  renderPreviewImportOC();
+}
+
+function renderPreviewImportOC(){
+  const plan = _planImportOC;
+  if(!plan) return;
+  const r = resumenImportOC(plan);
+  const num = v => (Number(v)||0).toLocaleString('es-EC',{maximumFractionDigits:4});
+  const desc = (s,n=70) => escAttr(String(s??'').length>n ? String(s).slice(0,n-3)+'…' : String(s??''));
+  const tarjeta = (n,label,color)=>`<div style="background:${color};border-radius:8px;padding:10px 12px;text-align:center;min-width:100px"><div style="font-size:20px;font-weight:800">${n}</div><div style="font-size:11px;color:#676879">${label}</div></div>`;
+  const etiquetaAccion = x => x.accion==='igual' ? '<span style="color:#676879">ya está en la OC, idéntico</span>'
+    : x.accion==='actualizar' ? '<b style="color:#0073ea">actualiza el ítem de la OC</b>' : '<b style="color:#00854d">se agrega a la OC</b>';
+  const nombreItem = it => `${it.codigo?`[${it.codigo}] `:''}${String(it.descripcion||'(sin descripción)').slice(0,50)} · cant ${num(it.cantidad)}`;
+  const selectorItem = x => !x.candidatosItem.length ? '' : `
+    <div style="margin-top:6px;background:#fdf6e3;border:1px solid #f0d98c;border-radius:6px;padding:6px 8px">
+      <div style="font-size:11px;color:#7a5c00;margin-bottom:4px">La OC ya tiene ${x.candidatosItem.length===1?'un ítem que parece el mismo':'varios ítems que podrían ser este'}. Elige qué hacer:</div>
+      <select class="form-control" style="font-size:12px" onchange="elegirImportOC(${plan.filas.indexOf(x)},'item',this.value)">
+        <option value="">— Elige —</option>
+        ${x.candidatosItem.map((it,k)=>`<option value="${k}" ${x.eleccionItem===String(k)?'selected':''}>Actualizar: ${escAttr(nombreItem(it))}</option>`).join('')}
+        <option value="ambos" ${x.eleccionItem==='ambos'?'selected':''}>Conservar lo existente y agregar esta fila como ítem aparte</option>
+      </select>
+      ${x.item && r.enConflicto.has(x.item) ? '<div style="font-size:11px;color:#e2445c;margin-top:4px">Otra fila del Excel eligió este mismo ítem.</div>':''}
+    </div>`;
+  const filaModif = x => `
+    <div style="border:1px solid ${x.advertencia?'#f0d98c':'#e6e9ef'};background:${x.advertencia?'#fffbf0':'#fff'};border-radius:6px;padding:8px 10px;font-size:12px">
+      <div><b>[${escAttr(x.f.codigo)}]</b> ${desc(x.rubro.descripcion)}${x.advertencia?` <span style="color:#b8860b;font-weight:600">⚠️ ${escAttr(x.advertencia)}</span>`:''}</div>
+      <div style="color:#676879;margin-top:3px">Cantidad: vigente ${num(x.rubro.cantidad_contrato)} → Excel <b style="color:#1a1a2e">${num(x.f.cantidad_contrato)}</b> · diferencia <b style="color:${x.cantidad>=0?'#00854d':'#e2445c'}">${x.cantidad>0?'+':''}${num(x.cantidad)}</b> ${escAttr(x.rubro.unidad||'')}</div>
+      <div style="color:#676879;margin-top:2px">P.U.: vigente ${num(x.rubro.precio_unitario)} · Excel ${num(x.f.precio_unitario)} · diferencia ${num(redondear4OC((x.f.precio_unitario||0)-(Number(x.rubro.precio_unitario)||0)))}${x.clase==='modificacion'?` · monto <b style="color:${x.monto>=0?'#00854d':'#e2445c'}">${fmtOC(x.monto)}</b> · ${etiquetaAccion(x)}`:''}</div>
+      ${x.clase==='bloqueada'?`<div style="color:#e2445c;margin-top:3px">🚫 ${escAttr(x.motivo)}. Esta fila no se importa.</div>`:''}
+      ${x.clase!=='modificacion' && x.itemPrevio?'<div style="color:#676879;margin-top:3px">La OC ya tiene un ítem para este rubro; se conserva tal cual.</div>':''}
+      ${x.clase==='modificacion'?selectorItem(x):''}
+    </div>`;
+  const seccion = (titulo, filas, pintar) => !filas.length ? '' :
+    `<h4 style="margin:14px 0 6px;font-size:13px">${titulo} (${filas.length})</h4><div style="display:flex;flex-direction:column;gap:6px">${filas.map(pintar).join('')}</div>`;
+
+  const ambiguas = plan.filas.filter(x=>x.candidatosRubro.length>1);
+  const bloqueoConfirmar = r.pendientes>0 || r.enConflicto.size>0;
+  let html = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      ${tarjeta(r.nuevos,'nuevos','#e6f4ee')}
+      ${tarjeta(r.modificaciones,'modificaciones','#f0f7ff')}
+      ${tarjeta(r.ambiguas,'ambiguas','#fdf6e3')}
+      ${tarjeta(r.sinCambio,'sin cambio (no se importan)','#f5f6f8')}
+      ${r.bloqueadas ? tarjeta(r.bloqueadas,'bloqueadas por precio','#fdecef') : ''}
+    </div>
+    <div style="background:#f5f6f8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;line-height:1.8">
+      <div style="display:flex;justify-content:space-between"><span>Monto contractual vigente</span><b>${fmtOC(plan.montoVigente)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Impacto de las filas del Excel (${r.impactoExcel>=0?'aditivo':'deductivo'})</span><b style="color:${r.impactoExcel>=0?'#00854d':'#e2445c'}">${fmtOC(r.impactoExcel)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Total de la orden tras importar${r.conservados?` (incluye ${r.conservados} ítem(s) que se conservan)`:''}</span><b style="color:${r.totalOC>=0?'#00854d':'#e2445c'}">${fmtOC(r.totalOC)}</b></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid #d0d4e4"><span>Monto resultante si la orden se aprueba</span><b>${fmtOC((plan.montoVigente||0)+r.totalOC)}</b></div>
+    </div>
+    <div style="font-size:12px;color:#676879;margin-bottom:10px">Nada se escribe hasta que pulses <b>Confirmar importación</b>. El presupuesto no cambia: los impactos se aplican al aprobar la orden. Se escribirán ${r.aEscribir.length} ítem(s)${r.yaIguales?`; ${r.yaIguales} ya están en la orden sin diferencias`:''}.</div>`;
+
+  if(bloqueoConfirmar){
+    html += `<div style="background:#fdf6e3;border:1px solid #f0d98c;border-radius:8px;padding:10px 12px;font-size:12px;color:#7a5c00;margin-bottom:10px">
+      ⚠️ Hay ${r.pendientes} fila(s) que esperan tu elección${r.enConflicto.size?' y un ítem elegido por más de una fila':''}. Resuélvelas para poder confirmar.</div>`;
+  }
+
+  html += seccion('❓ Ambiguas: el código coincide con más de un rubro', ambiguas, x=>`
+    <div style="border:1px solid #f0d98c;background:#fffbf0;border-radius:6px;padding:8px 10px;font-size:12px">
+      <div><b>[${escAttr(x.f.codigo)}]</b> ${desc(x.f.descripcion)} · cant ${num(x.f.cantidad_contrato)} · P.U. ${num(x.f.precio_unitario)}</div>
+      <select class="form-control" style="font-size:12px;margin-top:6px" onchange="elegirImportOC(${plan.filas.indexOf(x)},'rubro',this.value)">
+        <option value="">— Elige el rubro al que corresponde —</option>
+        ${x.candidatosRubro.map(c=>`<option value="${c.id}" ${x.eleccionRubro===c.id?'selected':''}>N° ${c.orden??'—'} · ${desc(c.descripcion,60)} · cant ${num(c.cantidad_contrato)} · P.U. ${num(c.precio_unitario)}</option>`).join('')}
+        <option value="omitir" ${x.eleccionRubro==='omitir'?'selected':''}>No importar esta fila</option>
+      </select>
+    </div>`);
+  html += seccion('± Modificaciones de cantidad', plan.filas.filter(x=>x.clase==='modificacion'), filaModif);
+  html += seccion('➕ Rubros nuevos', plan.filas.filter(x=>x.clase==='nuevo'), x=>`
+    <div style="border:1px solid #e6e9ef;border-radius:6px;padding:8px 10px;font-size:12px">
+      <div><b>[${escAttr(x.f.codigo)}]</b> ${desc(x.f.descripcion)}</div>
+      <div style="color:#676879;margin-top:3px">${escAttr(x.f.unidad||'')} · cant ${num(x.cantidad)} · P.U. ${num(x.precio)} · monto <b style="color:#00854d">${fmtOC(x.monto)}</b> · ${etiquetaAccion(x)}</div>
+      ${selectorItem(x)}
+    </div>`);
+  html += seccion('🚫 Bloqueadas por cambio de precio', plan.filas.filter(x=>x.clase==='bloqueada'), filaModif);
+  html += seccion('＝ Sin cambio respecto a lo vigente — no se importan', plan.filas.filter(x=>x.clase==='sin_cambio'), x=>`
+    <div style="font-size:12px;color:#676879"><b>[${escAttr(x.f.codigo)}]</b> ${desc(x.rubro.descripcion)} · cant ${num(x.rubro.cantidad_contrato)} · P.U. ${num(x.rubro.precio_unitario)}${x.itemPrevio?' · la OC ya tiene un ítem para este rubro; se conserva':''}</div>`);
+
+  document.getElementById('importOCBody').innerHTML = html;
+  const btn = document.getElementById('btnConfirmarImportOC');
+  btn.disabled = bloqueoConfirmar || !r.aEscribir.length;
+  btn.textContent = 'Confirmar importación';
+}
+
+// Escribe el plan confirmado. orden_cambio_items no tiene política UPDATE, así
+// que actualizar un ítem es insertar su versión nueva (con el created_at del
+// anterior, para no moverlo de sitio) y después retirar la anterior. Se inserta
+// primero: si algo falla no se pierde ningún ítem.
+async function aplicarImportOC(){
+  const plan = _planImportOC;
+  if(!plan) return;
+  if(!puedeGestionarRubros()){ toast('Solo admin o fiscalizador pueden importar ítems','error'); return; }
+  if(bloquearSiCerrado()) return;
+  const r = resumenImportOC(plan);
+  if(r.pendientes || r.enConflicto.size || !r.aEscribir.length) return;
+  if(_ocEditando?.id!==plan.ocId){ toast('La orden abierta cambió; vuelve a importar el Excel','error'); cerrarImportOC(); return; }
+
+  const btn = document.getElementById('btnConfirmarImportOC');
+  btn.disabled = true; btn.textContent = 'Importando...';
+  const fallo = (msg)=>{ toast(msg,'error'); btn.disabled=false; btn.textContent='Confirmar importación'; };
+
+  const { data: ocActual, error: e0 } = await sb.from('ordenes_cambio').select('estado').eq('id', plan.ocId).single();
+  if(e0){ fallo('No se pudo verificar el estado de la orden: '+e0.message); return; }
+  if(ocActual.estado!=='borrador'){ fallo('La orden ya no está en borrador; no se importó nada'); return; }
+
+  const base = Date.now();
+  const filasNuevas = r.aEscribir.map((x,i)=>({
+    orden_id: plan.ocId, tipo: x.clase, rubro_id: x.rubro?.id||null,
+    codigo: x.f.codigo,
+    descripcion: x.rubro ? x.rubro.descripcion : x.f.descripcion,
+    unidad: (x.rubro ? x.rubro.unidad : x.f.unidad)||null,
+    precio_unitario: x.precio, cantidad: x.cantidad, monto: x.monto,
+    created_at: x.item?.created_at || new Date(base+i).toISOString()
+  }));
+  const { data: insertados, error: e1 } = await sb.from('orden_cambio_items').insert(filasNuevas).select();
+  if(e1){ fallo('No se importó nada: '+e1.message); return; }
+
+  const idsViejos = r.aEscribir.map(x=>x.item?.id).filter(Boolean);
+  if(idsViejos.length){
+    const { error: e2 } = await sb.from('orden_cambio_items').delete().in('id', idsViejos);
+    if(e2){
+      fallo(`Los ítems del Excel se guardaron, pero no se pudieron retirar ${idsViejos.length} versión(es) anterior(es): ${e2.message}. Revisa la orden antes de continuar.`);
+      cerrarImportOC(); abrirEditorOC(plan.ocId); return;
+    }
+  }
+
+  // Estado en memoria del editor: reemplazo en su sitio o alta al final
+  const porCodigo = {}; (insertados||[]).forEach(it=>{ porCodigo[`${it.tipo}|${it.codigo}`] = it; });
+  r.aEscribir.forEach((x,i)=>{
+    const guardado = porCodigo[`${x.clase}|${x.f.codigo}`] || filasNuevas[i];
+    const it = { id: guardado.id, created_at: guardado.created_at, tipo: x.clase, rubro_id: x.rubro?.id||null,
+      codigo: filasNuevas[i].codigo, descripcion: filasNuevas[i].descripcion, unidad: filasNuevas[i].unidad,
+      precio_unitario: x.precio, cantidad: x.cantidad };
+    const pos = x.item ? _ocItems.indexOf(x.item) : -1;
+    if(pos>=0) _ocItems[pos] = it; else _ocItems.push(it);
+  });
+
+  // monto_total refleja lo que quedó guardado en la orden
+  const { data: guardados, error: e3 } = await sb.from('orden_cambio_items').select('monto').eq('orden_id', plan.ocId);
+  if(e3){ fallo('Ítems importados, pero no se pudo recalcular el monto de la orden: '+e3.message); cerrarImportOC(); renderItemsOC(false); return; }
+  const montoTotal = (guardados||[]).reduce((s,it)=>s+(Number(it.monto)||0), 0);
+  const { error: e4 } = await sb.from('ordenes_cambio').update({ monto_total: montoTotal }).eq('id', plan.ocId);
+  if(e4){ fallo('Ítems importados, pero no se pudo actualizar el monto de la orden: '+e4.message); cerrarImportOC(); renderItemsOC(false); return; }
+  _ocEditando.monto_total = montoTotal;
+
+  const actualizados = r.aEscribir.filter(x=>x.item).length;
+  cerrarImportOC();
+  renderItemsOC(false);
+  toast(`✅ Importación aplicada: ${r.aEscribir.length-actualizados} agregados, ${actualizados} actualizados, ${r.conservados} conservados`,'success');
 }
 
 // ── APROBACIÓN DEL LIBRO DE OBRA ──
