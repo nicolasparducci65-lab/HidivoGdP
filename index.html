@@ -4836,8 +4836,7 @@ async function aprobarOC(id){
   const file = document.getElementById('ocArchivo')?.files[0];
   if(file){
     // Storage rechaza claves con tildes o espacios ("Invalid key"): nombre saneado, igual que en Contrato
-    const nombreSan = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
-    const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${nombreSan}`;
+    const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
     if(upErr){ toast('No se pudo subir el oficio: '+upErr.message+'. La orden no se aprobó','error'); return; }
     archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
@@ -5558,9 +5557,10 @@ async function guardarEnsayo(){
   let archivoUrl = null;
   const file = document.getElementById('ensArchivo').files[0];
   if(file){
-    const path = `ensayos/${currentProyecto}/${Date.now()}_${file.name}`;
+    const path = `ensayos/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {upsert:true});
-    if(!upErr) archivoUrl = sb.storage.from('hidivo-archivos').getPublicUrl(path).data.publicUrl;
+    if(upErr){ toast('No se pudo subir el archivo: '+upErr.message+'. El ensayo no se guardó','error'); btn.disabled = false; btn.textContent = 'Guardar'; return; }
+    archivoUrl = sb.storage.from('hidivo-archivos').getPublicUrl(path).data.publicUrl;
   }
 
   const { data: maxN } = await sb.from('ensayos').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
@@ -5955,6 +5955,7 @@ async function sincronizarRegistrosOffline(){
   if(!pendientes.length || saltables === pendientes.length){ _sincronizandoOffline = false; actualizarIndicadorOffline(); return; }
   actualizarIndicadorOffline('Sincronizando...');
   let ok = 0, fallos = 0, ok360 = 0;
+  const adjuntosFallidos = []; // fotos/archivos de registros ya sincronizados que Storage rechazó
   const proyectosLibroOk = new Set(); // proyectos con registros del libro subidos: su caché de rubros se refresca al final
   // Registros de campo (libro, observación, solicitud) primero: son pequeños y no deben esperar
   // detrás de decenas de MB de fotos 360 ni caer con el break de un corte de red durante una foto.
@@ -5963,8 +5964,8 @@ async function sincronizarRegistrosOffline(){
   for(const item of pendientes){
     try{
       const tipoItem = item.tipo || 'libro';
-      if(tipoItem === 'observacion'){ await subirObservacionOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
-      if(tipoItem === 'solicitud'){ await subirSolicitudOffline(item); await idbBorrar(item.idLocal); ok++; continue; }
+      if(tipoItem === 'observacion'){ await subirObservacionOffline(item, adjuntosFallidos); await idbBorrar(item.idLocal); ok++; continue; }
+      if(tipoItem === 'solicitud'){ await subirSolicitudOffline(item, adjuntosFallidos); await idbBorrar(item.idLocal); ok++; continue; }
       // Fotos 360 (js/recorridos360.js): la cola solo SUBE; pausada o agotados los reintentos se salta el ítem.
       // Devuelve null si el ítem fue descartado durante la subida (no cuenta como sincronizado).
       if(tipoItem === 'punto360'){
@@ -6010,9 +6011,9 @@ async function sincronizarRegistrosOffline(){
         const f = item.fotos[i];
         try{
           const file = new File([f.blob], f.nombre, {type:f.tipo});
-          const url = await subirFotoSupabase(file, registro.id, i+1);
+          const url = await subirFotoSupabase(file, registro.id, i+1, adjuntosFallidos);
           if(url) await sb.from('libro_obra_fotos').insert({registro_id:registro.id, url, descripcion:f.descripcion, orden:i+1});
-        }catch(e){ console.warn('Foto offline:', e); }
+        }catch(e){ console.warn('Foto offline:', e); adjuntosFallidos.push((f.nombre||'foto')+': '+(e?.message||e)); }
       }
       if(!item.esAprobador){
         notificarFiscalizadorViaDM(`📖 Registro N°${payload.numero_registro} del libro de obra por aprobar`, `Fecha: ${payload.fecha} (registrado sin señal)`);
@@ -6034,7 +6035,7 @@ async function sincronizarRegistrosOffline(){
     invalidarCacheProyectos();
     // La cola ya no aporta lo sincronizado: la caché "al último sync" debe incluirlo
     proyectosLibroOk.forEach(pid => cargarRubrosConReferenciaLibro(pid).catch(()=>{}));
-    toast(`✓ ${ok} registro(s) de campo sincronizado(s)`,'success');
+    toastConAdjuntos(`✓ ${ok} registro(s) de campo sincronizado(s)`, adjuntosFallidos);
     try{
       if(currentPage==='libro') cargarLibroObra();
       refrescarFiscalizacion(); // solo en la sección; en Planos repinta los pins (la observación offline promete "el pin aparecerá al sincronizar")
@@ -6046,7 +6047,7 @@ async function sincronizarRegistrosOffline(){
   }
 }
 
-async function subirObservacionOffline(item){
+async function subirObservacionOffline(item, fallidos=[]){
   const { data: ultima } = await sb.from('observaciones').select('numero')
     .eq('proyecto_id', item.proyecto_id).order('numero',{ascending:false}).limit(1);
   const numero = (ultima?.[0]?.numero||0) + 1;
@@ -6060,20 +6061,19 @@ async function subirObservacionOffline(item){
     try{
       const file = new File([f.blob], f.nombre, {type:f.tipoMime});
       const comprimida = await comprimirImagenObs(file);
-      const path = `observaciones/${obs.id}/${Date.now()}_${comprimida.name}`;
+      const path = `observaciones/${obs.id}/${Date.now()}_${nombreArchivoSeguro(comprimida.name)}`;
       const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, comprimida, {contentType:comprimida.type, upsert:true});
-      if(!upErr){
-        const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
-        await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
-      }
-    }catch(e){ console.warn('Foto obs offline:', e); }
+      if(upErr) throw upErr;
+      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+      await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
+    }catch(e){ console.warn('Foto obs offline:', e); fallidos.push((f.nombre||'foto')+': '+(e?.message||e)); }
   }
   notificarResidenteViaDM('observacion', item.titulo, item.descripcion);
   notificarPorEmail('observacion', item.titulo, item.descripcion, numero);
   notificarPorPush('observacion', `Nueva observación: ${item.titulo}`, item.descripcion||'');
 }
 
-async function subirSolicitudOffline(item){
+async function subirSolicitudOffline(item, fallidos=[]){
   const { data: ultima } = await sb.from('solicitudes').select('numero')
     .eq('proyecto_id', item.proyecto_id).order('numero',{ascending:false}).limit(1);
   const numero = (ultima?.[0]?.numero||0) + 1;
@@ -6086,13 +6086,12 @@ async function subirSolicitudOffline(item){
   for(const f of (item.archivos||[])){
     try{
       const file = new File([f.blob], f.nombre, {type:f.tipoMime});
-      const path = `solicitudes/${sol.id}/${Date.now()}_${f.nombre}`;
+      const path = `solicitudes/${sol.id}/${Date.now()}_${nombreArchivoSeguro(f.nombre)}`;
       const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {upsert:true});
-      if(!upErr){
-        const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-        await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.nombre});
-      }
-    }catch(e){ console.warn('Archivo sol offline:', e); }
+      if(upErr) throw upErr;
+      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+      await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.nombre});
+    }catch(e){ console.warn('Archivo sol offline:', e); fallidos.push((f.nombre||'archivo')+': '+(e?.message||e)); }
   }
   notificarResidenteViaDM('solicitud', item.titulo, item.descripcion);
   notificarPorEmail('solicitud', item.titulo, item.descripcion, numero);
@@ -6736,11 +6735,12 @@ function eliminarFotoLibro(i){
   renderFotosPreview();
 }
 
-async function subirFotoSupabase(file, registroId, orden){
-  const ext = file.name.split('.').pop();
+// Devuelve la URL pública o null. Si falla, anota el motivo en `fallidos` para el aviso final.
+async function subirFotoSupabase(file, registroId, orden, fallidos){
+  const ext = nombreArchivoSeguro(file.name.split('.').pop());
   const path = `libro_obra/${registroId}/${Date.now()}_${orden}.${ext}`;
   const { data, error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType: file.type});
-  if(error) return null;
+  if(error){ console.warn('Foto libro de obra:', error); fallidos?.push(file.name+': '+error.message); return null; }
   const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
   return urlData.publicUrl;
 }
@@ -6831,20 +6831,21 @@ async function guardarRegistroLibro(){
   }
 
   // Subir fotos si hay storage configurado
+  const fotosFallidas = [];
   if(libroFotosSeleccionadas.length){
     for(let i=0; i<libroFotosSeleccionadas.length; i++){
       const f = libroFotosSeleccionadas[i];
       try {
-        const url = await subirFotoSupabase(f.file, registro.id, i+1);
+        const url = await subirFotoSupabase(f.file, registro.id, i+1, fotosFallidas);
         if(url) await sb.from('libro_obra_fotos').insert({ registro_id: registro.id, url, descripcion: f.descripcion||null, orden: i+1 });
-      } catch(e){ console.warn('Error subiendo foto:', e); }
+      } catch(e){ console.warn('Error subiendo foto:', e); fotosFallidas.push(f.file.name+': '+(e?.message||e)); }
     }
   }
 
   invalidarCacheProyectos();
   // Reescribe la caché "al último sync" con este registro ya en el servidor (sin await)
   cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{});
-  toast('Registro guardado con éxito ✓','success');
+  toastConAdjuntos('Registro guardado con éxito ✓', fotosFallidas);
   libroRubrosRef = {}; libroRubrosGuardados = {};
   cerrarModal('modalLibro');
   btnGuardar.disabled=false;
@@ -7802,7 +7803,7 @@ async function subirPlano(input){
   // Proyecto en el que se INICIÓ la subida: si el usuario cambia de proyecto mientras el
   // archivo sube, la fila va al mismo proyecto que la carpeta del storage, no al nuevo.
   const proyectoId = currentProyecto;
-  const path = `planos/${proyectoId}/${Date.now()}_${file.name}`;
+  const path = `planos/${proyectoId}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
   const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert:true});
   if(upErr){ toast('Error subiendo plano: '+upErr.message,'error'); return; }
   const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
@@ -8170,9 +8171,9 @@ async function guardarRespuesta(){
   let archivoUrl = null;
   let archivoNombre = null;
   if(archivo){
-    const path = `observaciones/${window._obsActiva.id}/respuestas/${Date.now()}_${archivo.name}`;
+    const path = `observaciones/${window._obsActiva.id}/respuestas/${Date.now()}_${nombreArchivoSeguro(archivo.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, archivo, {contentType: archivo.type, upsert:true});
-    if(upErr){ toast('Error subiendo archivo','error'); return; }
+    if(upErr){ toast('No se pudo subir el archivo: '+upErr.message+'. La respuesta no se guardó','error'); return; }
     const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
     archivoUrl = urlData.publicUrl;
     archivoNombre = archivo.name;
@@ -8681,18 +8682,18 @@ async function guardarObservacionNueva(){
     toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return;
   }
   // Subir fotos (comprimidas) desde el acumulador cámara + galería
+  const fotosFallidas = [];
   for(let i=0;i<obsFotosPendientes.length;i++){
     btn.textContent = `Subiendo foto ${i+1}/${obsFotosPendientes.length}...`;
     const f = await comprimirImagenObs(obsFotosPendientes[i]);
-    const path=`observaciones/${obs.id}/${Date.now()}_${f.name}`;
+    const path=`observaciones/${obs.id}/${Date.now()}_${nombreArchivoSeguro(f.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path,f,{contentType:f.type,upsert:true});
-    if(!upErr){
-      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
-      await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
-    }
+    if(upErr){ console.warn('Foto observación:', upErr); fotosFallidas.push(f.name+': '+upErr.message); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+    await sb.from('observacion_fotos').insert({observacion_id:obs.id, url:urlData.publicUrl});
   }
   obsFotosPendientes = [];
-  toast('Observación creada ✓','success');
+  toastConAdjuntos('Observación creada ✓', fotosFallidas);
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalObsNueva');
   if(window._obsNuevaPlano) cargarPinsPlano(window._obsNuevaPlano);
@@ -8718,14 +8719,11 @@ async function subirArchivoGlobal(input){
   const files = Array.from(input.files);
   if(!files.length) return;
   toast(`Subiendo ${files.length} archivo(s)...`,'info');
+  const fallidos = [];
   for(const file of files){
-    // Sanitizar nombre: quitar tildes/ñ y caracteres especiales para el path de storage
-    const nombreSanitizado = file.name
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-      .replace(/[^a-zA-Z0-9._-]/g,'_');
-    const path = `general/${currentProyecto}/${Date.now()}_${nombreSanitizado}`;
+    const path = `general/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
-    if(upErr){ toast('Error: '+upErr.message,'error'); continue; }
+    if(upErr){ console.warn('Subida general:', upErr); fallidos.push(file.name+': '+upErr.message); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
     const { data: nuevoArch } = await sb.from('archivos').insert({
       proyecto_id: currentProyecto,
@@ -8738,7 +8736,8 @@ async function subirArchivoGlobal(input){
     }).select('id').single();
     if(nuevoArch) solicitarDescripcionIA(nuevoArch.id);
   }
-  toast('✅ Archivos subidos','success');
+  if(fallidos.length === files.length) toast(`No se subió ningún archivo (${fallidos[0]})`,'error');
+  else toastConAdjuntos('✅ Archivos subidos', fallidos);
   input.value='';
   cargarArchivosGlobal();
 }
@@ -8959,6 +8958,19 @@ async function eliminarArchivoCompleto(bucket, urlOPath, tabla, filaId){
     if(error){ toast('Error al eliminar: '+error.message,'error'); return false; }
   }
   return true;
+}
+
+// Clave de Storage segura: Supabase rechaza tildes, eñes y espacios (Invalid key). Solo cambia
+// la clave del objeto; el nombre original se sigue guardando en las columnas de nombre.
+function nombreArchivoSeguro(nombre){
+  return String(nombre||'archivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+}
+
+// Aviso final de un guardado con adjuntos: éxito si subieron todos; si no, dice cuántos
+// fallaron y por qué (fallidos = ['nombre: mensaje', ...]).
+function toastConAdjuntos(msgOk, fallidos){
+  if(!fallidos?.length){ toast(msgOk,'success'); return; }
+  toast(`${msgOk} · ${fallidos.length} adjunto(s) NO se subieron (${fallidos[0]})`,'error');
 }
 
 // Variante para cascadas: borra solo los objetos de una lista de URLs públicas
@@ -10099,19 +10111,19 @@ async function guardarLlenadoFormato(estadoFinal){
   if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent=textoOriginal; return; }
 
   // Subir fotos nuevas, si hay
+  const fotosFallidas = [];
   for(const campoId of Object.keys(_fotosLlenadoNuevas)){
     const file = _fotosLlenadoNuevas[campoId];
-    const path = `formatos-calidad/${respuestaId}/${campoId}_${Date.now()}.${file.name.split('.').pop()}`;
+    const path = `formatos-calidad/${respuestaId}/${campoId}_${Date.now()}.${nombreArchivoSeguro(file.name.split('.').pop())}`;
     const { error: errUp } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType: file.type});
-    if(!errUp){
-      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
-      await sb.from('formatos_calidad_fotos').insert({ respuesta_id: respuestaId, campo_id: campoId, url: urlData.publicUrl });
-    }
+    if(errUp){ console.warn('Foto formato de calidad:', errUp); fotosFallidas.push(file.name+': '+errUp.message); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+    await sb.from('formatos_calidad_fotos').insert({ respuesta_id: respuestaId, campo_id: campoId, url: urlData.publicUrl });
   }
 
   btn.disabled=false; btn.textContent=textoOriginal;
   const mensajes = {enviado:'Formato enviado ✓', corregido:'Corrección guardada ✓', borrador:'Borrador guardado ✓'};
-  toast(mensajes[estadoFinal]||'Guardado ✓','success');
+  toastConAdjuntos(mensajes[estadoFinal]||'Guardado ✓', fotosFallidas);
   cerrarModal('modalLlenarFormato');
   cargarFormatosCalidad();
 }
@@ -11354,9 +11366,10 @@ async function guardarActa(){
   let archivoUrl = null;
   const file = document.getElementById('actaArchivo').files[0];
   if(file){
-    const path = `actas/${currentProyecto}/${Date.now()}_${file.name}`;
+    const path = `actas/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
-    if(!upErr) archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
+    if(upErr){ toast('No se pudo subir el acta: '+upErr.message+'. La recepción no se registró','error'); btn.disabled = false; btn.textContent = 'Guardar'; return; }
+    archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
   }
 
   const { error } = await sb.from('actas_recepcion').insert({
@@ -11674,8 +11687,7 @@ async function subirContratoPDF(input){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   if(file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)){ toast('Debe ser un archivo PDF','error'); return; }
   toast('Subiendo contrato...','info');
-  const nombreSan = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
-  const path = `contratos/${currentProyecto}/${Date.now()}_${nombreSan}`;
+  const path = `contratos/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
   const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType:'application/pdf', upsert:true});
   if(upErr){ toast('Error al subir: '+upErr.message,'error'); return; }
   const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
@@ -12005,12 +12017,11 @@ async function guardarGarantia(){
   let archivoUrl = null;
   const file = document.getElementById('garArchivo').files[0];
   if(file){
-    const path = `garantias/${currentProyecto}/${Date.now()}_${file.name}`;
+    const path = `garantias/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
-    if(!upErr){
-      const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
-      archivoUrl = urlData.publicUrl;
-    }
+    if(upErr){ toast('No se pudo subir el archivo: '+upErr.message+'. La garantía no se guardó','error'); btn.disabled = false; btn.textContent = 'Guardar'; return; }
+    const { data: urlData } = sb.storage.from('hidivo-fotos').getPublicUrl(path);
+    archivoUrl = urlData.publicUrl;
   }
 
   const payload = {
@@ -12551,14 +12562,14 @@ async function guardarPlanilla(estado){
 
   // Subir archivos
   const files = document.getElementById('planArchivos').files;
+  const archivosFallidos = [];
   for(let i=0;i<files.length;i++){
     const f=files[i];
-    const path=`planillas/${planilla.id}/${Date.now()}_${f.name}`;
+    const path=`planillas/${planilla.id}/${Date.now()}_${nombreArchivoSeguro(f.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
-    if(!upErr){
-      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-      await sb.from('planilla_archivos').insert({planilla_id:planilla.id, url:urlData.publicUrl, nombre:f.name, tipo:f.type});
-    }
+    if(upErr){ console.warn('Archivo de planilla:', upErr); archivosFallidos.push(f.name+': '+upErr.message); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    await sb.from('planilla_archivos').insert({planilla_id:planilla.id, url:urlData.publicUrl, nombre:f.name, tipo:f.type});
   }
 
   // Historial
@@ -12568,7 +12579,7 @@ async function guardarPlanilla(estado){
     autor_id: currentUser?.id
   });
 
-  toast(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓','success');
+  toastConAdjuntos(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓', archivosFallidos);
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevaPlanilla');
   // Notificar via DM si se envía a revisión
@@ -13076,9 +13087,9 @@ async function adjuntarArchivoChat(input){
   const files = [...input.files];
   if(!files.length||!chatCanalActivo) return;
   for(const file of files){
-    const path=`chat/${chatCanalActivo.id}/${Date.now()}_${file.name}`;
+    const path=`chat/${chatCanalActivo.id}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
-    if(error){ toast('Error subiendo '+file.name,'error'); continue; }
+    if(error){ toast('Error subiendo '+file.name+': '+error.message,'error'); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
     await sb.from('mensajes_chat').insert({
       canal_id: chatCanalActivo.id,
@@ -13178,9 +13189,9 @@ async function adjuntarArchivoHilo(input){
   const files = [...input.files];
   if(!files.length||!chatCanalActivo||!chatHiloActivo) return;
   for(const file of files){
-    const path=`chat/${chatCanalActivo.id}/hilos/${Date.now()}_${file.name}`;
+    const path=`chat/${chatCanalActivo.id}/hilos/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error } = await sb.storage.from('hidivo-archivos').upload(path,file,{upsert:true});
-    if(error){ toast('Error subiendo '+file.name,'error'); continue; }
+    if(error){ toast('Error subiendo '+file.name+': '+error.message,'error'); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
     await sb.from('mensajes_chat').insert({
       canal_id: chatCanalActivo.id,
@@ -13705,17 +13716,17 @@ async function guardarNuevaSolicitud(){
 
   // Subir archivos
   const files = document.getElementById('solNuevaArchivos').files;
+  const archivosFallidos = [];
   for(let i=0;i<files.length;i++){
     const f=files[i];
-    const path=`solicitudes/${sol.id}/${Date.now()}_${f.name}`;
+    const path=`solicitudes/${sol.id}/${Date.now()}_${nombreArchivoSeguro(f.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
-    if(!upErr){
-      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-      await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.name});
-    }
+    if(upErr){ console.warn('Archivo de solicitud:', upErr); archivosFallidos.push(f.name+': '+upErr.message); continue; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.name});
   }
 
-  toast('Solicitud enviada ✓','success');
+  toastConAdjuntos('Solicitud enviada ✓', archivosFallidos);
   btn.disabled=false; btn.textContent='Enviar solicitud';
   cerrarModal('modalNuevaSolicitud');
   // Notificar al residente/fiscalizador via DM y por correo
@@ -13813,12 +13824,11 @@ async function responderSolicitud(accion){
 
   let archivoUrl=null, archivoNombre=null;
   if(archivo){
-    const path=`solicitudes/${window._solActiva.id}/respuestas/${Date.now()}_${archivo.name}`;
+    const path=`solicitudes/${window._solActiva.id}/respuestas/${Date.now()}_${nombreArchivoSeguro(archivo.name)}`;
     const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,archivo,{upsert:true});
-    if(!upErr){
-      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-      archivoUrl=urlData.publicUrl; archivoNombre=archivo.name;
-    }
+    if(upErr){ toast('No se pudo subir el archivo: '+upErr.message+'. La respuesta no se envió','error'); return; }
+    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
+    archivoUrl=urlData.publicUrl; archivoNombre=archivo.name;
   }
 
   // Guardar respuesta
@@ -14404,11 +14414,11 @@ async function subirArchivos(input, moduloDB, moduloUI){
 
   toast(`Subiendo ${files.length} archivo(s)...`, 'info');
 
+  const fallidos = [];
   for(const file of files){
-    const ext = file.name.split('.').pop();
-    const path = `${moduloDB}/${currentProyecto}/${Date.now()}_${file.name}`;
+    const path = `${moduloDB}/${currentProyecto}/${Date.now()}_${nombreArchivoSeguro(file.name)}`;
     const { error: uploadError } = await sb.storage.from('hidivo-archivos').upload(path, file, {contentType: file.type, upsert: true});
-    if(uploadError){ toast('Error subiendo '+file.name+': '+uploadError.message,'error'); continue; }
+    if(uploadError){ console.warn('Subida '+moduloDB+':', uploadError); fallidos.push(file.name+': '+uploadError.message); continue; }
     const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
     const { data: nuevoArch, error: insertError } = await sb.from('archivos').insert({
       proyecto_id: currentProyecto,
@@ -14423,7 +14433,8 @@ async function subirArchivos(input, moduloDB, moduloUI){
     if(nuevoArch) solicitarDescripcionIA(nuevoArch.id);
   }
 
-  toast('✅ Archivos subidos correctamente','success');
+  if(fallidos.length === files.length) toast(`No se subió ningún archivo (${fallidos[0]})`,'error');
+  else toastConAdjuntos('✅ Archivos subidos correctamente', fallidos);
   input.value = '';
   cargarArchivos(moduloUI);
 }
@@ -15551,17 +15562,18 @@ async function guardarEdicionRegistro(){
   }
 
   // Subir nuevas fotos
+  const fotosFallidas = [];
   if(libroFotosSeleccionadas.length){
     for(let i=0;i<libroFotosSeleccionadas.length;i++){
       const f = libroFotosSeleccionadas[i];
-      const url = await subirFotoSupabase(f.file, id, Date.now()+i);
+      const url = await subirFotoSupabase(f.file, id, Date.now()+i, fotosFallidas);
       if(url) await sb.from('libro_obra_fotos').insert({ registro_id: id, url, descripcion: f.descripcion||null, orden: i+1 });
     }
   }
 
   invalidarCacheProyectos();
   cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // caché "al último sync" con la edición
-  toast('Registro actualizado ✓','success');
+  toastConAdjuntos('Registro actualizado ✓', fotosFallidas);
   libroRubrosRef = {}; libroRubrosGuardados = {};
   restaurarModoCreacionLibro();
 
@@ -15779,7 +15791,7 @@ function sstBadgePlazo(fechaLimite, cumplido){
 
 async function subirFotoSST(file, subtipo, registroId){
   if(!file) return null;
-  const ext = file.name.split('.').pop();
+  const ext = nombreArchivoSeguro(file.name.split('.').pop());
   const path = `sst/${subtipo}/${registroId}/${Date.now()}.${ext}`;
   const { error } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type});
   if(error){ toast('Error al subir foto: '+error.message,'error'); return null; }
