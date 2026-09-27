@@ -4835,7 +4835,9 @@ async function aprobarOC(id){
   let archivoUrl = null;
   const file = document.getElementById('ocArchivo')?.files[0];
   if(file){
-    const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${file.name}`;
+    // Storage rechaza claves con tildes o espacios ("Invalid key"): nombre saneado, igual que en Contrato
+    const nombreSan = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${nombreSan}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
     if(upErr){ toast('No se pudo subir el oficio: '+upErr.message+'. La orden no se aprobó','error'); return; }
     archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
