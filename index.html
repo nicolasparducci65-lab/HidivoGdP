@@ -5001,7 +5001,7 @@ function resolverFilaImportOC(fila, plan){
     fila.cantidad = redondear4OC((f.cantidad_contrato||0) - (Number(rubro.cantidad_contrato)||0));
     if(!igual4OC(f.precio_unitario, rubro.precio_unitario)){
       fila.clase = 'bloqueada';
-      fila.motivo = 'El precio del Excel difiere del vigente y una orden de cambio solo modifica cantidades';
+      fila.motivo = 'El precio difiere del contractual; un precio distinto se registra como rubro nuevo con otro código';
       return;
     }
     if(fila.cantidad===0){ fila.clase='sin_cambio'; return; }
@@ -5153,10 +5153,23 @@ function renderPreviewImportOC(){
   btn.textContent = 'Confirmar importación';
 }
 
+// monto_total de la orden = lo que quedó guardado en sus ítems. Devuelve el
+// mensaje de error, o null si todo fue bien.
+async function recalcularMontoGuardadoOC(ocId){
+  const { data: guardados, error: e1 } = await sb.from('orden_cambio_items').select('monto').eq('orden_id', ocId);
+  if(e1) return 'no se pudo recalcular el monto de la orden: '+e1.message;
+  const montoTotal = (guardados||[]).reduce((s,it)=>s+(Number(it.monto)||0), 0);
+  const { error: e2 } = await sb.from('ordenes_cambio').update({ monto_total: montoTotal }).eq('id', ocId);
+  if(e2) return 'no se pudo actualizar el monto de la orden: '+e2.message;
+  if(_ocEditando?.id===ocId) _ocEditando.monto_total = montoTotal;
+  return null;
+}
+
 // Escribe el plan confirmado. orden_cambio_items no tiene política UPDATE, así
 // que actualizar un ítem es insertar su versión nueva (con el created_at del
 // anterior, para no moverlo de sitio) y después retirar la anterior. Se inserta
-// primero: si algo falla no se pierde ningún ítem.
+// primero para no perder nada; si la versión anterior no se puede retirar, el
+// insert se revierte: un ítem nunca queda duplicado.
 async function aplicarImportOC(){
   const plan = _planImportOC;
   if(!plan) return;
@@ -5186,17 +5199,43 @@ async function aplicarImportOC(){
   const { data: insertados, error: e1 } = await sb.from('orden_cambio_items').insert(filasNuevas).select();
   if(e1){ fallo('No se importó nada: '+e1.message); return; }
 
+  const porCodigo = {}; (insertados||[]).forEach(it=>{ porCodigo[`${it.tipo}|${it.codigo}`] = it; });
+
   const idsViejos = r.aEscribir.map(x=>x.item?.id).filter(Boolean);
   if(idsViejos.length){
-    const { error: e2 } = await sb.from('orden_cambio_items').delete().in('id', idsViejos);
-    if(e2){
-      fallo(`Los ítems del Excel se guardaron, pero no se pudieron retirar ${idsViejos.length} versión(es) anterior(es): ${e2.message}. Revisa la orden antes de continuar.`);
+    const { data: borrados, error: e2 } = await sb.from('orden_cambio_items').delete().in('id', idsViejos).select('id');
+    const retirados = new Set(e2 ? [] : (borrados||[]).map(b=>b.id));
+    let sobreviven = idsViejos.filter(id=>!retirados.has(id));
+    if(!e2 && sobreviven.length){
+      // Sin error pero con menos filas borradas: solo cuentan las que siguen existiendo
+      const { data: quedan, error: e2b } = await sb.from('orden_cambio_items').select('id').in('id', sobreviven);
+      if(!e2b) sobreviven = (quedan||[]).map(q=>q.id);
+    }
+    if(sobreviven.length){
+      // Se revierte todo lo insertado, salvo los reemplazos cuya versión anterior sí se retiró
+      const siguen = new Set(sobreviven);
+      const aRevertir = r.aEscribir.filter(x=>!x.item?.id || siguen.has(x.item.id));
+      const idsRevertir = aRevertir.map(x=>porCodigo[`${x.clase}|${x.f.codigo}`]?.id).filter(Boolean);
+      const { data: revertidos, error: e5 } = idsRevertir.length
+        ? await sb.from('orden_cambio_items').delete().in('id', idsRevertir).select('id')
+        : { data: [], error: null };
+      const motivo = e2 ? e2.message : 'la base no retiró las filas';
+      const revertido = !e5 && idsRevertir.length===aRevertir.length && (revertidos||[]).length===idsRevertir.length;
+      const seQuedan = r.aEscribir.length - aRevertir.length;
+      const errMonto = seQuedan && revertido ? await recalcularMontoGuardadoOC(plan.ocId) : null;
+      if(!revertido){
+        const dobles = aRevertir.filter(x=>x.item?.id).map(x=>x.f.codigo).join(', ');
+        fallo(`🛑 No se pudo retirar la versión anterior de ${sobreviven.length} ítem(s) (${motivo}) y tampoco se pudo revertir la importación${e5?' ('+e5.message+')':''}. Revisa la orden: pueden haber quedado repetidos los códigos ${dobles}.`);
+      } else if(seQuedan){
+        fallo(`Importación parcial: ${seQuedan} ítem(s) se actualizaron; los demás se revirtieron porque no se pudo retirar su versión anterior (${motivo}). Ningún ítem quedó duplicado.${errMonto?' Además, '+errMonto+'.':''}`);
+      } else {
+        fallo(`No se importó nada: no se pudo retirar la versión anterior de ${sobreviven.length} ítem(s) (${motivo}). La importación se revirtió y la orden quedó como estaba.`);
+      }
       cerrarImportOC(); abrirEditorOC(plan.ocId); return;
     }
   }
 
   // Estado en memoria del editor: reemplazo en su sitio o alta al final
-  const porCodigo = {}; (insertados||[]).forEach(it=>{ porCodigo[`${it.tipo}|${it.codigo}`] = it; });
   r.aEscribir.forEach((x,i)=>{
     const guardado = porCodigo[`${x.clase}|${x.f.codigo}`] || filasNuevas[i];
     const it = { id: guardado.id, created_at: guardado.created_at, tipo: x.clase, rubro_id: x.rubro?.id||null,
@@ -5206,13 +5245,8 @@ async function aplicarImportOC(){
     if(pos>=0) _ocItems[pos] = it; else _ocItems.push(it);
   });
 
-  // monto_total refleja lo que quedó guardado en la orden
-  const { data: guardados, error: e3 } = await sb.from('orden_cambio_items').select('monto').eq('orden_id', plan.ocId);
-  if(e3){ fallo('Ítems importados, pero no se pudo recalcular el monto de la orden: '+e3.message); cerrarImportOC(); renderItemsOC(false); return; }
-  const montoTotal = (guardados||[]).reduce((s,it)=>s+(Number(it.monto)||0), 0);
-  const { error: e4 } = await sb.from('ordenes_cambio').update({ monto_total: montoTotal }).eq('id', plan.ocId);
-  if(e4){ fallo('Ítems importados, pero no se pudo actualizar el monto de la orden: '+e4.message); cerrarImportOC(); renderItemsOC(false); return; }
-  _ocEditando.monto_total = montoTotal;
+  const errMonto = await recalcularMontoGuardadoOC(plan.ocId);
+  if(errMonto){ fallo('Ítems importados, pero '+errMonto); cerrarImportOC(); renderItemsOC(false); return; }
 
   const actualizados = r.aEscribir.filter(x=>x.item).length;
   cerrarImportOC();
