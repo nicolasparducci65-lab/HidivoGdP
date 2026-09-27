@@ -6031,6 +6031,7 @@ async function sincronizarRegistrosOffline(){
   }
   _sincronizandoOffline = false;
   actualizarIndicadorOffline();
+  if(!ok && adjuntosFallidos.length) toast(`No se sincronizó: ${adjuntosFallidos.slice(0,5).join(' | ')}`,'error');
   if(ok){
     invalidarCacheProyectos();
     // La cola ya no aporta lo sincronizado: la caché "al último sync" debe incluirlo
@@ -6073,25 +6074,33 @@ async function subirObservacionOffline(item, fallidos=[]){
   notificarPorPush('observacion', `Nueva observación: ${item.titulo}`, item.descripcion||'');
 }
 
+// Todo o nada: si un archivo no sube, la solicitud sigue en la cola del dispositivo
+// (no se pierde) y el aviso de sincronización dice cuál falló.
 async function subirSolicitudOffline(item, fallidos=[]){
+  const solId = nuevoUuid();
+  const subida = await subirAdjuntosTodoONada('hidivo-archivos', `solicitudes/${solId}`,
+    (item.archivos||[]).map(f=>({archivo:new File([f.blob], f.nombre, {type:f.tipoMime}), nombre:f.nombre, tipo:f.tipoMime})));
+  if(subida.error){
+    if(!esErrorDeRed(subida.error)) fallidos.push(`la solicitud «${item.titulo}» sigue pendiente en este dispositivo (${subida.mensaje})`);
+    throw subida.error;
+  }
   const { data: ultima } = await sb.from('solicitudes').select('numero')
     .eq('proyecto_id', item.proyecto_id).order('numero',{ascending:false}).limit(1);
   const numero = (ultima?.[0]?.numero||0) + 1;
   const { data: sol, error } = await sb.from('solicitudes').insert({
+    id: solId,
     proyecto_id: item.proyecto_id, numero, tipo: item.tipoSol,
     titulo: item.titulo, descripcion: item.descripcion||null,
     estado: 'pendiente', creado_por: item.autorId
   }).select().single();
-  if(error) throw error;
-  for(const f of (item.archivos||[])){
-    try{
-      const file = new File([f.blob], f.nombre, {type:f.tipoMime});
-      const path = `solicitudes/${sol.id}/${Date.now()}_${nombreArchivoSeguro(f.nombre)}`;
-      const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path, file, {upsert:true});
-      if(upErr) throw upErr;
-      const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-      await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.nombre});
-    }catch(e){ console.warn('Archivo sol offline:', e); fallidos.push((f.nombre||'archivo')+': '+(e?.message||e)); }
+  if(error){ await retirarAdjuntos('hidivo-archivos', subida.adjuntos); throw error; }
+  if(subida.adjuntos.length){
+    const { error: eArch } = await sb.from('solicitud_archivos').insert(subida.adjuntos.map(a=>({solicitud_id:sol.id, url:a.url, nombre:a.nombre})));
+    if(eArch){
+      await sb.from('solicitudes').delete().eq('id', sol.id);
+      await retirarAdjuntos('hidivo-archivos', subida.adjuntos);
+      throw eArch;
+    }
   }
   notificarResidenteViaDM('solicitud', item.titulo, item.descripcion);
   notificarPorEmail('solicitud', item.titulo, item.descripcion, numero);
@@ -8970,7 +8979,46 @@ function nombreArchivoSeguro(nombre){
 // fallaron y por qué (fallidos = ['nombre: mensaje', ...]).
 function toastConAdjuntos(msgOk, fallidos){
   if(!fallidos?.length){ toast(msgOk,'success'); return; }
-  toast(`${msgOk} · ${fallidos.length} adjunto(s) NO se subieron (${fallidos[0]})`,'error');
+  const detalle = fallidos.slice(0,5).join(' | ') + (fallidos.length>5 ? ` | y ${fallidos.length-5} más` : '');
+  toast(`${msgOk} · ${fallidos.length} adjunto(s) NO se subieron: ${detalle}`,'error');
+}
+
+// REGLA DE ADJUNTOS
+//   Todo o nada: planillas, solicitudes y sus respuestas, actas, garantías, órdenes de
+//   cambio, ensayos y contrato. Si un archivo no sube, el registro NO se guarda.
+//   Parcial con aviso: libro de obra, observaciones, chat y recorridos 360. El registro
+//   se guarda con lo que subió y el aviso nombra cada archivo que falló.
+function nuevoUuid(){
+  if(crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x=>x.toString(16).padStart(2,'0')).join('');
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+
+// Sube todos los archivos ANTES de guardar el registro. archivos = [{archivo, nombre, tipo}].
+// Si uno falla retira los ya subidos y devuelve {error, mensaje}; si no, {adjuntos}.
+async function subirAdjuntosTodoONada(bucket, carpeta, archivos){
+  const adjuntos = [];
+  const base = Date.now();
+  for(let i=0; i<archivos.length; i++){
+    const a = archivos[i];
+    const path = `${carpeta}/${base+i}_${nombreArchivoSeguro(a.nombre)}`;
+    let error = null;
+    try{ ({ error } = await sb.storage.from(bucket).upload(path, a.archivo, {upsert:true})); }catch(e){ error = e; }
+    if(error){
+      await retirarAdjuntos(bucket, adjuntos);
+      return { error, mensaje: `${a.nombre}: ${error.message||error}` };
+    }
+    adjuntos.push({ path, url: sb.storage.from(bucket).getPublicUrl(path).data.publicUrl, nombre: a.nombre, tipo: a.tipo||null });
+  }
+  return { adjuntos };
+}
+
+async function retirarAdjuntos(bucket, adjuntos){
+  if(!adjuntos?.length) return;
+  try{ await sb.storage.from(bucket).remove(adjuntos.map(a=>a.path)); }
+  catch(e){ console.warn('Storage remove:', e); }
 }
 
 // Variante para cascadas: borra solo los objetos de una lista de URLs públicas
@@ -12530,8 +12578,15 @@ async function guardarPlanilla(estado){
     return;
   }
 
+  // Adjuntos todo o nada: se suben antes de crear la planilla
+  const planillaId = nuevoUuid();
+  const subida = await subirAdjuntosTodoONada('hidivo-archivos', `planillas/${planillaId}`,
+    [...document.getElementById('planArchivos').files].map(f=>({archivo:f, nombre:f.name, tipo:f.type})));
+  if(subida.error){ toast(`No se pudo subir ${subida.mensaje}. La planilla no se guardó`,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+
   // Crear planilla nueva
   const { data: planilla, error } = await sb.from('planillas_pago').insert({
+    id: planillaId,
     proyecto_id: currentProyecto,
     numero, fecha_inicio: fechaInicio, fecha_fin: fechaFin,
     estado, total_monto: totalMonto,
@@ -12542,7 +12597,7 @@ async function guardarPlanilla(estado){
     creado_por: currentUser?.id
   }).select().single();
 
-  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  if(error){ await retirarAdjuntos('hidivo-archivos', subida.adjuntos); toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
 
   // Guardar rubros
   const rubrosPayload = [];
@@ -12560,16 +12615,15 @@ async function guardarPlanilla(estado){
   });
   if(rubrosPayload.length) await sb.from('planilla_rubros').insert(rubrosPayload);
 
-  // Subir archivos
-  const files = document.getElementById('planArchivos').files;
-  const archivosFallidos = [];
-  for(let i=0;i<files.length;i++){
-    const f=files[i];
-    const path=`planillas/${planilla.id}/${Date.now()}_${nombreArchivoSeguro(f.name)}`;
-    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
-    if(upErr){ console.warn('Archivo de planilla:', upErr); archivosFallidos.push(f.name+': '+upErr.message); continue; }
-    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-    await sb.from('planilla_archivos').insert({planilla_id:planilla.id, url:urlData.publicUrl, nombre:f.name, tipo:f.type});
+  // Registrar los adjuntos ya subidos; si no se pueden registrar, la planilla no queda guardada
+  if(subida.adjuntos.length){
+    const { error: eArch } = await sb.from('planilla_archivos').insert(subida.adjuntos.map(a=>({planilla_id:planilla.id, url:a.url, nombre:a.nombre, tipo:a.tipo})));
+    if(eArch){
+      await sb.from('planillas_pago').delete().eq('id', planilla.id);
+      await retirarAdjuntos('hidivo-archivos', subida.adjuntos);
+      toast('No se pudieron registrar los adjuntos: '+eArch.message+'. La planilla no se guardó','error');
+      btn.disabled=false; btn.textContent='Guardar'; return;
+    }
   }
 
   // Historial
@@ -12579,7 +12633,7 @@ async function guardarPlanilla(estado){
     autor_id: currentUser?.id
   });
 
-  toastConAdjuntos(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓', archivosFallidos);
+  toast(estado==='enviada'?'Planilla enviada ✓':'Borrador guardado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevaPlanilla');
   // Notificar via DM si se envía a revisión
@@ -13690,6 +13744,16 @@ async function guardarNuevaSolicitud(){
     btn.disabled=false; btn.textContent='Enviar solicitud';
     return;
   }
+  // Adjuntos todo o nada: se suben antes de crear la solicitud
+  const solId = nuevoUuid();
+  const subida = await subirAdjuntosTodoONada('hidivo-archivos', `solicitudes/${solId}`,
+    [...document.getElementById('solNuevaArchivos').files].map(f=>({archivo:f, nombre:f.name, tipo:f.type})));
+  if(subida.error){
+    if(esErrorDeRed(subida.error)) await guardarSolicitudOffline(titulo, tipo, desc);
+    else toast(`No se pudo subir ${subida.mensaje}. La solicitud no se envió`,'error');
+    btn.disabled=false; btn.textContent='Enviar solicitud';
+    return;
+  }
   let siguienteNumero, sol, error;
   try{
     const { data: ultima } = await sb.from('solicitudes')
@@ -13697,6 +13761,7 @@ async function guardarNuevaSolicitud(){
       .order('numero', {ascending:false}).limit(1);
     siguienteNumero = (ultima?.[0]?.numero||0) + 1;
     ({ data: sol, error } = await sb.from('solicitudes').insert({
+      id: solId,
       proyecto_id: currentProyecto,
       numero: siguienteNumero,
       tipo, titulo,
@@ -13706,6 +13771,7 @@ async function guardarNuevaSolicitud(){
     }).select().single());
   }catch(e){ error = e; }
   if(error){
+    await retirarAdjuntos('hidivo-archivos', subida.adjuntos);
     if(esErrorDeRed(error)){
       await guardarSolicitudOffline(titulo, tipo, desc);
       btn.disabled=false; btn.textContent='Enviar solicitud';
@@ -13714,19 +13780,18 @@ async function guardarNuevaSolicitud(){
     toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Enviar solicitud'; return;
   }
 
-  // Subir archivos
-  const files = document.getElementById('solNuevaArchivos').files;
-  const archivosFallidos = [];
-  for(let i=0;i<files.length;i++){
-    const f=files[i];
-    const path=`solicitudes/${sol.id}/${Date.now()}_${nombreArchivoSeguro(f.name)}`;
-    const { error: upErr } = await sb.storage.from('hidivo-archivos').upload(path,f,{upsert:true});
-    if(upErr){ console.warn('Archivo de solicitud:', upErr); archivosFallidos.push(f.name+': '+upErr.message); continue; }
-    const { data: urlData } = sb.storage.from('hidivo-archivos').getPublicUrl(path);
-    await sb.from('solicitud_archivos').insert({solicitud_id:sol.id, url:urlData.publicUrl, nombre:f.name});
+  // Registrar los adjuntos ya subidos; si no se pueden registrar, la solicitud no queda guardada
+  if(subida.adjuntos.length){
+    const { error: eArch } = await sb.from('solicitud_archivos').insert(subida.adjuntos.map(a=>({solicitud_id:sol.id, url:a.url, nombre:a.nombre})));
+    if(eArch){
+      await sb.from('solicitudes').delete().eq('id', sol.id);
+      await retirarAdjuntos('hidivo-archivos', subida.adjuntos);
+      toast('No se pudieron registrar los adjuntos: '+eArch.message+'. La solicitud no se envió','error');
+      btn.disabled=false; btn.textContent='Enviar solicitud'; return;
+    }
   }
 
-  toastConAdjuntos('Solicitud enviada ✓', archivosFallidos);
+  toast('Solicitud enviada ✓','success');
   btn.disabled=false; btn.textContent='Enviar solicitud';
   cerrarModal('modalNuevaSolicitud');
   // Notificar al residente/fiscalizador via DM y por correo
