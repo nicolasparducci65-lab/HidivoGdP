@@ -4725,11 +4725,111 @@ async function guardarOC(estado){
   renderListaOCs();
 }
 
+// Plan de aprobación (puro, sin red): qué rubros se insertan y cuáles cambian de
+// cantidad. Devuelve {error} si la orden no se puede aplicar tal como está.
+// Las columnas generadas de rubros (monto_contrato, total_produccion) nunca se
+// envían: las calcula la base.
+function planAprobacionOC(oc, items, rubros){
+  const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
+  if(!items.length) return { error: 'La orden no tiene ítems' };
+  const codigosProyecto = new Set(rubros.map(r=>String(r.codigo??'').trim()).filter(Boolean));
+  const nuevos = items.filter(it=>it.tipo==='nuevo');
+  const repetidos = nuevos.map(it=>String(it.codigo??'').trim()).filter(c=>c && codigosProyecto.has(c));
+  if(repetidos.length) return { error: `Estos códigos ya existen en los rubros del proyecto: ${repetidos.join(', ')}. Cambia el código del ítem o conviértelo en modificación de cantidad.` };
+  const sinDescripcion = nuevos.filter(it=>!String(it.descripcion??'').trim()).length;
+  if(sinDescripcion) return { error: `${sinDescripcion} rubro(s) nuevo(s) sin descripción` };
+
+  const maxOrden = rubros.reduce((m,r)=>Math.max(m, r.orden||0), 0);
+  const altas = nuevos.map((it,i)=>({
+    proyecto_id: oc.proyecto_id, orden: maxOrden+1+i,
+    codigo: String(it.codigo??'').trim()||codigoOC, descripcion: it.descripcion, unidad: it.unidad||null,
+    cantidad_contrato: Number(it.cantidad)||0, precio_unitario: Number(it.precio_unitario)||0,
+    cantidad_ejecutada: 0,
+    es_orden_cambio: true, orden_cambio_codigo: codigoOC, orden_cambio_id: oc.id
+  }));
+
+  // Varias modificaciones del mismo rubro se acumulan en un solo cambio
+  const deltaPorRubro = {};
+  for(const it of items.filter(x=>x.tipo==='modificacion')){
+    if(!rubros.some(r=>r.id===it.rubro_id)) return { error: 'Una modificación apunta a un rubro que ya no existe en el proyecto' };
+    deltaPorRubro[it.rubro_id] = (deltaPorRubro[it.rubro_id]||0) + (Number(it.cantidad)||0);
+  }
+  const cambios = Object.keys(deltaPorRubro).map(id=>{
+    const r = rubros.find(x=>x.id===id);
+    const antes = Number(r.cantidad_contrato)||0;
+    return { rubro_id: id, codigo: r.codigo, antes, despues: Math.round((antes+deltaPorRubro[id])*1e4)/1e4 };
+  });
+  const negativos = cambios.filter(c=>c.despues<0);
+  if(negativos.length) return { error: `La cantidad quedaría negativa en: ${negativos.map(c=>`${c.codigo} (${c.despues})`).join(', ')}` };
+  return { codigoOC, altas, cambios };
+}
+
+// Aprobación sin función en la base: PostgREST no ofrece transacción, así que
+// se escribe en orden (rubros nuevos → modificaciones → estado) y ante
+// cualquier fallo se deshace lo ya escrito. Devuelve null o el mensaje de error.
+async function aplicarAprobacionOC(oc, plan, datosAprobacion){
+  const insertados = [], aplicados = [];
+  const deshacer = async()=>{
+    const pendientes = [];
+    for(const c of aplicados.slice().reverse()){
+      const { data, error } = await sb.from('rubros').update({ cantidad_contrato: c.antes }).eq('id', c.rubro_id).select('id');
+      if(error || !(data||[]).length) pendientes.push(`cantidad del rubro ${c.codigo} (debe volver a ${c.antes})`);
+    }
+    if(insertados.length){
+      const { data, error } = await sb.from('rubros').delete().in('id', insertados).select('id');
+      if(error || (data||[]).length!==insertados.length) pendientes.push(`${insertados.length-((data||[]).length)} rubro(s) nuevo(s) marcados ${plan.codigoOC}`);
+    }
+    return pendientes;
+  };
+  const fallar = async(msg)=>{
+    const pendientes = await deshacer();
+    return pendientes.length
+      ? `🛑 ${msg}. Además NO se pudo deshacer todo; revisa a mano: ${pendientes.join('; ')}.`
+      : `${msg}. No se aplicó nada: el presupuesto y la orden quedaron como estaban.`;
+  };
+
+  // 1) Rubros nuevos, en un solo insert
+  if(plan.altas.length){
+    const { data, error } = await sb.from('rubros').insert(plan.altas).select('id');
+    if(error) return `Error insertando los rubros nuevos: ${error.message}. No se aplicó nada.`;
+    (data||[]).forEach(r=>insertados.push(r.id));
+    if(insertados.length!==plan.altas.length) return await fallar(`Se insertaron ${insertados.length} de ${plan.altas.length} rubros nuevos`);
+  }
+  // 2) Modificaciones de cantidad
+  for(const c of plan.cambios){
+    const { data, error } = await sb.from('rubros').update({ cantidad_contrato: c.despues }).eq('id', c.rubro_id).select('id');
+    if(error || !(data||[]).length) return await fallar(`Error modificando el rubro ${c.codigo}: ${error?error.message:'la base no lo actualizó'}`);
+    aplicados.push(c);
+  }
+  // 3) Estado de la orden, solo si sigue solicitada
+  const { data: selladas, error: e3 } = await sb.from('ordenes_cambio').update(datosAprobacion)
+    .eq('id', oc.id).eq('estado','solicitada').select('id');
+  if(e3 || !(selladas||[]).length) return await fallar(`Error sellando la orden: ${e3?e3.message:'ya no está en estado solicitada'}`);
+  return null;
+}
+
 async function aprobarOC(id){
+  if(!puedeGestionarRubros()){ toast('Solo admin o fiscalizador pueden aprobar una orden de cambio','error'); return; }
+  if(bloquearSiCerrado()) return;
   const oficio = document.getElementById('ocOficio')?.value.trim();
   const fechaA = document.getElementById('ocFechaAprob')?.value;
   if(!oficio || !fechaA){ toast('Registra el N° de oficio y la fecha de aprobación','error'); return; }
-  if(!confirm('¿Aprobar y APLICAR esta orden de cambio al presupuesto?\n\nSe insertarán/modificarán los rubros y la orden quedará sellada. Esta acción no se puede deshacer desde la app.')) return;
+
+  // Se aprueba lo GUARDADO en la orden, no lo que haya en pantalla
+  const [{ data: oc, error: e1 }, { data: items, error: e2 }, { data: rubros, error: e3 }] = await Promise.all([
+    sb.from('ordenes_cambio').select('*').eq('id', id).single(),
+    sb.from('orden_cambio_items').select('*').eq('orden_id', id).order('created_at'),
+    sb.from('rubros').select('id,orden,codigo,cantidad_contrato,precio_unitario').eq('proyecto_id', currentProyecto)
+  ]);
+  if(e1 || e2 || e3 || !oc){ toast('No se pudo leer la orden: '+((e1||e2||e3)?.message||'no existe'),'error'); return; }
+  if(oc.estado!=='solicitada'){ toast('La orden ya no está en estado solicitada','error'); renderListaOCs(); return; }
+  const firma = l => JSON.stringify((l||[]).map(it=>[it.tipo, it.rubro_id||null, String(it.codigo??'').trim(), String(it.descripcion??'').trim(),
+    String(it.unidad??'').trim(), it.tipo==='nuevo' ? (Number(it.precio_unitario)||0).toFixed(4) : '', (Number(it.cantidad)||0).toFixed(4)]));
+  if(firma(items)!==firma(_ocItems)){ toast('Hay cambios sin guardar en los ítems. Pulsa "Guardar cambios" antes de aprobar','error'); return; }
+
+  const plan = planAprobacionOC(oc, items||[], rubros||[]);
+  if(plan.error){ toast(plan.error,'error'); return; }
+  if(!confirm(`¿Aprobar y APLICAR ${plan.codigoOC} al presupuesto?\n\nSe insertarán ${plan.altas.length} rubro(s) nuevo(s) y se modificará la cantidad de ${plan.cambios.length} rubro(s). La orden quedará sellada. Esta acción no se puede deshacer desde la app.`)) return;
 
   // Adjuntar oficio si hay archivo
   let archivoUrl = null;
@@ -4737,40 +4837,29 @@ async function aprobarOC(id){
   if(file){
     const path = `ordenes_cambio/${currentProyecto}/${Date.now()}_${file.name}`;
     const { error: upErr } = await sb.storage.from('hidivo-fotos').upload(path, file, {contentType:file.type, upsert:true});
-    if(!upErr) archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
+    if(upErr){ toast('No se pudo subir el oficio: '+upErr.message+'. La orden no se aprobó','error'); return; }
+    archivoUrl = sb.storage.from('hidivo-fotos').getPublicUrl(path).data.publicUrl;
   }
 
-  const oc = _ocEditando;
-  const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
-  // Aplicar impactos
-  const { data: maxOrden } = await sb.from('rubros').select('orden').eq('proyecto_id', currentProyecto).order('orden',{ascending:false}).limit(1);
-  let ordenSig = (maxOrden?.[0]?.orden||0)+1;
-  for(const it of _ocItems){
-    if(it.tipo==='nuevo'){
-      const { error } = await sb.from('rubros').insert({
-        proyecto_id: currentProyecto, orden: ordenSig++,
-        codigo: it.codigo||codigoOC, descripcion: it.descripcion, unidad: it.unidad||null,
-        cantidad_contrato: it.cantidad||0, precio_unitario: it.precio_unitario||0,
-        monto_contrato: (it.cantidad||0)*(it.precio_unitario||0),
-        cantidad_ejecutada: 0,
-        es_orden_cambio: true, orden_cambio_codigo: codigoOC, orden_cambio_id: oc.id
-      });
-      if(error){ toast('Error insertando rubro: '+error.message,'error'); return; }
-    } else {
-      const r = _ocRubros.find(x=>x.id===it.rubro_id);
-      if(!r) continue;
-      const nuevaCant = (r.cantidad_contrato||0)+(it.cantidad||0);
-      const { error } = await sb.from('rubros').update({
-        cantidad_contrato: nuevaCant,
-        monto_contrato: nuevaCant*(r.precio_unitario||0)
-      }).eq('id', it.rubro_id);
-      if(error){ toast('Error modificando rubro: '+error.message,'error'); return; }
-    }
+  // Con la función oc_aprobar en la base la aprobación es una sola transacción.
+  // Si todavía no está instalada, se aplica desde aquí con reversión.
+  let fallo = null;
+  const { error: eRpc } = await sb.rpc('oc_aprobar', { p_orden_id: id, p_oficio: oficio, p_fecha: fechaA, p_archivo_url: archivoUrl });
+  if(eRpc && (eRpc.code==='PGRST202' || /could not find the function/i.test(eRpc.message||''))){
+    const upd = { estado:'aprobada', oficio_referencia:oficio, fecha_aprobacion:fechaA, aprobado_por: currentUser?.id };
+    if(archivoUrl) upd.archivo_url = archivoUrl;
+    fallo = await aplicarAprobacionOC(oc, plan, upd);
+  } else if(eRpc){
+    fallo = `${eRpc.message}. No se aplicó nada: el presupuesto y la orden quedaron como estaban.`;
   }
-  const upd = { estado:'aprobada', oficio_referencia:oficio, fecha_aprobacion:fechaA, aprobado_por: currentUser?.id };
-  if(archivoUrl) upd.archivo_url = archivoUrl;
-  await sb.from('ordenes_cambio').update(upd).eq('id', id);
-  toast(`${codigoOC} aprobada y aplicada al presupuesto ✓`,'success');
+  if(fallo){
+    if(archivoUrl) await eliminarObjetosStorage([archivoUrl]);
+    toast(fallo,'error');
+    if(typeof cargarRubros==='function') cargarRubros();
+    return;
+  }
+  invalidarCacheProyectos();
+  toast(`${plan.codigoOC} aprobada y aplicada al presupuesto ✓`,'success');
   renderListaOCs();
   if(typeof cargarRubros==='function') cargarRubros();
 }
