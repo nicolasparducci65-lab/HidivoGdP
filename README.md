@@ -9,7 +9,7 @@ PWA en vanilla JS sin build: `index.html` (monolítico) + `styles.css` + `consta
 ## Módulo Recorridos 360 (`js/recorridos360.js`, `css/recorridos360.css`)
 
 Registro fotográfico 360 de la obra con cámaras Insta360 serie X (X3/X4/X5), ubicado sobre
-los planos del proyecto y comparable entre fechas.
+los planos del proyecto y comparable entre fechas (fase e).
 
 **Entrada válida:** JPEG equirectangular 2:1 exportado desde la app Insta360 o Insta360
 Studio (≈11900×5950, 15–25 MB). La app **no** procesa `.insp` ni `.insv` (mensaje: *"Exporta
@@ -92,6 +92,35 @@ esquema de `registrarNavegacion`), así «atrás» vuelve a la lista y «adelant
   consecutivos del plano visible, sin tocar los ubicados a mano; los anteriores al primer
   waypoint o posteriores al último quedan sin ubicar.
 
+**Comparar entre fechas (fase e, sin migración):**
+- **Emparejamiento:** las *parejas* de un punto ubicado son los puntos de **otros recorridos
+  publicados** del mismo plano dentro de un radio, a lo sumo una por recorrido (la más cercana;
+  en empate, la ubicada a mano y luego la de menor `orden`), ordenadas por fecha. El radio va en
+  **% del ancho del plano** (3 % por defecto; selector «Radio» en la barra del visor, 1–8 %, se
+  guarda en `localStorage` `r360_radio`) y la diferencia en `y` se corrige con la proporción
+  alto/ancho del plano (imagen: tamaño natural; PDF: página 1; si no se puede medir, 1:1 con aviso
+  en consola). Se consulta una caja alrededor del punto y el filtro exacto es la función pura
+  `r360Emparejar`. El recorrido abierto puede estar en borrador; los otros deben estar publicados.
+  Los puntos no guardan página de PDF: en planos PDF de varias páginas se emparejan por `x/y`.
+- **Línea de tiempo:** si el punto tiene parejas, aparecen pestañas de fecha dentro del visor
+  (abajo; `●` = recorrido abierto, con la etiqueta del punto si la tiene). Cambiar de pestaña
+  cambia la foto sin salir del punto y conserva el rumbo; mientras se ve otra fecha no se ofrece
+  ubicar, etiquetar ni eliminar. Pasar de punto vuelve al recorrido abierto.
+- **Vista dividida** («⇆ Comparar fechas»): izquierda = punto del recorrido abierto, derecha = su
+  pareja (por defecto la fecha anterior más reciente; las pestañas del visor derecho eligen otra).
+  Giro, inclinación y zoom sincronizados; manda el visor que se tocó por último. **Norte:** rumbo
+  real = `yaw + heading_norte` (la misma convención que `northOffset` de Pannellum y que
+  `GPano:PoseHeadingDegrees`), así `yawB = yawA + norteA − norteB`. El candado suelta los visores;
+  al volver a bloquear, lo que difiera del norte queda como **ajuste manual** (se conserva al pasar
+  de punto; «🧭 Alinear por norte» lo descarta). Si a una foto le falta `heading_norte` se
+  sincroniza sin norte y se avisa. ◀ ▶ mueven las dos fechas cuando el punto siguiente tiene
+  pareja en el recorrido elegido; si no, el visor derecho lo dice y conserva la fecha.
+- **Teléfono** (ancho < 900 px o puntero táctil con lado corto < 600 px): comparando, los dos
+  visores cargan la variante `web`, se sueltan de memoria las `full` y no hay precarga; al salir
+  se libera el segundo visor (contexto WebGL, descarga en curso y sus panorámicas en memoria).
+  La comparación se cierra también al volver a la lista, abrir otro recorrido, cambiar de proyecto
+  o publicar.
+
 **Depuración 360:** botón «🐞 Depuración 360» en la pantalla del módulo (admin/fiscalizador)
 que guarda una bandera en `localStorage` del contexto actual; en la app instalada de iOS hay
 que pulsarlo dentro de la app (no comparte almacenamiento con Safari), donde además sirve
@@ -127,7 +156,7 @@ aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
 ### Estado por fases
 (a) migración + bucket ✔ · (b) carga, metadatos, variantes, cola y `storage360` ✔ ·
 (c) visor Pannellum, mini-mapa, modos Por punto / Secuencia ✔ · (d) observación desde 360 ·
-(e) comparar y línea de tiempo · (f) SW/offline, `scripts/frames_360.sh`.
+(e) comparar, línea de tiempo y norte ✔ · (f) SW/offline, `scripts/frames_360.sh`.
 
 Fuera de alcance (preparado, no implementado): checklists por hito/rubro, agente IA de visión,
 migración a Cloudflare R2 (cambiar solo `storage360.*`), auditoría planillas vs evidencia,
