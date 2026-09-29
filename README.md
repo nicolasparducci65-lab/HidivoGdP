@@ -144,7 +144,8 @@ visores de planos navegan las páginas de un PDF, así que cada marca guarda su 
 `puntos_360.pagina` (por defecto 1; parte de la posición: se congela al publicar y está en la
 lista blanca del residente) y `observaciones.pin_pagina`. Una marca se guarda con la página
 visible, se dibuja solo en ella, la interpolación trabaja dentro de la página visible y «Ver en
-plano» abre el PDF en la página del pin. Planos de imagen y marcas sin dato: página 1. Al subir un
+plano» abre el PDF en la página del pin. En Recorridos 360 el mini-mapa sigue al punto que se abre (lista,
+◀ ▶ o marca): muestra su plano y su página, salvo que haya un punto armado para ubicar. Planos de imagen y marcas sin dato: página 1. Al subir un
 PDF de varias páginas se avisa, y la barra de páginas lo recuerda. **Sin la migración aplicada** el
 cliente sigue como antes en página 1 (reintenta sin la columna) y rechaza con aviso colocar una
 marca en otra página. Inventario del 2026-09-29: los 8 planos PDF existentes son de una página.

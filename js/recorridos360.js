@@ -1203,7 +1203,8 @@ function r360SetModo(m){
   r360PintarArmado();
 }
 
-async function r360PintarMapa(){
+// `paginaInicial`: página con la que se abre un PDF que aún no está cargado (el mini-mapa sigue al punto abierto)
+async function r360PintarMapa(paginaInicial){
   const cont = document.getElementById('r360Mapa'), nav = document.getElementById('r360PdfNav'); if(!cont) return;
   r360CancelarArrastre();                       // el overlay se reemplaza: un arrastre en curso no puede seguir
   const token = ++R360._mapaToken;
@@ -1219,7 +1220,7 @@ async function r360PintarMapa(){
     // La barra de páginas va FUERA del contenedor con scroll: nunca queda bajo el overlay de marcas
     if(nav) nav.innerHTML = '<div class="r360-pdfnav"><button onclick="r360PdfPagina(-1)">◀</button><span id="r360PdfInfo">Cargando…</span><button onclick="r360PdfPagina(1)">▶</button></div>';
     // Documento ya cargado (mismo plano tras un render completo): se vuelve a la página que se estaba viendo
-    const pag = (R360._pdf.doc && R360._pdf.url === p.url) ? R360._pdf.paginaPedida : 1;
+    const pag = (R360._pdf.doc && R360._pdf.url === p.url) ? R360._pdf.paginaPedida : Math.max(1, Math.round(Number(paginaInicial)) || 1);
     await r360RenderPdfMapa(p.url, pag, token);
   } else {
     const img = document.getElementById('r360MapaImg');
@@ -1243,7 +1244,8 @@ async function r360RenderPdfMapa(url, pagina, token){
       if(st.doc){ const viejo = st.doc; st.doc = null; st.url = null; try{ viejo.destroy()?.catch?.(() => {}); }catch(e){} }   // sin fuga de worker
       const doc = await pdfjsLib.getDocument(url).promise;
       if(token !== R360._mapaToken || R360._pdf !== st){ try{ doc.destroy(); }catch(e){} return; }
-      st.doc = doc; st.url = url; st.pagina = 1; st.paginaPedida = 1; pagina = 1;
+      pagina = Math.min(Math.max(1, Math.round(Number(pagina)) || 1), doc.numPages);   // documento recién abierto: la página pedida, dentro de rango
+      st.doc = doc; st.url = url; st.pagina = pagina; st.paginaPedida = pagina;
     }
   }catch(e){
     console.warn('[360] pdf plano:', e?.message || e);
@@ -1274,6 +1276,24 @@ async function r360RenderPdfMapa(url, pagina, token){
     if(token !== R360._mapaToken || R360._pdf !== st) return;   // render obsoleto: no escribe en la barra del plano vigente
     const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = `No se pudo mostrar la página ${pagina}`;
   }
+}
+// El mini-mapa sigue al punto que se abre en el visor: muestra su plano y su página. No se
+// mueve si el punto no está ubicado, si su plano ya no existe, ni mientras hay un punto armado
+// para ubicar o un arrastre en curso (el usuario está trabajando sobre el plano que ve).
+function r360MapaIrAPunto(p){
+  if(!p || !p.plano_id || p.x == null || p.y == null) return false;
+  if(R360.seleccionado || R360._drag) return false;
+  const pl = R360.planos.find(x => x.id === p.plano_id); if(!pl) return false;
+  const pag = r360EsPdf(pl) ? r360PaginaDe(p) : 1;
+  if(R360.planoId !== pl.id){
+    R360.planoId = pl.id; r360PdfReset();
+    r360PintarMapa(pag).catch(e => console.warn('[360] mapa:', e?.message || e));
+    return true;
+  }
+  if(!r360EsPdf(pl) || R360._pdf.paginaPedida === pag) return false;
+  if(R360._pdf.doc && R360._pdf.url === pl.url) r360PdfPagina(pag - R360._pdf.paginaPedida);
+  else r360PintarMapa(pag).catch(e => console.warn('[360] mapa:', e?.message || e));   // el PDF aún se está abriendo: se reabre en la página del punto
+  return true;
 }
 function r360PdfPagina(delta){
   const st = R360._pdf, d = st.doc; if(!d) return;
@@ -1696,6 +1716,7 @@ async function r360AbrirVisor(id, opts = {}){
   R360.visorPuntoId = id;
   if(!enCurso){ r360AbortarDescarga(); r360DestruirVisor(); }
   R360._visorRuta = path; R360.lt.mostrado = mostrar;
+  r360MapaIrAPunto(p);                                          // el mini-mapa muestra el plano y la página del punto
   r360PintarVisorBarra(); r360PintarMarcas(); r360MarcarThumbActual();
   r360PintarFechas();                                            // parejas de otras fechas; comparando, mueve también el segundo visor
   if(enCurso) return;
