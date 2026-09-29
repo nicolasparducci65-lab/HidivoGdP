@@ -30,10 +30,12 @@ const R360 = {
   // estado de página
   recorridos: [], recorridoActivo: null, puntos: [], planos: [],
   modo: 'punto', planoId: null, seleccionado: null,
-  visor: null, visorPuntoId: null, _visorAbort: null, _precarga: null, _blobs: new Map(), _descargas: new Map(),
+  visor: null, visorPuntoId: null, _visorAbort: null, _visorRuta: null, _precarga: null, _blobs: new Map(), _descargas: new Map(),
   _pdf: { doc: null, url: null, pagina: 1, paginaPedida: 1, tarea: null }, _mapaToken: 0, _drag: null,
   // comparar entre fechas (fase e)
   _parejas: new Map(), _aspectos: new Map(),
+  lt: { puntoId: null, parejas: null },                          // parejas del punto del visor (undefined = buscando, null = falló)
+  cmp: { activo: false, recId: null, rec: null, par: null, bloqueado: true, ajuste: 0, delta: 0, lider: 'a', visor: null, abort: null, bajando: null, rutas: new Set(), raf: 0 },
   // estado de carga
   procesando: false, lote: 0, subiendoIdLocal: null, _progreso: {}, _maxTextura: null
 };
@@ -428,6 +430,7 @@ function r360MaxTextura(){
 function r360VarianteVisor(){
   const max = r360MaxTextura(), full = max >= R360.FULL[0];
   if(!R360._logVariante){ R360._logVariante = true; console.info(`[360] MAX_TEXTURE_SIZE=${max} → el visor usa la variante ${full ? 'full (5760×2880)' : 'web (4096×2048)'}`); }
+  if(R360.cmp.activo && r360EsTelefono()) return 'archivo_web';   // dos panorámicas a la vez: la ligera en ambos visores
   return full ? 'archivo_full' : 'archivo_web';
 }
 
@@ -709,13 +712,14 @@ function r360ProgresoUI(){
 // (token), se destruye el visor, se abortan descargas y se vacían cachés.
 // NO se toca subiendoIdLocal: la subida en curso del bucle offline termina sola.
 function limpiarEstadoR360(){
+  r360CerrarComparacion();
   R360.recorridos = []; R360.recorridoActivo = null; R360.puntos = []; R360.planos = [];
   R360.planoId = null; R360.seleccionado = null; R360.visorPuntoId = null; r360CancelarArrastre();
   R360._mapaToken++; r360PdfReset();
   r360AbortarDescarga(); if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} R360._precarga = null; }
   r360VaciarCacheBlobs();
   r360DestruirVisor();
-  R360._parejas.clear(); R360._aspectos.clear();
+  R360._parejas.clear(); R360._aspectos.clear(); R360.lt.puntoId = null; R360.lt.parejas = null;
   if(R360.procesando){ R360.lote++; R360.procesando = false; }
   storage360.limpiarCache();
 }
@@ -842,6 +846,7 @@ async function abrirRecorrido360(id, opts = {}){
     if(rec.estado === R360.recorridoActivo.estado){
       R360.recorridoActivo = rec; if(puntos) R360.puntos = puntos;
       if(R360.visorPuntoId && !r360Punto(R360.visorPuntoId)){
+        r360CerrarComparacion();
         R360.visorPuntoId = null; r360AbortarDescarga(); r360DestruirVisor();
         const v = document.getElementById('r360Visor'); if(v) v.innerHTML = '<div class="r360-visor-msg">El punto que veías ya no existe</div>';
       }
@@ -854,6 +859,7 @@ async function abrirRecorrido360(id, opts = {}){
         r360PintarMapa().catch(e => console.warn('[360] mapa:', e?.message || e));
       }
       await r360PintarPuntos(); r360PintarMarcas(); r360PintarVisorBarra(); r360PintarCola();
+      r360PintarFechas();
       return;
     }
     // el estado cambió (otro dispositivo publicó / despublicó): render completo
@@ -861,9 +867,10 @@ async function abrirRecorrido360(id, opts = {}){
   // Vista actual del visor, para restaurarla si se reabre el mismo punto
   let vista = null; const idPrevio = R360.visorPuntoId;
   if(R360.visor && idPrevio){ try{ if(R360.visor.isLoaded()) vista = { yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
+  r360CerrarComparacion();                                      // el render completo reemplaza los dos visores
   if(R360.recorridoActivo?.id !== id) r360VaciarCacheBlobs();   // las panorámicas en memoria son de otro recorrido
   r360AbortarDescarga(); r360DestruirVisor(); R360.seleccionado = null; r360CancelarArrastre(); R360._mapaToken++;
-  R360._parejas.clear();                                        // otros recorridos pudieron publicarse o cambiar
+  R360._parejas.clear(); R360.lt.puntoId = null; R360.lt.parejas = null;   // otros recorridos pudieron publicarse o cambiar
   cont.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando recorrido...</div>';
   const [{ data: rec, error: e1 }, { data: puntos, error: e2 }, { data: planos }] = await Promise.all([
     sb.from('recorridos_360').select('*').eq('id', id).single(),
@@ -918,7 +925,17 @@ async function abrirRecorrido360(id, opts = {}){
     </div>` : (bloqueado ? '<div class="r360-aviso" style="margin:12px 16px">Recorrido publicado: fotos, posiciones y fechas quedan congeladas y no se añaden puntos (solo un administrador). Etiquetas, notas y norte siguen editables.</div>' : '')}
     <div class="r360-layout">
       <div class="r360-col-visor">
-        <div id="r360Visor" class="r360-visor"><div class="r360-visor-msg">${R360.puntos.length ? 'Toca una foto de la lista o una marca del plano para verla en 360' : 'Sube fotos para empezar'}</div></div>
+        <div class="r360-duo">
+          <div class="r360-visor-marco" id="r360MarcoA" data-slot="a">
+            <div id="r360Visor" class="r360-visor"><div class="r360-visor-msg">${R360.puntos.length ? 'Toca una foto de la lista o una marca del plano para verla en 360' : 'Sube fotos para empezar'}</div></div>
+            <div id="r360Fechas" class="r360-fechas"></div>
+          </div>
+          <div class="r360-visor-marco" id="r360MarcoB" data-slot="b" style="display:none">
+            <div id="r360VisorB" class="r360-visor"></div>
+            <div id="r360FechasB" class="r360-fechas"></div>
+          </div>
+        </div>
+        <div id="r360CmpBarra" class="r360-visor-barra"></div>
         <div id="r360VisorBarra" class="r360-visor-barra"></div>
       </div>
       <div class="r360-col-mapa">
@@ -943,6 +960,7 @@ async function abrirRecorrido360(id, opts = {}){
   const masUsado = Object.entries(usados).sort((a, b) => b[1] - a[1])[0]?.[0];
   if(!R360.planos.some(p => p.id === R360.planoId)) R360.planoId = (masUsado && R360.planos.some(p => p.id === masUsado)) ? masUsado : (R360.planos[0]?.id || null);
   r360SetModo(R360.modo);
+  r360CmpEnlazar();
   await r360PintarPuntos();
   r360PintarCola();
   r360PintarVisorBarra();
@@ -955,10 +973,11 @@ async function abrirRecorrido360(id, opts = {}){
 }
 // Cierra el recorrido abierto (visor, descargas, caché, selección, arrastre) sin pintar nada.
 function r360DescartarRecorridoAbierto(){
+  r360CerrarComparacion();
   if(!R360.recorridoActivo && !R360.visor && !R360.visorPuntoId && !R360._visorAbort) return;
   R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null; r360CancelarArrastre();
   r360AbortarDescarga(); r360DestruirVisor(); r360VaciarCacheBlobs(); R360._mapaToken++;
-  R360._parejas.clear();
+  R360._parejas.clear(); R360.lt.puntoId = null; R360.lt.parejas = null;
 }
 function r360Restaurando(){ return typeof _restaurandoHistorial !== 'undefined' && !!_restaurandoHistorial; }
 // «Volver a recorridos» (botón de la cabecera y miga de pan): lista + entrada
@@ -1114,7 +1133,7 @@ async function r360GuardarPunto(id, cambios){
   const p = r360Punto(id); if(p) Object.assign(p, cambios);
   return true;
 }
-function r360RepintarTrasCambio(){ r360PintarMarcas(); r360PintarVisorBarra(); r360PintarPuntos(); }
+function r360RepintarTrasCambio(){ r360PintarMarcas(); r360PintarVisorBarra(); r360PintarPuntos(); r360PintarFechas(); }
 
 // ── Mini-mapa: plano (imagen o PDF vía pdf.js) + overlay con marcas ─────────
 function r360PdfReset(){
@@ -1583,8 +1602,11 @@ async function r360DescargarPanoramica(path, signal, onProgreso){
 // no quedan contextos ni listeners huérfanos. Devuelve una promesa que los
 // llamadores pueden ignorar.
 function r360DestruirVisor(){
-  const v = R360.visor; if(!v) return Promise.resolve();
-  R360.visor = null;
+  const v = R360.visor; R360.visor = null;
+  return r360DestruirInstancia(v);
+}
+function r360DestruirInstancia(v){
+  if(!v) return Promise.resolve();
   // El host propio del visor sale del DOM YA: el destroy() de Pannellum (inmediato
   // o diferido) vacía "su" contenedor, y así nunca toca al visor siguiente ni al
   // mensaje de descarga que ocupa #r360Visor.
@@ -1611,11 +1633,13 @@ async function r360AbrirVisor(id, opts = {}){
   // ◀ ▶ conservan la orientación entre puntos consecutivos
   if(opts.mantenerVista && R360.visor){ try{ if(R360.visor.isLoaded()) opts = { ...opts, yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
   // Doble toque sobre el punto que YA se está descargando: no se aborta ni se reinicia desde 0 %
-  const enCurso = R360.visorPuntoId === id && !R360.visor && !!R360._visorAbort && !R360._visorAbort.signal.aborted;
+  const path = p[r360VarianteVisor()] || p.archivo_web || p.archivo_full;
+  const enCurso = R360.visorPuntoId === id && R360._visorRuta === path && !R360.visor && !!R360._visorAbort && !R360._visorAbort.signal.aborted;
   R360.visorPuntoId = id;
   if(!enCurso){ r360AbortarDescarga(); r360DestruirVisor(); }
-  const path = p[r360VarianteVisor()] || p.archivo_web || p.archivo_full;
+  R360._visorRuta = path;
   r360PintarVisorBarra(); r360PintarMarcas(); r360MarcarThumbActual();
+  r360PintarFechas();                                            // parejas de otras fechas; comparando, mueve también el segundo visor
   if(enCurso) return;
   if(!path){ cont.innerHTML = '<div class="r360-visor-msg">Este punto no tiene imagen</div>'; return; }
   cont.innerHTML = '<div class="r360-visor-msg" id="r360VisorMsg">Descargando panorámica…</div>';
@@ -1661,21 +1685,25 @@ function r360CrearVisor(cont, p, path, blob, opts){
   v._r360Host = host;
   v._r360Path = path;
   v._r360Orden = p.orden;
+  v._r360Punto = p;
   v._r360BlobUrl = bu;
   v._r360Listo = new Promise(res => { v.on('load', res); v.on('error', res); });
-  R360.visor = v;
+  const esB = opts.slot === 'b', vigente = () => (esB ? R360.cmp.visor : R360.visor) === v;
+  if(esB) R360.cmp.visor = v; else R360.visor = v;
   // Eventos del visor: van por consola con prefijo [360] (el panel de depuración los captura)
   v.on('load', () => {
     r360RevocarUrlVisor(v);                              // la textura ya está en GPU: el blob: URL sobra
     const d = opts._dbg;
-    console.info(`[360] visor load punto #${p.orden}: ${path.endsWith('full.jpg') ? 'full' : 'web'} · ${(blob.size / 1048576).toFixed(2)} MB`
+    console.info(`[360] visor${esB ? ' B' : ''} load punto #${p.orden}: ${path.endsWith('full.jpg') ? 'full' : 'web'} · ${(blob.size / 1048576).toFixed(2)} MB`
       + (d ? ` · descarga ${d.tDesc} ms${d.enCache ? ' (caché)' : ''} · visible a los ${Math.round(performance.now() - d.t0)} ms` : '')
-      + (R360.visor === v ? '' : ' · (visor ya reemplazado: se destruye)'));
-    if(R360.visor === v) r360Precargar(p.id);          // la siguiente se descarga solo cuando esta ya se ve
+      + (vigente() ? '' : ' · (visor ya reemplazado: se destruye)'));
+    if(!vigente()) return;
+    if(esB) R360.cmp.lider = 'a';                        // la fecha recién cargada se alinea con la que ya se veía
+    else r360Precargar(p.id);                            // la siguiente se descarga solo cuando esta ya se ve
   });
   v.on('error', msg => {
     r360RevocarUrlVisor(v);
-    console.warn(`[360] visor error punto #${p.orden}:`, msg);
+    console.warn(`[360] visor${esB ? ' B' : ''} error punto #${p.orden}:`, msg);
   });
 }
 // Precarga la siguiente panorámica a la caché en memoria (una a la vez; no
@@ -1683,6 +1711,7 @@ function r360CrearVisor(cont, p, path, blob, opts){
 function r360Precargar(id){
   const con = navigator.connection;
   if(con && (con.saveData || /2g/.test(con.effectiveType || ''))) return;
+  if(R360.cmp.activo && r360EsTelefono()) return;       // comparando en teléfono ya hay dos panorámicas en memoria
   const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === id), sig = lista[i + 1];
   if(!sig || !navigator.onLine) return;
   const path = sig[r360VarianteVisor()] || sig.archivo_web;
@@ -1698,15 +1727,254 @@ function r360PintarVisorBarra(){
   const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === p.id), prev = lista[i - 1], next = lista[i + 1];
   const ubica = r360PuedeUbicar(), ubicado = !!p.plano_id && p.x != null;
   const plano = ubicado ? R360.planos.find(x => x.id === p.plano_id) : null;
+  const parejas = R360.lt.puntoId === p.id ? R360.lt.parejas : undefined, radio = r360Radio();
+  const radios = R360.RADIOS.includes(radio) ? R360.RADIOS : [...R360.RADIOS, radio].sort((x, y) => x - y);
+  const ayudaCmp = parejas === undefined ? 'Buscando fotos de otras fechas…' : parejas === null ? 'No se pudieron buscar otras fechas (sin señal)'
+    : parejas.length ? 'Ver este lugar en dos fechas a la vez' : `Ningún recorrido publicado tiene una foto a menos de ${String(radio).replace('.', ',')} % de este punto en este plano`;
   b.innerHTML = `
     <button class="btn" ${prev ? `onclick="r360AbrirVisor('${prev.id}',{mantenerVista:true})"` : 'disabled'} title="Anterior">◀</button>
     <div class="r360-visor-info"><b>#${p.orden}</b>${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''} <span style="color:#676879">(${i + 1}/${lista.length})</span><br>
       <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${p.heading_norte != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span></div>
     <button class="btn" ${next ? `onclick="r360AbrirVisor('${next.id}',{mantenerVista:true})"` : 'disabled'} title="Siguiente">▶</button>
     ${ubica ? `<button class="btn" onclick="r360ArmarUbicacion('${p.id}')">📍 ${ubicado ? 'Reubicar' : 'Ubicar en plano'}</button>` : ''}
+    ${ubicado && !R360.cmp.activo ? `<button class="btn" onclick="r360Comparar()" ${parejas && parejas.length ? '' : 'disabled'} title="${escAttr(ayudaCmp)}">⇆ Comparar fechas${parejas && parejas.length ? ` (${parejas.length})` : ''}</button>` : ''}
+    ${ubicado ? `<label class="r360-radio" title="Radio para buscar el mismo lugar en otros recorridos, en % del ancho del plano">Radio <select onchange="r360SetRadio(this.value)">${radios.map(r => `<option value="${r}" ${r === radio ? 'selected' : ''}>${String(r).replace('.', ',')} %</option>`).join('')}</select></label>` : ''}
     ${ubica && ubicado ? `<button class="btn" onclick="r360QuitarDelPlano('${p.id}')">Quitar del plano</button>` : ''}
     ${PUEDE_PUBLICAR_R360() ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}
     ${ES_ADMIN_R360() ? `<button class="btn" style="color:#e2445c" onclick="r360EliminarPunto('${p.id}')" title="Borra el punto y sus 3 archivos">🗑 Eliminar punto</button>` : ''}`;
+}
+
+// ── Comparar entre fechas (fase e): vista dividida ──────────────────────────
+// Visor A (#r360Visor) = punto del recorrido abierto; visor B (#r360VisorB) =
+// su pareja en otro recorrido publicado (R360.cmp.recId). Bloqueados, el que
+// el usuario toca por último manda («líder») y el otro copia giro, inclinación
+// y zoom en cada cuadro. El giro se traslada por el norte de cada foto:
+// rumbo real = yaw + heading_norte (convención northOffset de Pannellum), así
+// yawB = yawA + nA − nB. Si a alguna foto le falta el norte, o el norte no es
+// exacto, se sueltan los visores, se alinean a mano y al volver a bloquear la
+// diferencia queda como ajuste manual (se conserva al pasar de punto).
+function r360EsTelefono(){
+  try{ return window.innerWidth < 900 || (matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600); }
+  catch(e){ return window.innerWidth < 900; }
+}
+// 'AAAA-MM-DD' (fecha del recorrido) sin pasar por zona horaria
+function r360FechaDia(f){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(f || '')); if(!m) return String(f || '—');
+  try{ return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }); }
+  catch(e){ return m[0]; }
+}
+function r360NormYaw(y){ return ((Number(y) + 180) % 360 + 360) % 360 - 180; }
+// Giro que se suma al yaw de `a` para mirar al mismo rumbo en `b`; null si a alguna le falta el norte
+function r360DeltaNorte(a, b){
+  if(!a || !b || a.heading_norte == null || b.heading_norte == null) return null;
+  return r360NormYaw(Number(a.heading_norte) - Number(b.heading_norte));
+}
+function r360CmpRecalcularDelta(){
+  const c = R360.cmp;
+  c.delta = r360NormYaw((r360DeltaNorte(r360Punto(R360.visorPuntoId), c.par?.punto) ?? 0) + c.ajuste);
+}
+function r360ParejasVigentes(){
+  const id = R360.visorPuntoId;
+  return (id && R360.lt.puntoId === id && Array.isArray(R360.lt.parejas)) ? R360.lt.parejas : [];
+}
+// Fecha por defecto al comparar: la anterior más reciente; si no hay, la siguiente
+function r360ParejaPorDefecto(parejas, rec){
+  const antes = parejas.filter(e => String(e.recorrido.fecha || '') <= String(rec?.fecha || ''));
+  return antes.length ? antes[antes.length - 1] : parejas[0];
+}
+function r360SetRadio(v){
+  v = Number(v); if(!(v >= 0.5 && v <= 20)) return;
+  r360DbgLS('r360_radio', String(v));
+  R360._parejas.clear();
+  r360PintarFechas();
+}
+
+// Busca las parejas del punto del visor y pinta pestañas y barras. Comparando,
+// lleva el visor B a la pareja del punto nuevo (o avisa que no la hay).
+async function r360PintarFechas(){
+  const id = R360.visorPuntoId, p = r360Punto(id);
+  if(!p){ R360.lt.puntoId = null; R360.lt.parejas = null; r360PintarTiras(); return; }
+  if(R360.lt.puntoId !== id){ R360.lt.puntoId = id; R360.lt.parejas = undefined; r360PintarTiras(); }
+  const parejas = await r360ParejasDe(p);
+  if(R360.visorPuntoId !== id || !r360Punto(id)) return;      // el usuario ya está en otro punto (o salió)
+  R360.lt.parejas = parejas;
+  r360PintarTiras(); r360PintarVisorBarra();
+  if(R360.cmp.activo) r360CmpAbrirB();
+}
+function r360FechaTabHtml(e, activa, accion){
+  const t = `${e.recorrido.titulo || ''} · #${e.punto.orden}${e.distancia != null ? ' · a ' + e.distancia.toFixed(1).replace('.', ',') + ' % en el plano' : ''}`;
+  return `<button type="button" class="r360-fecha-tab ${activa ? 'activa' : ''}" ${accion ? `onclick="${accion}"` : 'disabled'} title="${escAttr(t)}">${escAttr(r360FechaDia(e.recorrido.fecha))}${e.punto.etiqueta ? ' · ' + escAttr(e.punto.etiqueta) : ''}</button>`;
+}
+function r360PintarTiras(){
+  const a = document.getElementById('r360Fechas'), b = document.getElementById('r360FechasB');
+  const c = R360.cmp, base = r360Punto(R360.visorPuntoId), rec = R360.recorridoActivo, parejas = r360ParejasVigentes();
+  if(a) a.innerHTML = (c.activo && base && rec) ? r360FechaTabHtml({ punto: base, recorrido: rec, distancia: null }, true, null) : '';
+  if(b) b.innerHTML = c.activo ? parejas.map(e => r360FechaTabHtml(e, e.recorrido.id === c.recId, `r360CmpFecha('${e.recorrido.id}')`)).join('') : '';
+}
+
+// El líder es el visor que el usuario tocó por último (las pestañas de fecha no cuentan)
+function r360CmpEnlazar(){
+  ['r360MarcoA', 'r360MarcoB'].forEach(id => {
+    const m = document.getElementById(id); if(!m) return;
+    const marcar = e => { if(!e.target.closest?.('.r360-fechas')) R360.cmp.lider = m.dataset.slot; };
+    ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(ev => m.addEventListener(ev, marcar, { capture: true, passive: true }));
+  });
+}
+function r360CmpLayout(on){
+  document.querySelector('.r360-layout')?.classList.toggle('comparando', !!on);
+  const mb = document.getElementById('r360MarcoB'); if(mb) mb.style.display = on ? '' : 'none';
+  // Pannellum no se entera de que su contenedor cambió de tamaño
+  requestAnimationFrame(() => { [R360.visor, R360.cmp.visor].forEach(v => { try{ if(v && v.isLoaded()) v.resize(); }catch(e){} }); });
+}
+function r360Comparar(recId){
+  const c = R360.cmp, base = r360Punto(R360.visorPuntoId), rec = R360.recorridoActivo;
+  if(!base || !rec || !document.getElementById('r360VisorB')) return;
+  const parejas = r360ParejasVigentes();
+  if(!parejas.length){ toast('Este punto no tiene fotos de otras fechas dentro del radio', 'info'); return; }
+  const destino = parejas.find(e => e.recorrido.id === recId) || r360ParejaPorDefecto(parejas, rec);
+  c.activo = true; c.recId = destino.recorrido.id; c.rec = destino.recorrido; c.par = null; c.bloqueado = true; c.ajuste = 0; c.delta = 0; c.lider = 'a';
+  r360Dbg(`comparar: punto #${base.orden} con ${destino.recorrido.fecha} · ${r360EsTelefono() ? 'teléfono (variante web en los dos visores)' : 'escritorio'}`);
+  // Teléfono: las 'full' que quedaban en memoria dejan sitio a las dos 'web'
+  if(r360EsTelefono()){ [...R360._blobs.keys()].filter(k => k.endsWith('/full.jpg')).forEach(r360OlvidarBlob); r360DbgCache(); }
+  r360CmpLayout(true);
+  if(window.innerWidth < 900) document.querySelector('.r360-duo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if(!c.raf) c.raf = requestAnimationFrame(r360CmpTick);
+  // En teléfono el visor A pasa a la variante web; si ya muestra la ruta que toca, no se recarga
+  const path = base[r360VarianteVisor()] || base.archivo_web || base.archivo_full;
+  if(!R360.visor || R360.visor._r360Path !== path) r360AbrirVisor(base.id, { mantenerVista: true, scroll: false });   // → r360PintarFechas → visor B
+  else { r360PintarTiras(); r360PintarVisorBarra(); r360CmpAbrirB(); }
+}
+function r360CmpFecha(recId){
+  const c = R360.cmp; if(!c.activo || c.recId === recId) return;
+  c.recId = recId; c.rec = r360ParejasVigentes().find(e => e.recorrido.id === recId)?.recorrido || c.rec;
+  r360PintarTiras(); r360CmpAbrirB();
+}
+// Cierra la comparación y LIBERA el segundo visor (contexto WebGL, descarga en
+// curso y, en teléfono, sus panorámicas en memoria). Se llama también desde
+// todos los cierres del recorrido; sin comparación abierta solo repone el estado.
+function r360CerrarComparacion(){
+  const c = R360.cmp, estaba = c.activo;
+  if(c.raf){ try{ cancelAnimationFrame(c.raf); }catch(e){} c.raf = 0; }
+  if(c.abort){ try{ c.abort.abort(); }catch(e){} c.abort = null; }
+  const v = c.visor; c.visor = null;
+  if(v) r360DestruirInstancia(v);
+  if(c.rutas.size && r360EsTelefono()){ c.rutas.forEach(r360OlvidarBlob); r360DbgCache(); }
+  c.rutas.clear();
+  c.activo = false; c.recId = null; c.rec = null; c.par = null; c.bajando = null; c.bloqueado = true; c.ajuste = 0; c.delta = 0; c.lider = 'a';
+  const vb = document.getElementById('r360VisorB'); if(vb) vb.innerHTML = '';
+  if(estaba){ r360Dbg('comparar: cerrado, segundo visor liberado'); r360CmpLayout(false); r360PintarTiras(); r360PintarCmpBarra(); r360PintarVisorBarra(); }
+}
+
+// Visor B: la pareja del punto actual en el recorrido elegido
+async function r360CmpAbrirB(){
+  const c = R360.cmp, cont = document.getElementById('r360VisorB');
+  if(!c.activo || !cont) return;
+  const par = r360ParejasVigentes().find(e => e.recorrido.id === c.recId) || null;
+  const path = par ? (par.punto[r360VarianteVisor()] || par.punto.archivo_web || par.punto.archivo_full) : null;
+  // La misma foto ya está puesta o bajando: solo se refrescan datos y barra
+  if(par && path && ((c.visor && c.visor._r360Path === path) || (c.bajando === path && c.abort && !c.abort.signal.aborted))){
+    c.par = par; r360CmpRecalcularDelta(); r360PintarCmpBarra(); return;
+  }
+  // Vista de partida: la del visor A trasladada por el norte; si A aún no cargó, la del B saliente
+  c.par = par; r360CmpRecalcularDelta();
+  let vista = {};
+  try{
+    if(R360.visor && R360.visor.isLoaded()) vista = { yaw: r360NormYaw(R360.visor.getYaw() + c.delta), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() };
+    else if(c.visor && c.visor.isLoaded()) vista = { yaw: c.visor.getYaw(), pitch: c.visor.getPitch(), hfov: c.visor.getHfov() };
+  }catch(e){}
+  if(c.abort){ try{ c.abort.abort(); }catch(e){} c.abort = null; }
+  const viejo = c.visor; c.visor = null; c.bajando = null;
+  if(viejo) r360DestruirInstancia(viejo);
+  r360PintarCmpBarra();
+  if(!par){
+    cont.innerHTML = `<div class="r360-visor-msg">${R360.lt.parejas === null ? 'No se pudieron buscar las fotos de otras fechas (sin señal)' : `Sin foto del ${escAttr(r360FechaDia(c.rec?.fecha))} cerca de este punto`}</div>`;
+    return;
+  }
+  if(!path){ cont.innerHTML = '<div class="r360-visor-msg">Esa fecha no tiene imagen</div>'; return; }
+  cont.innerHTML = '<div class="r360-visor-msg" id="r360VisorMsgB">Descargando panorámica…</div>';
+  const ac = new AbortController(); c.abort = ac; c.bajando = path; c.rutas.add(path);
+  const t0 = performance.now(), enCache = R360._blobs.has(path);
+  const progreso = (r, t) => {
+    const m = document.getElementById('r360VisorMsgB');
+    if(m) m.textContent = t ? `Descargando panorámica… ${Math.round(r / t * 100)} %` : `Descargando panorámica… ${(r / 1048576).toFixed(1)} MB`;
+  };
+  const vigente = () => c.activo && c.abort === ac && !ac.signal.aborted;
+  let blob = null;
+  for(let intento = 0; intento < 2 && !blob; intento++){
+    try{ blob = await r360DescargarPanoramica(path, ac.signal, progreso); }
+    catch(e){
+      if(!vigente()) return;
+      if(e?.name === 'AbortError' && intento === 0) continue;   // descarga compartida que abortó otro: se reintenta con la señal propia
+      c.abort = null; c.bajando = null;
+      cont.innerHTML = `<div class="r360-visor-msg">No se pudo descargar la imagen${navigator.onLine ? '' : ' (sin señal)'}</div>`;
+      return;
+    }
+  }
+  if(!blob || !vigente()) return;
+  c.abort = null; c.bajando = null;
+  // A pudo moverse mientras B descargaba: la vista de partida se toma ahora
+  try{ if(R360.visor && R360.visor.isLoaded()) vista = { yaw: r360NormYaw(R360.visor.getYaw() + c.delta), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){}
+  r360CrearVisor(cont, par.punto, path, blob, { ...vista, slot: 'b', _dbg: { t0, tDesc: Math.round(performance.now() - t0), enCache } });
+}
+
+// Sincronía: un cuadro de animación; solo escribe en el seguidor si difiere
+function r360CmpTick(){
+  const c = R360.cmp; c.raf = 0;
+  if(!c.activo) return;
+  c.raf = requestAnimationFrame(r360CmpTick);
+  if(!c.bloqueado) return;
+  const a = R360.visor, b = c.visor; if(!a || !b) return;
+  try{
+    if(!a.isLoaded() || !b.isLoaded()) return;
+    const mandaB = c.lider === 'b', lider = mandaB ? b : a, seg = mandaB ? a : b;
+    const yaw = r360NormYaw(lider.getYaw() + (mandaB ? -c.delta : c.delta)), pitch = lider.getPitch(), hfov = lider.getHfov();
+    if(Math.abs(r360NormYaw(seg.getYaw() - yaw)) > 0.01) seg.setYaw(yaw, false);
+    if(Math.abs(seg.getPitch() - pitch) > 0.01) seg.setPitch(pitch, false);
+    if(Math.abs(seg.getHfov() - hfov) > 0.01) seg.setHfov(hfov, false);
+  }catch(e){}
+}
+// Bloquear fija la alineación que se ve: lo que difiera del norte queda como ajuste manual
+function r360CmpBloqueo(){
+  const c = R360.cmp; if(!c.activo) return;
+  if(c.bloqueado) c.bloqueado = false;
+  else {
+    try{
+      const a = R360.visor, b = c.visor;
+      if(a && b && a.isLoaded() && b.isLoaded()){
+        const norte = r360DeltaNorte(r360Punto(R360.visorPuntoId), c.par?.punto) ?? 0;
+        c.ajuste = r360NormYaw(b.getYaw() - a.getYaw() - norte);
+        if(Math.abs(c.ajuste) < 0.5) c.ajuste = 0;
+      }
+    }catch(e){}
+    c.bloqueado = true;
+  }
+  r360CmpRecalcularDelta(); r360PintarCmpBarra();
+}
+function r360CmpNorte(){
+  const c = R360.cmp; if(!c.activo) return;
+  c.ajuste = 0; c.bloqueado = true; c.lider = 'a';
+  r360CmpRecalcularDelta(); r360PintarCmpBarra();
+}
+function r360PintarCmpBarra(){
+  const b = document.getElementById('r360CmpBarra'); if(!b) return;
+  const c = R360.cmp, base = r360Punto(R360.visorPuntoId), rec = R360.recorridoActivo;
+  if(!c.activo || !base || !rec){ b.innerHTML = ''; return; }
+  const par = c.par, norte = par ? r360DeltaNorte(base, par.punto) : null;
+  let estado;
+  if(!par) estado = `El recorrido del ${escAttr(r360FechaDia(c.rec?.fecha))} no tiene foto cerca de este punto: elige otra fecha o pasa de punto con ◀ ▶`;
+  else if(!c.bloqueado) estado = 'Visores sueltos: alinea cada uno y pulsa el candado para fijar esa alineación';
+  else if(c.ajuste) estado = `Giro, inclinación y zoom sincronizados con tu alineación manual (${c.ajuste > 0 ? '+' : ''}${Math.round(c.ajuste)}°${norte == null ? '' : ' sobre el norte'})`;
+  else if(norte == null){
+    const faltan = [base.heading_norte == null ? 'la actual' : null, par.punto.heading_norte == null ? 'la otra fecha' : null].filter(Boolean).join(' ni ');
+    estado = `Sincronizados sin norte (no lo trae ${faltan}): si no coinciden, suelta, alinea a mano y vuelve a bloquear`;
+  }
+  else estado = 'Giro, inclinación y zoom sincronizados · norte de cada foto aplicado';
+  b.innerHTML = `
+    <button class="btn" onclick="r360CmpBloqueo()" ${par ? '' : 'disabled'} title="${c.bloqueado ? 'Soltar: mover cada visor por separado' : 'Bloquear: los dos visores se mueven juntos'}">${c.bloqueado ? '🔒 Bloqueado' : '🔓 Suelto'}</button>
+    <button class="btn" onclick="r360CmpNorte()" ${par && norte != null && (c.ajuste || !c.bloqueado) ? '' : 'disabled'} title="Descarta la alineación manual y vuelve a alinear por el norte de cada foto">🧭 Alinear por norte</button>
+    <div class="r360-visor-info"><b>${escAttr(r360FechaDia(rec.fecha))}</b> (actual)${par ? ` ⇆ <b>${escAttr(r360FechaDia(par.recorrido.fecha))}</b> · ${escAttr(par.recorrido.titulo || '')} · #${par.punto.orden}${par.punto.etiqueta ? ' · ' + escAttr(par.punto.etiqueta) : ''} <span>(a ${par.distancia.toFixed(1).replace('.', ',')} % en el plano)</span>` : ''}<br>
+      <span>${estado}</span></div>
+    <button class="btn" onclick="r360CerrarComparacion()">✕ Salir de comparar</button>`;
 }
 
 // Arranque del panel de depuración (sin ningún efecto si está apagado)

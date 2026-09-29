@@ -73,6 +73,21 @@
 .r360-visor-info span{color:#676879;font-size:11px}
 .r360-visor-hint{color:#676879;font-size:12px;padding:6px 0}
 
+/* Comparar entre fechas (fase e): dos visores y pestañas de fecha dentro del visor */
+.r360-duo{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.r360-visor-marco{position:relative;min-width:0}
+.r360-fechas{position:absolute;left:8px;right:60px;bottom:8px;z-index:6;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.r360-fechas::-webkit-scrollbar{display:none}
+.r360-fechas:empty{display:none}
+.r360-fecha-tab{flex:none;border:none;border-radius:14px;padding:5px 11px;font-size:11px;line-height:1.2;background:rgba(0,0,0,.62);color:#fff;cursor:pointer;white-space:nowrap}
+.r360-fecha-tab.activa{background:#ffcb00;color:#1a1a2e;font-weight:700}
+.r360-fecha-tab:disabled{cursor:default}
+.r360-radio{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#676879}
+.r360-radio select{font-size:12px;padding:3px 4px;border:1px solid #c5c7d4;border-radius:6px;background:#fff}
+.r360-layout.comparando{grid-template-columns:minmax(0,1fr)}
+.r360-layout.comparando .r360-duo{grid-template-columns:repeat(2,minmax(0,1fr))}
+.r360-layout.comparando .r360-visor{aspect-ratio:auto;height:60vh;min-height:240px;max-height:none}
+
 /* Panel de depuración 360 (solo existe con la bandera activada) */
 .r360-dbg{position:fixed;right:8px;bottom:8px;z-index:99999;width:min(96vw,460px);background:#151515;color:#ddd;border:1px solid #444;border-radius:8px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;box-shadow:0 4px 16px rgba(0,0,0,.45)}
 .r360-dbg-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #333}
@@ -86,6 +101,13 @@
   .r360-col-visor{order:-1}
   .r360-visor{aspect-ratio:auto;height:55vh}
   .r360-mapa{max-height:55vh}
+  /* Comparando en teléfono: uno sobre otro en vertical, lado a lado en horizontal */
+  .r360-layout.comparando .r360-duo{grid-template-columns:minmax(0,1fr)}
+  .r360-layout.comparando .r360-visor{height:36vh;min-height:170px}
+}
+@media (max-width:900px) and (orientation:landscape){
+  .r360-layout.comparando .r360-duo{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .r360-layout.comparando .r360-visor{height:72vh}
 }
 @media (max-width:600px){
   .r360-grid{grid-template-columns:1fr}
