@@ -34,6 +34,7 @@ const R360 = {
   _pdf: { doc: null, url: null, pagina: 1, paginaPedida: 1, tarea: null }, _mapaToken: 0, _drag: null,
   // comparar entre fechas (fase e)
   _parejas: new Map(), _aspectos: new Map(),
+  _sinPagina: false,                                            // true si la base aún no tiene puntos_360.pagina (migración 20260929 sin aplicar)
   lt: { puntoId: null, parejas: null, mostrado: null },          // parejas del punto del visor (undefined = buscando, null = falló) y la que se ve en su lugar
   cmp: { activo: false, recId: null, rec: null, par: null, bloqueado: true, ajuste: 0, delta: 0, lider: 'a', visor: null, abort: null, bajando: null, rutas: new Set(), raf: 0 },
   // estado de carga
@@ -726,7 +727,7 @@ function limpiarEstadoR360(){
   r360AbortarDescarga(); if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} R360._precarga = null; }
   r360VaciarCacheBlobs();
   r360DestruirVisor();
-  R360._parejas.clear(); R360._aspectos.clear(); R360.lt.puntoId = null; R360.lt.parejas = null; R360.lt.mostrado = null;
+  R360._parejas.clear(); R360._aspectos.clear(); R360._sinPagina = false; R360.lt.puntoId = null; R360.lt.parejas = null; R360.lt.mostrado = null;
   if(R360.procesando){ R360.lote++; R360.procesando = false; }
   storage360.limpiarCache();
 }
@@ -1131,8 +1132,35 @@ async function r360EliminarRecorrido(){
 // .select('id'): un UPDATE que no alcanza filas (punto borrado en otro
 // dispositivo, o filtrado por RLS) no es un error para PostgREST; se detecta
 // por la respuesta vacía y NO se toca el estado local.
+// Página del plano (PDF) sobre la que están x/y: columna puntos_360.pagina (migración
+// 20260929_pagina_en_puntos_y_pines.sql). Una marca se guarda con la página visible, se dibuja
+// solo en ella y solo se empareja con marcas de la misma página. Mientras la migración no esté
+// aplicada el módulo sigue como antes (todo en página 1) y solo rechaza ubicar en otra página.
+function r360PaginaDe(p){ return Math.max(1, Math.round(Number(p && p.pagina)) || 1); }
+function r360PaginaVisible(){
+  const pl = R360.planos.find(x => x.id === R360.planoId);
+  return (pl && r360EsPdf(pl)) ? Math.max(1, R360._pdf.pagina || 1) : 1;
+}
+function r360FaltaColumnaPagina(error){
+  return !!error && ['PGRST204', '42703'].includes(String(error.code)) && /pagina/i.test(error.message || '');
+}
+// UPDATE de un punto. Devuelve { data, error } como PostgREST.
+async function r360ActualizarPunto(id, cambios){
+  let envio = cambios;
+  if(R360._sinPagina && 'pagina' in envio){
+    if(r360PaginaDe(envio) > 1) return { data: null, error: { code: 'R360_SIN_PAGINA', message: 'para ubicar puntos en otra página del PDF falta aplicar la migración 20260929_pagina_en_puntos_y_pines.sql' } };
+    envio = { ...envio }; delete envio.pagina;
+  }
+  let r = await sb.from('puntos_360').update(envio).eq('id', id).select('id');
+  if(r360FaltaColumnaPagina(r.error) && 'pagina' in envio){
+    R360._sinPagina = true; R360._parejas.clear();
+    console.warn('[360] la base no tiene puntos_360.pagina (migración 20260929 sin aplicar): se trabaja con una sola página');
+    return r360ActualizarPunto(id, cambios);
+  }
+  return r;
+}
 async function r360GuardarPunto(id, cambios){
-  const { data, error } = await sb.from('puntos_360').update(cambios).eq('id', id).select('id');
+  const { data, error } = await r360ActualizarPunto(id, cambios);
   if(error){
     toast(esErrorDeRed(error) ? 'Sin señal: la ubicación en el plano se guarda con conexión' : 'No se pudo guardar: ' + error.message, 'error');
     return false;
@@ -1141,6 +1169,7 @@ async function r360GuardarPunto(id, cambios){
   const p = r360Punto(id); if(p) Object.assign(p, cambios);
   return true;
 }
+function r360Posicion(x, y){ return { plano_id: R360.planoId, pagina: r360PaginaVisible(), x, y, waypoint: true }; }
 function r360RepintarTrasCambio(){ r360PintarMarcas(); r360PintarVisorBarra(); r360PintarPuntos(); r360PintarFechas(); }
 
 // ── Mini-mapa: plano (imagen o PDF vía pdf.js) + overlay con marcas ─────────
@@ -1238,7 +1267,7 @@ async function r360RenderPdfMapa(url, pagina, token){
     await tarea.promise;
     if(st.tarea === tarea) st.tarea = null;
     st.pagina = pagina;
-    const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = `Página ${pagina} de ${st.doc.numPages}`;
+    const info = document.getElementById('r360PdfInfo'); if(info) info.textContent = `Página ${pagina} de ${st.doc.numPages}` + (st.doc.numPages > 1 ? ' · las marcas son de cada página' : '');
   }catch(e){
     if(e?.name === 'RenderingCancelledException') return;
     console.warn('[360] pdf página:', e?.message || e);
@@ -1260,7 +1289,8 @@ function r360PintarMarcas(){
   // Durante un arrastre no se reemplaza el overlay (soltaría la captura del puntero): se repinta al terminar
   if(R360._drag){ R360._drag.repintar = true; return; }
   if(ov){
-    const enPlano = R360.puntos.filter(p => p.plano_id === R360.planoId && p.x != null && p.y != null);
+    const pag = r360PaginaVisible();
+    const enPlano = R360.puntos.filter(p => p.plano_id === R360.planoId && p.x != null && p.y != null && r360PaginaDe(p) === pag);
     ov.innerHTML = enPlano.map(p => `<div class="r360-marca ${p.waypoint ? 'waypoint' : 'interp'} ${p.id === R360.visorPuntoId ? 'actual' : ''} ${p.id === R360.seleccionado ? 'sel' : ''}" data-id="${p.id}" style="left:${Number(p.x)}%;top:${Number(p.y)}%" title="#${p.orden}${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''}">${p.orden}</div>`).join('');
   }
   const mapa = document.getElementById('r360Mapa'); if(mapa) mapa.classList.toggle('armado', !!R360.seleccionado && r360PuedeUbicar());
@@ -1304,7 +1334,7 @@ function r360EnlazarOverlay(ov){
   const fin = async e => {
     const d = R360._drag; if(!d || e.pointerId !== d.pointerId) return; R360._drag = null;
     if(d.moved && d.c){
-      const ok = await r360GuardarPunto(d.id, { plano_id: R360.planoId, x: d.c.x, y: d.c.y, waypoint: true });
+      const ok = await r360GuardarPunto(d.id, r360Posicion(d.c.x, d.c.y));
       if(ok) r360RepintarTrasCambio(); else r360PintarMarcas();   // si falló, la marca vuelve a su sitio
     } else if(e.type === 'pointerup' && r360Punto(d.id)){
       r360AbrirVisor(d.id);                                  // repinta marcas (incluye lo diferido durante el arrastre)
@@ -1335,8 +1365,8 @@ async function r360UbicarSeleccionado(c){
   let sig = null;
   if(R360.modo === 'secuencia'){ const lista = r360PuntosOrdenados(), i = lista.findIndex(x => x.id === id); sig = lista[i + 1] || null; }
   R360.seleccionado = sig ? sig.id : null;
-  const previo = { plano_id: p.plano_id, x: p.x, y: p.y, waypoint: p.waypoint };
-  const cambios = { plano_id: R360.planoId, x: c.x, y: c.y, waypoint: true };
+  const previo = { plano_id: p.plano_id, pagina: r360PaginaDe(p), x: p.x, y: p.y, waypoint: p.waypoint };
+  const cambios = r360Posicion(c.x, c.y);
   Object.assign(p, cambios); r360PintarMarcas();                       // marca provisional
   const ok = await r360GuardarPunto(id, cambios);
   if(!ok){
@@ -1359,7 +1389,7 @@ async function r360QuitarDelPlano(id){
   if(!r360PuedeUbicar()) return;
   const p = r360Punto(id); if(!p) return;
   const eraWaypoint = !!p.waypoint;
-  if(await r360GuardarPunto(id, { plano_id: null, x: null, y: null, waypoint: false })){
+  if(await r360GuardarPunto(id, { plano_id: null, pagina: 1, x: null, y: null, waypoint: false })){
     if(eraWaypoint) toast('Quitado del plano. Los puntos interpolados a partir de él conservan su posición; vuelve a Interpolar si hace falta.', 'info');
     r360RepintarTrasCambio();
   }
@@ -1373,23 +1403,24 @@ async function r360EditarEtiqueta(id){
 
 // ── Secuencia: interpolación por índice entre waypoints del plano visible ───
 // Los puntos se ordenan por `orden` (= fecha de captura al subir). Entre dos
-// waypoints consecutivos (ubicados a mano en ESTE plano), cada punto intermedio
+// waypoints consecutivos (ubicados a mano en ESTE plano y ESTA página), cada punto intermedio
 // que no sea waypoint recibe una posición lineal según su índice. Los puntos
 // antes del primer waypoint o después del último no se tocan.
 function r360CalcularInterpolacion(){
-  const lista = r360PuntosOrdenados();
-  const wps = lista.map((p, i) => ({ p, i })).filter(o => o.p.waypoint && o.p.x != null && o.p.plano_id === R360.planoId);
-  if(wps.length < 2) return { motivo: `Se necesitan al menos 2 puntos ubicados a mano en este plano (hay ${wps.length})` };
+  const lista = r360PuntosOrdenados(), pag = r360PaginaVisible();
+  const aqui = p => p.plano_id === R360.planoId && r360PaginaDe(p) === pag;
+  const wps = lista.map((p, i) => ({ p, i })).filter(o => o.p.waypoint && o.p.x != null && aqui(o.p));
+  if(wps.length < 2) return { motivo: `Se necesitan al menos 2 puntos ubicados a mano en ${pag > 1 ? 'esta página del plano' : 'este plano'} (hay ${wps.length})` };
   const cambios = [];
   for(let k = 0; k < wps.length - 1; k++){
     const a = wps[k], b = wps[k + 1];
     for(let i = a.i + 1; i < b.i; i++){
       const p = lista[i];
-      if(p.waypoint && p.x != null) continue;          // ubicado a mano en otro plano: no se toca
+      if(p.waypoint && p.x != null) continue;          // ubicado a mano en otro plano u otra página: no se toca
       const t = (i - a.i) / (b.i - a.i);
       const x = +(Number(a.p.x) + (Number(b.p.x) - Number(a.p.x)) * t).toFixed(1);
       const y = +(Number(a.p.y) + (Number(b.p.y) - Number(a.p.y)) * t).toFixed(1);
-      if(p.plano_id !== R360.planoId || Number(p.x) !== x || Number(p.y) !== y) cambios.push({ id: p.id, plano_id: R360.planoId, x, y, waypoint: false });
+      if(!aqui(p) || Number(p.x) !== x || Number(p.y) !== y) cambios.push({ id: p.id, plano_id: R360.planoId, pagina: pag, x, y, waypoint: false });
     }
   }
   // Fuera del tramo [primer waypoint, último]: sin ubicar (quedan así) e
@@ -1399,7 +1430,7 @@ function r360CalcularInterpolacion(){
   lista.forEach((p, i) => {
     if(i >= primero && i <= ultimo) return;
     if(p.x == null) sinUbicar++;
-    else if(!p.waypoint && p.plano_id === R360.planoId) antiguos++;
+    else if(!p.waypoint && aqui(p)) antiguos++;
   });
   return { cambios, waypoints: wps.length, sinUbicar, antiguos };
 }
@@ -1415,8 +1446,8 @@ async function r360Interpolar(){
   let ok = 0, fallos = 0, ultimoError = null;
   for(let i = 0; i < r.cambios.length; i += 6){
     await Promise.all(r.cambios.slice(i, i + 6).map(async c => {
-      const cambios = { plano_id: c.plano_id, x: c.x, y: c.y, waypoint: false };
-      const { data, error } = await sb.from('puntos_360').update(cambios).eq('id', c.id).select('id');
+      const cambios = { plano_id: c.plano_id, pagina: c.pagina, x: c.x, y: c.y, waypoint: false };
+      const { data, error } = await r360ActualizarPunto(c.id, cambios);
       if(error || !data || !data.length){ fallos++; ultimoError = error || new Error('el punto ya no existe'); return; }
       const p = r360Punto(c.id); if(p) Object.assign(p, cambios);
       ok++;
@@ -1431,7 +1462,7 @@ async function r360Interpolar(){
 
 // ── Comparar entre fechas (fase e): emparejamiento ──────────────────────────
 // Las «parejas» de un punto ubicado son los puntos de OTROS recorridos
-// PUBLICADOS del mismo plano que caen dentro de un radio, a lo sumo uno por
+// PUBLICADOS del mismo plano Y LA MISMA PÁGINA que caen dentro de un radio, a lo sumo uno por
 // recorrido (el más cercano). El radio va en % del ANCHO del plano: como x/y
 // se guardan en % del ancho y del alto, la diferencia en y se multiplica por
 // la proporción alto/ancho para que el radio sea un círculo y no una elipse.
@@ -1458,6 +1489,7 @@ function r360Emparejar(punto, candidatos, opts = {}){
     const recorrido = c && c.recorridos_360;
     if(!recorrido || recorrido.estado !== 'publicado') continue;
     if(c.id === punto.id || c.recorrido_id === punto.recorrido_id || c.plano_id !== punto.plano_id || c.x == null || c.y == null) continue;
+    if(r360PaginaDe(c) !== r360PaginaDe(punto)) continue;
     const distancia = Math.hypot(Number(c.x) - px, (Number(c.y) - py) * aspecto);
     if(!(distancia <= radio + 1e-9)) continue;
     const e = { punto: c, recorrido, distancia }, previo = porRec.get(c.recorrido_id);
@@ -1475,12 +1507,12 @@ function r360CajaEmparejamiento(punto, radio, aspecto){
   return { x0: lim(x - radio - 0.05), x1: lim(x + radio + 0.05), y0: lim(y - ry - 0.05), y1: lim(y + ry + 0.05) };
 }
 function r360EsPdf(plano){ return (plano.tipo || '').includes('pdf') || String(plano.nombre || '').toLowerCase().endsWith('.pdf'); }
-// Proporción alto/ancho del plano (imagen: tamaño natural; PDF: página 1). Si no
+// Proporción alto/ancho del plano (imagen: tamaño natural; PDF: la página del punto). Si no
 // se puede leer (sin señal, pdf.js bloqueado) devuelve 1 y NO se guarda, para
 // que el siguiente intento vuelva a medir.
-async function r360AspectoPlano(planoId){
+async function r360AspectoPlano(planoId, pagina = 1){
   const pl = R360.planos.find(x => x.id === planoId); if(!pl || !pl.url) return 1;
-  const clave = planoId + '|' + pl.url;
+  const clave = planoId + '|' + pl.url + '|' + pagina;
   if(R360._aspectos.has(clave)) return R360._aspectos.get(clave);
   const tarea = (async () => {
     if(r360EsPdf(pl)){
@@ -1488,7 +1520,7 @@ async function r360AspectoPlano(planoId){
       if(typeof pdfjsLib === 'undefined') throw new Error('pdf.js no disponible');
       const st = R360._pdf, propio = !(st.doc && st.url === pl.url);
       const doc = propio ? await pdfjsLib.getDocument(pl.url).promise : st.doc;
-      try{ const vp = (await doc.getPage(1)).getViewport({ scale: 1 }); return vp.height / vp.width; }
+      try{ const vp = (await doc.getPage(Math.min(Math.max(1, pagina), doc.numPages))).getViewport({ scale: 1 }); return vp.height / vp.width; }
       finally{ if(propio){ try{ doc.destroy()?.catch?.(() => {}); }catch(e){} } }
     }
     return await new Promise((res, rej) => {
@@ -1506,23 +1538,32 @@ async function r360AspectoPlano(planoId){
     return 1;
   }
 }
-const R360_CAMPOS_PAREJA = 'id,proyecto_id,recorrido_id,plano_id,x,y,waypoint,orden,etiqueta,notas,fecha_captura,heading_norte,camara,archivo_full,archivo_web,archivo_thumb,recorridos_360!inner(id,titulo,fecha,estado)';
+const R360_CAMPOS_PAREJA = 'id,proyecto_id,recorrido_id,plano_id,pagina,x,y,waypoint,orden,etiqueta,notas,fecha_captura,heading_norte,camara,archivo_full,archivo_web,archivo_thumb,recorridos_360!inner(id,titulo,fecha,estado)';
 // Parejas de un punto del recorrido abierto. [] si no está ubicado o no hay
 // ninguna; null si la consulta falló (no se guarda en caché). La clave de caché
 // incluye posición, radio y proporción: mover el punto o cambiar el radio
 // vuelve a consultar.
 async function r360ParejasDe(p){
   if(!p || !p.plano_id || p.x == null || p.y == null) return [];
-  const radio = r360Radio(), aspecto = await r360AspectoPlano(p.plano_id);
-  const clave = [p.id, p.plano_id, p.x, p.y, radio, aspecto].join('|');
+  const radio = r360Radio(), aspecto = await r360AspectoPlano(p.plano_id, r360PaginaDe(p));
+  const clave = [p.id, p.plano_id, r360PaginaDe(p), p.x, p.y, radio, aspecto].join('|');
   if(R360._parejas.has(clave)) return R360._parejas.get(clave);
   const caja = r360CajaEmparejamiento(p, radio, aspecto);
   const tarea = (async () => {
-    const { data, error } = await sb.from('puntos_360').select(R360_CAMPOS_PAREJA)
-      .eq('proyecto_id', p.proyecto_id).eq('plano_id', p.plano_id)
-      .eq('recorridos_360.estado', 'publicado').neq('recorrido_id', p.recorrido_id)
-      .gte('x', caja.x0).lte('x', caja.x1).gte('y', caja.y0).lte('y', caja.y1)
-      .order('fecha_captura').limit(1000);
+    const consulta = conPagina => {
+      let q = sb.from('puntos_360').select(conPagina ? R360_CAMPOS_PAREJA : R360_CAMPOS_PAREJA.replace(',pagina,', ','))
+        .eq('proyecto_id', p.proyecto_id).eq('plano_id', p.plano_id);
+      if(conPagina) q = q.eq('pagina', r360PaginaDe(p));
+      return q.eq('recorridos_360.estado', 'publicado').neq('recorrido_id', p.recorrido_id)
+        .gte('x', caja.x0).lte('x', caja.x1).gte('y', caja.y0).lte('y', caja.y1)
+        .order('fecha_captura').limit(1000);
+    };
+    let { data, error } = await consulta(!R360._sinPagina);
+    if(r360FaltaColumnaPagina(error) && !R360._sinPagina){
+      R360._sinPagina = true;
+      console.warn('[360] la base no tiene puntos_360.pagina (migración 20260929 sin aplicar): se empareja sin página');
+      ({ data, error } = await consulta(false));
+    }
     if(error) throw error;
     const res = r360Emparejar(p, data || [], { radio, aspecto });
     r360Dbg(`parejas punto #${p.orden}: ${res.length} fecha(s) de ${(data || []).length} candidato(s) · radio ${radio} % · proporción ${aspecto}`);
@@ -1752,7 +1793,7 @@ function r360PintarVisorBarra(){
   b.innerHTML = `
     <button class="btn" ${prev ? `onclick="r360AbrirVisor('${prev.id}',{mantenerVista:true})"` : 'disabled'} title="Anterior">◀</button>
     <div class="r360-visor-info"><b>#${p.orden}</b>${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''} <span style="color:#676879">(${i + 1}/${lista.length})</span><br>
-      <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${r360Norte(p) != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span>
+      <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${r360Norte(p) != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') + (r360PaginaDe(p) > 1 ? ', pág. ' + r360PaginaDe(p) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span>
       ${otra ? `<br><span class="r360-otra-fecha">Viendo el <b>${escAttr(r360FechaDia(otra.recorrido.fecha))}</b> · ${escAttr(otra.recorrido.titulo || '')} · #${otra.punto.orden}${otra.punto.etiqueta ? ' · ' + escAttr(otra.punto.etiqueta) : ''} (a ${otra.distancia.toFixed(1).replace('.', ',')} % en el plano) · <a href="#" onclick="event.preventDefault();r360VerFecha('${p.recorrido_id}')">volver a este recorrido</a></span>` : ''}</div>
     <button class="btn" ${next ? `onclick="r360AbrirVisor('${next.id}',{mantenerVista:true})"` : 'disabled'} title="Siguiente">▶</button>
     ${ubica ? `<button class="btn" onclick="r360ArmarUbicacion('${p.id}')">📍 ${ubicado ? 'Reubicar' : 'Ubicar en plano'}</button>` : ''}

@@ -101,7 +101,7 @@ esquema de `registrarNavegacion`), así «atrás» vuelve a la lista y «adelant
   alto/ancho del plano (imagen: tamaño natural; PDF: página 1; si no se puede medir, 1:1 con aviso
   en consola). Se consulta una caja alrededor del punto y el filtro exacto es la función pura
   `r360Emparejar`. El recorrido abierto puede estar en borrador; los otros deben estar publicados.
-  Los puntos no guardan página de PDF: en planos PDF de varias páginas se emparejan por `x/y`.
+  Solo se empareja dentro de la **misma página** del plano (ver «Página del plano»).
 - **Línea de tiempo:** si el punto tiene parejas, aparecen pestañas de fecha dentro del visor
   (abajo; `●` = recorrido abierto, con la etiqueta del punto si la tiene). Cambiar de pestaña
   cambia la foto sin salir del punto y conserva el rumbo; mientras se ve otra fecha no se ofrece
@@ -138,6 +138,16 @@ anterior. Botones «Copiar registro» y «Limpiar», y control «vencimiento de 
 
 **Librerías vendorizadas** (sin CDN, precacheadas por el SW): `vendor/pannellum` 2.5.6 (MIT)
 y `vendor/exifr` 7.1.3 (MIT).
+
+**Página del plano** (migración `20260929_pagina_en_puntos_y_pines.sql`, se aplica a mano): los
+visores de planos navegan las páginas de un PDF, así que cada marca guarda su página:
+`puntos_360.pagina` (por defecto 1; parte de la posición: se congela al publicar y está en la
+lista blanca del residente) y `observaciones.pin_pagina`. Una marca se guarda con la página
+visible, se dibuja solo en ella, la interpolación trabaja dentro de la página visible y «Ver en
+plano» abre el PDF en la página del pin. Planos de imagen y marcas sin dato: página 1. Al subir un
+PDF de varias páginas se avisa, y la barra de páginas lo recuerda. **Sin la migración aplicada** el
+cliente sigue como antes en página 1 (reintenta sin la columna) y rechaza con aviso colocar una
+marca en otra página. Inventario del 2026-09-29: los 8 planos PDF existentes son de una página.
 
 ### Aplicar la migración
 
