@@ -108,11 +108,13 @@ esquema de `registrarNavegacion`), así «atrás» vuelve a la lista y «adelant
   ubicar, etiquetar ni eliminar. Pasar de punto vuelve al recorrido abierto.
 - **Vista dividida** («⇆ Comparar fechas»): izquierda = punto del recorrido abierto, derecha = su
   pareja (por defecto la fecha anterior más reciente; las pestañas del visor derecho eligen otra).
-  Giro, inclinación y zoom sincronizados; manda el visor que se tocó por último. **Norte:** rumbo
-  real = `yaw + heading_norte` (la misma convención que `northOffset` de Pannellum y que
-  `GPano:PoseHeadingDegrees`), así `yawB = yawA + norteA − norteB`. El candado suelta los visores;
-  al volver a bloquear, lo que difiera del norte queda como **ajuste manual** (se conserva al pasar
-  de punto; «🧭 Alinear por norte» lo descarta). Si a una foto le falta `heading_norte` se
+  Giro, inclinación y zoom sincronizados; manda el visor que se tocó por último. **Norte:** `heading_norte`
+  es el rumbo del centro de la panorámica, así que rumbo de la vista = `yaw + heading_norte` y
+  `yawB = yawA + norteA − norteB` (la definición vive en un solo sitio: bloque «NORTE» de
+  `js/recorridos360.js`; el comentario de la columna en la migración remite a él). El candado
+  suelta los visores; al volver a bloquear, lo que difiera del norte queda como **ajuste manual**
+  (se conserva al pasar de punto; «🧭 Alinear por norte» lo descarta) y mientras esté en uso el
+  visor derecho muestra el aviso rojo «✋ Rumbo ajustado a mano ±N°». Si a una foto le falta `heading_norte` se
   sincroniza sin norte y se avisa. ◀ ▶ mueven las dos fechas cuando el punto siguiente tiene
   pareja en el recorrido elegido; si no, el visor derecho lo dice y conserva la fecha.
 - **Teléfono** (ancho < 900 px o puntero táctil con lado corto < 600 px): comparando, los dos

@@ -106,7 +106,9 @@ create table if not exists public.puntos_360 (
   lat             double precision,
   lon             double precision,
   alt             double precision,
-  heading_norte   numeric(6,2),                 -- yaw (grados) que apunta al norte; editable
+  heading_norte   numeric(6,2),                 -- rumbo del CENTRO de la panorámica (yaw 0), grados desde el norte en sentido horario
+                                                --   (= GPano:PoseHeadingDegrees = northOffset de Pannellum): rumbo de la vista = yaw + heading_norte.
+                                                --   Editable. Definición única: js/recorridos360.js, bloque «NORTE».
   archivo_full    text,                         -- <proyecto>/<recorrido>/<punto>/full.jpg (lo valida el trigger)
   archivo_web     text,
   archivo_thumb   text,

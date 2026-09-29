@@ -933,6 +933,7 @@ async function abrirRecorrido360(id, opts = {}){
           <div class="r360-visor-marco" id="r360MarcoB" data-slot="b" style="display:none">
             <div id="r360VisorB" class="r360-visor"></div>
             <div id="r360FechasB" class="r360-fechas"></div>
+            <div id="r360CmpAjuste" class="r360-ajuste" style="display:none"></div>
           </div>
         </div>
         <div id="r360CmpBarra" class="r360-visor-barra"></div>
@@ -1682,7 +1683,7 @@ function r360CrearVisor(cont, p, path, blob, opts){
     type: 'equirectangular', panorama: bu, autoLoad: true, showControls: true, crossOrigin: 'anonymous',
     hfov: opts.hfov ?? 100, minHfov: 40, maxHfov: 120, yaw: opts.yaw ?? 0, pitch: opts.pitch ?? 0,
     friction: 0.15, draggable: true, mouseZoom: true, keyboardZoom: true,
-    compass: p.heading_norte != null, northOffset: Number(p.heading_norte) || 0,
+    compass: r360Norte(p) != null, northOffset: r360Norte(p) ?? 0,   // northOffset = heading_norte (ver «NORTE»)
     strings: { loadingLabel: 'Cargando…', loadButtonLabel: 'Ver', bylineLabel: '', noPanoramaError: 'Sin panorámica',
                fileAccessError: 'No se pudo acceder a la imagen (%s)', malformedURLError: 'URL no válida',
                iOS8WebGLError: 'WebGL no disponible en este navegador', genericWebGLError: 'Este dispositivo no soporta WebGL',
@@ -1744,7 +1745,7 @@ function r360PintarVisorBarra(){
   b.innerHTML = `
     <button class="btn" ${prev ? `onclick="r360AbrirVisor('${prev.id}',{mantenerVista:true})"` : 'disabled'} title="Anterior">◀</button>
     <div class="r360-visor-info"><b>#${p.orden}</b>${p.etiqueta ? ' · ' + escAttr(p.etiqueta) : ''} <span style="color:#676879">(${i + 1}/${lista.length})</span><br>
-      <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${p.heading_norte != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span>
+      <span>${r360Fecha(p.fecha_captura)}${p.camara ? ' · ' + escAttr(p.camara) : ''}${r360Norte(p) != null ? ' · 🧭' : ''} · ${ubicado ? (p.waypoint ? '📍 ubicado a mano' : '≈ interpolado') + (plano ? ' en ' + escAttr(plano.nombre) : '') : 'sin ubicar'}${p.notas ? ' · ⚠ ' + escAttr(p.notas) : ''}</span>
       ${otra ? `<br><span class="r360-otra-fecha">Viendo el <b>${escAttr(r360FechaDia(otra.recorrido.fecha))}</b> · ${escAttr(otra.recorrido.titulo || '')} · #${otra.punto.orden}${otra.punto.etiqueta ? ' · ' + escAttr(otra.punto.etiqueta) : ''} (a ${otra.distancia.toFixed(1).replace('.', ',')} % en el plano) · <a href="#" onclick="event.preventDefault();r360VerFecha('${p.recorrido_id}')">volver a este recorrido</a></span>` : ''}</div>
     <button class="btn" ${next ? `onclick="r360AbrirVisor('${next.id}',{mantenerVista:true})"` : 'disabled'} title="Siguiente">▶</button>
     ${ubica ? `<button class="btn" onclick="r360ArmarUbicacion('${p.id}')">📍 ${ubicado ? 'Reubicar' : 'Ubicar en plano'}</button>` : ''}
@@ -1759,9 +1760,8 @@ function r360PintarVisorBarra(){
 // Visor A (#r360Visor) = punto del recorrido abierto; visor B (#r360VisorB) =
 // su pareja en otro recorrido publicado (R360.cmp.recId). Bloqueados, el que
 // el usuario toca por último manda («líder») y el otro copia giro, inclinación
-// y zoom en cada cuadro. El giro se traslada por el norte de cada foto:
-// rumbo real = yaw + heading_norte (convención northOffset de Pannellum), así
-// yawB = yawA + nA − nB. Si a alguna foto le falta el norte, o el norte no es
+// y zoom en cada cuadro. El giro se traslada por el norte de cada foto (ver
+// «NORTE» más abajo). Si a alguna foto le falta el norte, o el norte no es
 // exacto, se sueltan los visores, se alinean a mano y al volver a bloquear la
 // diferencia queda como ajuste manual (se conserva al pasar de punto).
 function r360EsTelefono(){
@@ -1775,10 +1775,24 @@ function r360FechaDia(f){
   catch(e){ return m[0]; }
 }
 function r360NormYaw(y){ return ((Number(y) + 180) % 360 + 360) % 360 - 180; }
+// ── NORTE: definición ÚNICA de puntos_360.heading_norte ─────────────────────
+// heading_norte = RUMBO DEL CENTRO de la panorámica (yaw 0), en grados desde el
+// norte y en sentido horario. Es GPano:PoseHeadingDegrees y es el northOffset
+// de Pannellum. De ahí:
+//     rumbo de la vista = yaw + heading_norte
+//     el norte está en    yaw = −heading_norte
+// NO es «el yaw que apunta al norte» (eso es su opuesto). Todo el módulo pasa
+// por estas cuatro funciones; el comentario de la columna en la migración y el
+// README remiten aquí.
+function r360Norte(p){ return (p && p.heading_norte != null && isFinite(Number(p.heading_norte))) ? Number(p.heading_norte) : null; }
+// Rumbo (0–360, 0 = norte, 90 = este) hacia el que se mira con ese yaw; null sin norte
+function r360Rumbo(p, yaw){ const n = r360Norte(p); return n == null ? null : ((Number(yaw) + n) % 360 + 360) % 360; }
+// heading_norte que hay que guardar para que ese yaw mire a ese rumbo («fijar norte»: rumbo 0)
+function r360NorteParaYaw(yaw, rumbo = 0){ return +r360NormYaw(Number(rumbo) - Number(yaw)).toFixed(2); }
 // Giro que se suma al yaw de `a` para mirar al mismo rumbo en `b`; null si a alguna le falta el norte
 function r360DeltaNorte(a, b){
-  if(!a || !b || a.heading_norte == null || b.heading_norte == null) return null;
-  return r360NormYaw(Number(a.heading_norte) - Number(b.heading_norte));
+  const na = r360Norte(a), nb = r360Norte(b);
+  return (na == null || nb == null) ? null : r360NormYaw(na - nb);
 }
 function r360CmpRecalcularDelta(){
   const c = R360.cmp;
@@ -1987,7 +2001,19 @@ function r360CmpNorte(){
   c.ajuste = 0; c.bloqueado = true; c.lider = 'a';
   r360CmpRecalcularDelta(); r360PintarCmpBarra();
 }
+// Indicador DENTRO del visor B: visible mientras haya un ajuste manual de rumbo
+// en uso (bloqueado con ajuste ≠ 0). Con norte en las dos fotos, tocarlo lo descarta.
+function r360PintarCmpAjuste(){
+  const el = document.getElementById('r360CmpAjuste'); if(!el) return;
+  const c = R360.cmp, ver = c.activo && c.bloqueado && !!c.ajuste && !!c.par;
+  el.style.display = ver ? '' : 'none';
+  if(!ver){ el.innerHTML = ''; return; }
+  const conNorte = r360DeltaNorte(r360Punto(R360.visorPuntoId), c.par.punto) != null;
+  const grados = `${c.ajuste > 0 ? '+' : '−'}${Math.abs(Math.round(c.ajuste)) || '<1'}°`;
+  el.innerHTML = `<button type="button" ${conNorte ? 'onclick="r360CmpNorte()"' : 'disabled'} title="${conNorte ? 'Las dos fechas están alineadas a mano, no por el norte de las fotos. Toca para volver a alinear por norte.' : 'Las dos fechas están alineadas a mano: falta el norte en alguna de las fotos.'}">✋ Rumbo ajustado a mano ${grados}${conNorte ? ' · ✕' : ''}</button>`;
+}
 function r360PintarCmpBarra(){
+  r360PintarCmpAjuste();
   const b = document.getElementById('r360CmpBarra'); if(!b) return;
   const c = R360.cmp, base = r360Punto(R360.visorPuntoId), rec = R360.recorridoActivo;
   if(!c.activo || !base || !rec){ b.innerHTML = ''; return; }
@@ -1997,7 +2023,7 @@ function r360PintarCmpBarra(){
   else if(!c.bloqueado) estado = 'Visores sueltos: alinea cada uno y pulsa el candado para fijar esa alineación';
   else if(c.ajuste) estado = `Giro, inclinación y zoom sincronizados con tu alineación manual (${c.ajuste > 0 ? '+' : ''}${Math.round(c.ajuste)}°${norte == null ? '' : ' sobre el norte'})`;
   else if(norte == null){
-    const faltan = [base.heading_norte == null ? 'la actual' : null, par.punto.heading_norte == null ? 'la otra fecha' : null].filter(Boolean).join(' ni ');
+    const faltan = [r360Norte(base) == null ? 'la actual' : null, r360Norte(par.punto) == null ? 'la otra fecha' : null].filter(Boolean).join(' ni ');
     estado = `Sincronizados sin norte (no lo trae ${faltan}): si no coinciden, suelta, alinea a mano y vuelve a bloquear`;
   }
   else estado = 'Giro, inclinación y zoom sincronizados · norte de cada foto aplicado';
