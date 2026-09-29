@@ -26,11 +26,14 @@ const R360 = {
   MSG_INSTA: 'Exporta la foto 360 desde la app Insta360 antes de subirla',
   MSG_VIDEO: 'Los videos 360 no se suben desde la app: extrae fotogramas del MP4 (ver README, Recorridos 360) y súbelos como fotos en modo Secuencia',
   MSG_PC: 'Sube este lote desde PC',
+  RADIO_DEF: 3, RADIOS: [1, 2, 3, 5, 8],   // emparejamiento entre fechas: radio en % del ancho del plano
   // estado de página
   recorridos: [], recorridoActivo: null, puntos: [], planos: [],
   modo: 'punto', planoId: null, seleccionado: null,
   visor: null, visorPuntoId: null, _visorAbort: null, _precarga: null, _blobs: new Map(), _descargas: new Map(),
   _pdf: { doc: null, url: null, pagina: 1, paginaPedida: 1, tarea: null }, _mapaToken: 0, _drag: null,
+  // comparar entre fechas (fase e)
+  _parejas: new Map(), _aspectos: new Map(),
   // estado de carga
   procesando: false, lote: 0, subiendoIdLocal: null, _progreso: {}, _maxTextura: null
 };
@@ -712,6 +715,7 @@ function limpiarEstadoR360(){
   r360AbortarDescarga(); if(R360._precarga){ try{ R360._precarga.abort(); }catch(e){} R360._precarga = null; }
   r360VaciarCacheBlobs();
   r360DestruirVisor();
+  R360._parejas.clear(); R360._aspectos.clear();
   if(R360.procesando){ R360.lote++; R360.procesando = false; }
   storage360.limpiarCache();
 }
@@ -859,6 +863,7 @@ async function abrirRecorrido360(id, opts = {}){
   if(R360.visor && idPrevio){ try{ if(R360.visor.isLoaded()) vista = { yaw: R360.visor.getYaw(), pitch: R360.visor.getPitch(), hfov: R360.visor.getHfov() }; }catch(e){} }
   if(R360.recorridoActivo?.id !== id) r360VaciarCacheBlobs();   // las panorámicas en memoria son de otro recorrido
   r360AbortarDescarga(); r360DestruirVisor(); R360.seleccionado = null; r360CancelarArrastre(); R360._mapaToken++;
+  R360._parejas.clear();                                        // otros recorridos pudieron publicarse o cambiar
   cont.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando recorrido...</div>';
   const [{ data: rec, error: e1 }, { data: puntos, error: e2 }, { data: planos }] = await Promise.all([
     sb.from('recorridos_360').select('*').eq('id', id).single(),
@@ -953,6 +958,7 @@ function r360DescartarRecorridoAbierto(){
   if(!R360.recorridoActivo && !R360.visor && !R360.visorPuntoId && !R360._visorAbort) return;
   R360.recorridoActivo = null; R360.visorPuntoId = null; R360.seleccionado = null; r360CancelarArrastre();
   r360AbortarDescarga(); r360DestruirVisor(); r360VaciarCacheBlobs(); R360._mapaToken++;
+  R360._parejas.clear();
 }
 function r360Restaurando(){ return typeof _restaurandoHistorial !== 'undefined' && !!_restaurandoHistorial; }
 // «Volver a recorridos» (botón de la cabecera y miga de pan): lista + entrada
@@ -1149,7 +1155,7 @@ async function r360PintarMapa(){
   if(!R360.planos.length){ r360PdfReset(); cont.innerHTML = '<div class="r360-mapa-vacio">Este proyecto no tiene planos. Súbelos en Observaciones › Planos para ubicar los puntos.</div>'; return; }
   const p = R360.planos.find(x => x.id === R360.planoId) || R360.planos[0]; R360.planoId = p.id;
   const sel = document.getElementById('r360PlanoSel'); if(sel && sel.value !== p.id) sel.value = p.id;
-  const esPDF = (p.tipo || '').includes('pdf') || String(p.nombre || '').toLowerCase().endsWith('.pdf');
+  const esPDF = r360EsPdf(p);
   if(!esPDF || (R360._pdf.doc && R360._pdf.url !== p.url)) r360PdfReset();   // nunca se pisa un documento vivo sin destruirlo
   cont.innerHTML = `<div class="r360-mapa-inner">${esPDF ? '<canvas id="r360MapaCanvas"></canvas>' : `<img id="r360MapaImg" src="${escAttr(p.url)}" alt=""/>`}<div id="r360Overlay" class="r360-overlay"></div></div>`;
   r360EnlazarOverlay(document.getElementById('r360Overlay'));
@@ -1394,6 +1400,114 @@ async function r360Interpolar(){
   // Fallo que no es de red (punto borrado, recorrido publicado, RLS): el estado local ya no es fiable → refresco
   if(fallos && ultimoError && !esErrorDeRed(ultimoError) && R360.recorridoActivo) abrirRecorrido360(R360.recorridoActivo.id);
   else r360RepintarTrasCambio();
+}
+
+// ── Comparar entre fechas (fase e): emparejamiento ──────────────────────────
+// Las «parejas» de un punto ubicado son los puntos de OTROS recorridos
+// PUBLICADOS del mismo plano que caen dentro de un radio, a lo sumo uno por
+// recorrido (el más cercano). El radio va en % del ANCHO del plano: como x/y
+// se guardan en % del ancho y del alto, la diferencia en y se multiplica por
+// la proporción alto/ancho para que el radio sea un círculo y no una elipse.
+// Sin migración: se pide al servidor una caja alrededor del punto y el filtro
+// exacto se hace aquí.
+function r360Radio(){
+  const v = Number(r360DbgLS('r360_radio'));
+  return (v >= 0.5 && v <= 20) ? v : R360.RADIO_DEF;
+}
+// Desempate dentro de un mismo recorrido: distancia, ubicado a mano, menor orden
+function r360MejorPareja(a, b){
+  if(Math.abs(a.distancia - b.distancia) > 1e-9) return a.distancia < b.distancia;
+  if(!!a.punto.waypoint !== !!b.punto.waypoint) return !!a.punto.waypoint;
+  return (a.punto.orden || 0) < (b.punto.orden || 0);
+}
+// Función pura. `candidatos`: filas de puntos_360 con su recorrido embebido en
+// `recorridos_360` ({ id, titulo, fecha, estado }). Devuelve
+// [{ punto, recorrido, distancia }] ordenado por fecha del recorrido.
+function r360Emparejar(punto, candidatos, opts = {}){
+  const radio = opts.radio > 0 ? Number(opts.radio) : R360.RADIO_DEF, aspecto = opts.aspecto > 0 ? Number(opts.aspecto) : 1;
+  if(!punto || !punto.plano_id || punto.x == null || punto.y == null) return [];
+  const px = Number(punto.x), py = Number(punto.y), porRec = new Map();
+  for(const c of candidatos || []){
+    const recorrido = c && c.recorridos_360;
+    if(!recorrido || recorrido.estado !== 'publicado') continue;
+    if(c.id === punto.id || c.recorrido_id === punto.recorrido_id || c.plano_id !== punto.plano_id || c.x == null || c.y == null) continue;
+    const distancia = Math.hypot(Number(c.x) - px, (Number(c.y) - py) * aspecto);
+    if(!(distancia <= radio + 1e-9)) continue;
+    const e = { punto: c, recorrido, distancia }, previo = porRec.get(c.recorrido_id);
+    if(!previo || r360MejorPareja(e, previo)) porRec.set(c.recorrido_id, e);
+  }
+  return [...porRec.values()].sort((a, b) =>
+    String(a.recorrido.fecha || '').localeCompare(String(b.recorrido.fecha || ''))
+    || String(a.punto.fecha_captura || '').localeCompare(String(b.punto.fecha_captura || ''))
+    || String(a.recorrido.id).localeCompare(String(b.recorrido.id)));
+}
+// Caja que contiene el círculo (x/y tienen un decimal: se deja medio paso de holgura)
+function r360CajaEmparejamiento(punto, radio, aspecto){
+  const x = Number(punto.x), y = Number(punto.y), ry = radio / (aspecto > 0 ? aspecto : 1);
+  const lim = v => Math.min(100, Math.max(0, +v.toFixed(2)));
+  return { x0: lim(x - radio - 0.05), x1: lim(x + radio + 0.05), y0: lim(y - ry - 0.05), y1: lim(y + ry + 0.05) };
+}
+function r360EsPdf(plano){ return (plano.tipo || '').includes('pdf') || String(plano.nombre || '').toLowerCase().endsWith('.pdf'); }
+// Proporción alto/ancho del plano (imagen: tamaño natural; PDF: página 1). Si no
+// se puede leer (sin señal, pdf.js bloqueado) devuelve 1 y NO se guarda, para
+// que el siguiente intento vuelva a medir.
+async function r360AspectoPlano(planoId){
+  const pl = R360.planos.find(x => x.id === planoId); if(!pl || !pl.url) return 1;
+  const clave = planoId + '|' + pl.url;
+  if(R360._aspectos.has(clave)) return R360._aspectos.get(clave);
+  const tarea = (async () => {
+    if(r360EsPdf(pl)){
+      await asegurarPdfJs();
+      if(typeof pdfjsLib === 'undefined') throw new Error('pdf.js no disponible');
+      const st = R360._pdf, propio = !(st.doc && st.url === pl.url);
+      const doc = propio ? await pdfjsLib.getDocument(pl.url).promise : st.doc;
+      try{ const vp = (await doc.getPage(1)).getViewport({ scale: 1 }); return vp.height / vp.width; }
+      finally{ if(propio){ try{ doc.destroy()?.catch?.(() => {}); }catch(e){} } }
+    }
+    return await new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => (img.naturalWidth > 0 ? res(img.naturalHeight / img.naturalWidth) : rej(new Error('imagen sin tamaño')));
+      img.onerror = () => rej(new Error('no se pudo cargar la imagen del plano'));
+      img.src = pl.url;
+    });
+  })().then(a => (a > 0 && isFinite(a)) ? +a.toFixed(3) : 1);
+  R360._aspectos.set(clave, tarea);
+  try{ return await tarea; }
+  catch(e){
+    if(R360._aspectos.get(clave) === tarea) R360._aspectos.delete(clave);
+    console.warn('[360] proporción del plano (se usa 1:1):', e?.message || e);
+    return 1;
+  }
+}
+const R360_CAMPOS_PAREJA = 'id,proyecto_id,recorrido_id,plano_id,x,y,waypoint,orden,etiqueta,notas,fecha_captura,heading_norte,camara,archivo_full,archivo_web,archivo_thumb,recorridos_360!inner(id,titulo,fecha,estado)';
+// Parejas de un punto del recorrido abierto. [] si no está ubicado o no hay
+// ninguna; null si la consulta falló (no se guarda en caché). La clave de caché
+// incluye posición, radio y proporción: mover el punto o cambiar el radio
+// vuelve a consultar.
+async function r360ParejasDe(p){
+  if(!p || !p.plano_id || p.x == null || p.y == null) return [];
+  const radio = r360Radio(), aspecto = await r360AspectoPlano(p.plano_id);
+  const clave = [p.id, p.plano_id, p.x, p.y, radio, aspecto].join('|');
+  if(R360._parejas.has(clave)) return R360._parejas.get(clave);
+  const caja = r360CajaEmparejamiento(p, radio, aspecto);
+  const tarea = (async () => {
+    const { data, error } = await sb.from('puntos_360').select(R360_CAMPOS_PAREJA)
+      .eq('proyecto_id', p.proyecto_id).eq('plano_id', p.plano_id)
+      .eq('recorridos_360.estado', 'publicado').neq('recorrido_id', p.recorrido_id)
+      .gte('x', caja.x0).lte('x', caja.x1).gte('y', caja.y0).lte('y', caja.y1)
+      .order('fecha_captura').limit(1000);
+    if(error) throw error;
+    const res = r360Emparejar(p, data || [], { radio, aspecto });
+    r360Dbg(`parejas punto #${p.orden}: ${res.length} fecha(s) de ${(data || []).length} candidato(s) · radio ${radio} % · proporción ${aspecto}`);
+    return res;
+  })();
+  R360._parejas.set(clave, tarea);
+  try{ return await tarea; }
+  catch(e){
+    if(R360._parejas.get(clave) === tarea) R360._parejas.delete(clave);
+    console.warn('[360] parejas:', e?.message || e);
+    return null;
+  }
 }
 
 // ── Visor Pannellum ─────────────────────────────────────────────────────────
