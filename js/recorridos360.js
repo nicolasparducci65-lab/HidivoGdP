@@ -194,6 +194,13 @@ const PUEDE_PUBLICAR_R360 = () => ['admin','fiscalizador'].includes(currentPerfi
 const ES_ADMIN_R360       = () => currentPerfil?.rol === 'admin';
 function r360Congelado(){ const r = R360.recorridoActivo; return !!r && r.estado === 'publicado' && !ES_ADMIN_R360(); }
 function r360PuedeUbicar(){ return PUEDE_PUBLICAR_R360() && !r360Congelado(); }
+// Fijar el norte de un punto: admin y fiscalizador siempre (heading_norte sigue editable en
+// publicado); el residente solo con el recorrido en borrador (su política de UPDATE no alcanza
+// filas de un recorrido publicado).
+function r360PuedeFijarNorte(){
+  const r = R360.recorridoActivo; if(!r) return false;
+  return PUEDE_PUBLICAR_R360() || (currentPerfil?.rol === 'residente' && r.estado === 'borrador');
+}
 
 // uuid v4 con fallback real (Safari antiguo sin crypto.randomUUID). Nunca null:
 // el id del punto forma la ruta de storage y la fila.
@@ -1752,6 +1759,7 @@ function r360PintarVisorBarra(){
     ${ubicado && !R360.cmp.activo ? `<button class="btn" onclick="r360Comparar()" ${parejas && parejas.length ? '' : 'disabled'} title="${escAttr(ayudaCmp)}">⇆ Comparar fechas${parejas && parejas.length ? ` (${parejas.length})` : ''}</button>` : ''}
     ${ubicado ? `<label class="r360-radio" title="Radio para buscar el mismo lugar en otros recorridos, en % del ancho del plano">Radio <select onchange="r360SetRadio(this.value)">${radios.map(r => `<option value="${r}" ${r === radio ? 'selected' : ''}>${String(r).replace('.', ',')} %</option>`).join('')}</select></label>` : ''}
     ${ubica && ubicado ? `<button class="btn" onclick="r360QuitarDelPlano('${p.id}')">Quitar del plano</button>` : ''}
+    ${r360PuedeFijarNorte() && !otra ? `<button class="btn" onclick="r360FijarNorte('${p.id}')" title="Gira la foto hasta mirar al norte y pulsa: guarda esa dirección como norte del punto${r360Norte(p) != null ? ' (reemplaza el que ya tiene)' : ''}">🧭 Fijar norte</button>` : ''}
     ${PUEDE_PUBLICAR_R360() && !otra ? `<button class="btn" onclick="r360EditarEtiqueta('${p.id}')">✏️ Etiqueta</button>` : ''}
     ${ES_ADMIN_R360() && !otra ? `<button class="btn" style="color:#e2445c" onclick="r360EliminarPunto('${p.id}')" title="Borra el punto y sus 3 archivos">🗑 Eliminar punto</button>` : ''}`;
 }
@@ -1789,6 +1797,28 @@ function r360Norte(p){ return (p && p.heading_norte != null && isFinite(Number(p
 function r360Rumbo(p, yaw){ const n = r360Norte(p); return n == null ? null : ((Number(yaw) + n) % 360 + 360) % 360; }
 // heading_norte que hay que guardar para que ese yaw mire a ese rumbo («fijar norte»: rumbo 0)
 function r360NorteParaYaw(yaw, rumbo = 0){ return +r360NormYaw(Number(rumbo) - Number(yaw)).toFixed(2); }
+// «Fijar norte»: el usuario gira el visor hasta mirar al norte y lo guarda. Se escribe
+// heading_norte = −yaw (r360NorteParaYaw), así ese yaw pasa a ser rumbo 0. Descarta el ajuste
+// manual de la comparación: desde ahora manda el norte guardado.
+async function r360FijarNorte(id){
+  const p = r360Punto(id);
+  if(!p || !r360PuedeFijarNorte()) return false;
+  if(R360.lt.mostrado || R360.visorPuntoId !== id){ toast('Vuelve a la foto de este recorrido para fijar su norte', 'info'); return false; }
+  const v = R360.visor; let yaw = null;
+  try{ if(v && v.isLoaded() && v._r360Punto?.id === id) yaw = v.getYaw(); }catch(e){}
+  if(yaw == null){ toast('Espera a que la foto termine de cargar', 'info'); return false; }
+  const previo = r360Norte(p);
+  if(!confirm(`Gira la foto hasta mirar al NORTE y acepta: el centro de lo que ves ahora quedará como norte del punto #${p.orden}.${previo != null ? ` Reemplaza el norte que ya tenía (${Math.round(previo)}°).` : ''}`)) return false;
+  if(bloquearSiCerrado()) return false;
+  const heading_norte = r360NorteParaYaw(yaw);
+  if(!await r360GuardarPunto(id, { heading_norte })) return false;
+  r360Dbg(`fijar norte punto #${p.orden}: yaw ${yaw.toFixed(1)}° → heading_norte ${heading_norte}${previo != null ? ` (antes ${previo})` : ''}`);
+  toast(`Norte del punto #${p.orden} guardado ✓`, 'success');
+  if(R360.cmp.activo){ R360.cmp.ajuste = 0; R360.cmp.bloqueado = true; r360CmpRecalcularDelta(); r360PintarCmpBarra(); }
+  // La brújula de Pannellum se configura al crear el visor: se recrea con la misma vista (la foto está en memoria)
+  if(R360.visorPuntoId === id) r360AbrirVisor(id, { mantenerVista: true, scroll: false });
+  return true;
+}
 // Giro que se suma al yaw de `a` para mirar al mismo rumbo en `b`; null si a alguna le falta el norte
 function r360DeltaNorte(a, b){
   const na = r360Norte(a), nb = r360Norte(b);
