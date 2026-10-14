@@ -118,7 +118,7 @@ const tieneSec = (html, clave) => html.includes(`id="sec-${clave}"`);
     assert(d.querySelector('.ui-barra button'), 'botón imprimir');
     assert(d.querySelector('header.enc-pagina img') && d.querySelector('footer.pie-pagina'), 'encabezado y pie');
     assert(d.querySelector('ol.indice').querySelectorAll(':scope > li').length === 10, 'índice con 10 entradas');
-    assert(d.querySelectorAll('ol.indice ol.indice-sub').length === 3, 'subsecciones de OC, planillas y actas');
+    assert(d.querySelectorAll('ol.indice ol.indice-sub').length === 4, 'subsecciones de OC, libro (meses), planillas y actas');
   });
 
   await prueba('selección parcial: lo desmarcado no sale y el índice lo declara', async () => {
@@ -196,9 +196,10 @@ const tieneSec = (html, clave) => html.includes(`id="sec-${clave}"`);
 
   await prueba('estimación de páginas según la fórmula documentada', async () => {
     const { c, datos } = await cargar(fx);
-    // 2 + 2 + ⌈11/45⌉ + (1+⌈3/45⌉) + (1+⌈1/45⌉) + 1 + (1+⌈5/45⌉) + (1+⌈8/45⌉) + 2 + 1 = 17
+    // Fase 2 (por unidades): 2 (portada+índice) + contrato 2 + presupuesto ⌈11/45⌉ + OC (1+⌈3/45⌉)+(1+⌈1/45⌉)
+    // + cronograma 2+⌈3/45⌉ + libro feb ⌈0,6·2+3/6⌉ + mar ⌈0,6·1+1/6⌉ + planillas 1+(1+1)+(1+1) + actas 2 + liquidación 1 = 23
     const e1 = c.expedienteEstimar(datos, SEL_COMPLETO);
-    assert(e1.paginas === 17, 'completo: ' + e1.paginas);
+    assert(e1.paginas === 23 && e1.tomos.length === 1, 'completo: ' + e1.paginas);
     assert(e1.filas.presupuesto === 11 && e1.filas.ordenes_cambio === 2 && e1.filas.planillas === 2 && e1.filas.actas === 2 && e1.filas.liquidacion === 1, 'conteos');
     const e2 = c.expedienteEstimar(datos, { secciones: FASE1, filtros: { incluirOCsNoAprobadas: false, detallePlanillas: false } });
     assert(e2.paginas === 13 && e2.filas.ordenes_cambio === 1, 'solo aprobadas y sin detalle: ' + e2.paginas);

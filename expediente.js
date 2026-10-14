@@ -475,13 +475,15 @@ function expClaveLegible(k){
 }
 // Nombre de archivo y título de la pestaña: Expediente_{slug}_v{N}_{fecha}.
 // slug: sin tildes, espacios y símbolos a guiones, máximo 40 caracteres cortados en palabra entera.
-function expedienteNombreArchivo(proyecto, version, fechaISO){
+// tomo (opcional): {k, de} → sufijo _T{k}de{M} antes de la fecha.
+function expedienteNombreArchivo(proyecto, version, fechaISO, tomo){
   let slug = String(proyecto?.nombre || 'proyecto').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   // Máximo 40 caracteres, cortando en límite de palabra (último guion) y no a mitad de una.
   if(slug.length > 40){ const corte = slug.lastIndexOf('-', 40); slug = (corte > 0 ? slug.slice(0, corte) : slug.slice(0, 40)).replace(/-+$/g, ''); }
   slug = slug || 'proyecto';
-  return `Expediente_${slug}_v${version || 1}_${String(fechaISO || '').slice(0, 10)}`;
+  const sufijoTomo = tomo && tomo.de > 1 ? `_T${tomo.k}de${tomo.de}` : '';
+  return `Expediente_${slug}_v${version || 1}${sufijoTomo}_${String(fechaISO || '').slice(0, 10)}`;
 }
 
 // ── 3.2) Carga de datos (red) ───────────────────────────────────────────────
@@ -601,7 +603,14 @@ function expedienteSeccionesActivas(seleccion){
 //   2 (portada + índice) + 2 (contrato) + ⌈rubros/45⌉ + Σ por OC (1 + ⌈ítems/45⌉)
 //   + 1 (resumen de planillas) + Σ por planilla (1 + ⌈ítems/45⌉ si hay detalle)
 //   + 2 (actas) + 1 (liquidación). 45 = filas de tabla a 10 pt que caben en una A4.
-function expedienteEstimar(datos, seleccion){
+// Desde la fase 2 la estimación se hace por unidades de empaquetado (ver 3.7):
+// devuelve unidades, tomos, fotos, páginas (2 por tomo de portada e índice),
+// imágenes de origen y conteos por sección. umbrales: override opcional.
+function expedienteEstimar(datos, seleccion, umbrales){
+  return expedienteEstimarResumen(expedienteResumenDeDatos(datos, seleccion), seleccion, umbrales);
+}
+// Fórmula original de la fase 1 (solo secciones de la fase 1), conservada como referencia.
+function expedienteEstimarFase1(datos, seleccion){
   const activas = expedienteSeccionesActivas(seleccion);
   const calc = expedienteCalcular(datos, seleccion);
   const FILAS = 45;
@@ -629,10 +638,16 @@ function expedienteGenerarHTML(datos, seleccion, meta){
   const proy = datos.proyecto || {};
   const calc = expedienteCalcular(datos, seleccion);
   const activas = expedienteSeccionesActivas(seleccion);
+  // Tomos: meta.tomo = {k, de, unidades, plan}. Las secciones se numeran según el
+  // índice general (activas completas); el cuerpo solo lleva las del tomo.
+  const tomo = meta.tomo && meta.tomo.de > 1 ? meta.tomo : null;
+  const filtroTomo = expedienteFiltroTomo(tomo);
+  const activasTomo = filtroTomo ? activas.filter(k => filtroTomo.secciones.has(k)) : activas;
   const version = meta.version || 1;
   const fechaGen = meta.generadoEn || '';
   const fechaTexto = expFmtFechaLarga(fechaGen);
-  const nombreArchivo = meta.nombreArchivo || expedienteNombreArchivo(proy, version, fechaGen);
+  const nombreArchivo = meta.nombreArchivo || expedienteNombreArchivo(proy, version, fechaGen, tomo);
+  const tomoTxt = tomo ? `Tomo ${tomo.k} de ${tomo.de}` : '';
   const logo = meta.logoDataUri || LOGO_URL;
   const e = expEsc;
   const f = fmtUSD;
@@ -679,28 +694,37 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       <div class="portada-titulo">EXPEDIENTE DE OBRA</div>
       ${seleccion?.subtitulo ? `<div class="portada-subtitulo">${e(seleccion.subtitulo)}</div>` : ''}
       <div class="portada-proyecto">${e(proy.nombre || '')}</div>
+      ${tomo ? `<div class="portada-tomo">${e(tomoTxt)}</div>` : ''}
       <table class="tabla kv portada-partes"><tbody>
         <tr><th>Contratante</th><td>${e(proy.contratante || '—')}</td></tr>
         <tr><th>Contratista</th><td>${e(proy.contratista || '—')}</td></tr>
         <tr><th>Fiscalización</th><td>${e(proy.fiscalizador || 'HIDIVO S.A.S.')}</td></tr>
         <tr><th>Estado</th><td>${e(estadoCierre)}</td></tr>
       </tbody></table>
-      <div class="portada-meta">Expediente v${version} · generado el ${e(fechaTexto)} por ${e(meta.generadoPor || '—')}${meta.rol ? ` (${e(meta.rol)})` : ''}</div>
-      <h2 class="sub-titulo">Ficha del proyecto</h2>
-      <table class="tabla kv"><tbody>${filas.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>
+      <div class="portada-meta">Expediente v${version}${tomo ? ' · ' + e(tomoTxt) : ''} · generado el ${e(fechaTexto)} por ${e(meta.generadoPor || '—')}${meta.rol ? ` (${e(meta.rol)})` : ''}</div>
+      ${!tomo || tomo.k === 1 ? `<h2 class="sub-titulo">Ficha del proyecto</h2>
+      <table class="tabla kv"><tbody>${filas.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>` : '<p class="nota">La ficha del proyecto y el índice general están en el tomo 1.</p>'}
     </section>`;
   };
 
   // 2. Índice
   S.indice = () => {
-    const items = activas.map(clave => {
+    const etiquetaUnidad = k => { const [sec, mes] = String(k).split(':'); const etq = etiquetaSeccion(sec); return mes ? `${etq} — ${expMesLabel(mes)}` : etq; };
+    const porTomos = tomo && tomo.k === 1 && Array.isArray(tomo.plan)
+      ? `<h2 class="sub-titulo">Contenido por tomo</h2><ol class="indice">${tomo.plan.map((u, i) => `<li><b>Tomo ${i + 1} de ${tomo.plan.length}</b>: ${e(u.map(etiquetaUnidad).join('; '))}</li>`).join('')}</ol>` : '';
+    const claves = tomo && tomo.k > 1 ? activasTomo : activas;
+    const items = claves.map(clave => {
       let subs = '';
       if(clave === 'ordenes_cambio' && calc.ocsIncluidas.length)
         subs = `<ol class="indice-sub">${calc.ocsIncluidas.map(o => `<li>OC-${String(o.numero).padStart(2, '0')} — ${e(o.titulo)} (${e(ESTADOS_OC[o.estado]?.label || o.estado)})</li>`).join('')}</ol>`;
       if(clave === 'planillas' && calc.planillas.length)
         subs = `<ol class="indice-sub">${calc.planillas.map(p => `<li>Planilla N° ${p.numero} — ${expFmtFecha(p.fecha_inicio)} a ${expFmtFecha(p.fecha_fin)} (${e(ESTADOS_PLANILLA[p.estado]?.label || p.estado)})</li>`).join('')}</ol>`;
       if(clave === 'actas') subs = `<ol class="indice-sub"><li>Acta de recepción provisional</li><li>Acta de recepción definitiva</li></ol>`;
-      return `<li>${e(etiquetaSeccion(clave))}${subs}</li>`;
+      if(clave === 'libro_obra' && (datos.libro || []).length){
+        const meses = [...new Set(datos.libro.map(r => String(r.fecha).slice(0, 7)))].sort().filter(m => !filtroTomo?.meses.libro_obra || filtroTomo.meses.libro_obra.has(m));
+        subs = `<ol class="indice-sub">${meses.map(m => `<li>${e(expMesLabel(m))} (${datos.libro.filter(r => String(r.fecha).startsWith(m)).length} registros)</li>`).join('')}</ol>`;
+      }
+      return `<li value="${numero[clave]}">${e(etiquetaSeccion(clave))}${subs}</li>`;
     }).join('');
     const pedidas = new Set(seleccion?.secciones || []);
     const noIncluidas = EXPEDIENTE_SECCIONES.filter(s => !activas.includes(s.clave))
@@ -710,8 +734,9 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       calc.filtros.detallePlanillas ? 'planillas con detalle por rubro' : 'planillas sin detalle por rubro'
     ];
     return `<section class="sec" id="sec-indice">
-      ${titulo('indice', 'Índice')}
-      <ol class="indice">${items}</ol>
+      ${titulo('indice', tomo && tomo.k > 1 ? `Índice del tomo ${tomo.k}` : 'Índice')}
+      ${tomo && tomo.k > 1 ? '<p class="nota">El índice general de todos los tomos está en el tomo 1.</p>' : ''}
+      <ol class="indice">${items}</ol>${porTomos}
       <p class="nota"><b>Este expediente no incluye:</b> ${noIncluidas.length ? e(noIncluidas.join('; ')) : 'ninguna sección quedó fuera'}.</p>
       <p class="nota"><b>Filtros aplicados:</b> ${e(filtrosTxt.join('; '))}.${pedidas.size ? '' : ''}</p>
     </section>`;
@@ -895,9 +920,9 @@ function expedienteGenerarHTML(datos, seleccion, meta){
     </section>`;
   };
 
-  Object.assign(S, expedienteSeccionesFase2(datos, seleccion, meta, { e, f, titulo, sub, vacio, numero }));
-  const cuerpo = activas.map(clave => S[clave] ? S[clave]() : '').join('\n');
-  const pie = `Expediente v${version} · HidivoGdP · generado ${e(fechaTexto)}`;
+  Object.assign(S, expedienteSeccionesFase2(datos, seleccion, meta, { e, f, titulo, sub, vacio, numero, filtroTomo }));
+  const cuerpo = activasTomo.map(clave => S[clave] ? S[clave]() : '').join('\n');
+  const pie = `Expediente v${version}${tomo ? ' · ' + e(tomoTxt) : ''} · HidivoGdP · generado ${e(fechaTexto)}`;
 
   return `<!doctype html>
 <html lang="es">
@@ -913,7 +938,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
   <span>A4, márgenes predeterminados, activar «Gráficos de fondo». Nombre sugerido: ${e(nombreArchivo)}.pdf</span>
   <span class="fotos-estado" id="fotosEstado"></span>
 </div>
-<header class="enc-pagina"><img src="${logo}" alt="HIDIVO"><span class="enc-proyecto">${e(proy.nombre || '')}</span><span class="enc-version">Expediente v${version}</span></header>
+<header class="enc-pagina"><img src="${logo}" alt="HIDIVO"><span class="enc-proyecto">${e(proy.nombre || '')}</span><span class="enc-version">Expediente v${version}${tomo ? ` · Tomo ${tomo.k}/${tomo.de}` : ''}</span></header>
 <footer class="pie-pagina">${pie}</footer>
 ${calc.parcial ? '<div class="marca-agua" aria-hidden="true">EXPEDIENTE PARCIAL – PROYECTO EN EJECUCIÓN</div>' : ''}
 <main>
@@ -970,6 +995,7 @@ h1, h2, h3 { margin: 0 0 8px; color: #1a1a2e; }
 .portada-proyecto { font-size: 16pt; font-weight: 700; margin: 0 0 10mm; }
 .portada-partes { max-width: 140mm; margin: 0 auto 8mm; text-align: left; }
 .portada-meta { font-size: 9.5pt; color: #676879; margin-bottom: 14mm; }
+.portada-tomo { font-size: 15pt; font-weight: 700; color: #1a1a2e; margin: 0 0 8mm; letter-spacing: 1px; }
 .portada .sub-titulo { text-align: left; break-before: page; page-break-before: always; }
 .portada .tabla.kv { text-align: left; }
 /* Encabezado y pie repetidos (position:fixed) */
@@ -1407,6 +1433,8 @@ function expMesLabel(ym){
 // Secciones de la fase 2. Reciben el mismo contexto que las de la fase 1.
 function expedienteSeccionesFase2(datos, seleccion, meta, h){
   const { e, f, titulo, sub, vacio, numero } = h;
+  const filtroTomo = h.filtroTomo || null;
+  const mesEnTomo = (sec, m) => !filtroTomo || !filtroTomo.meses[sec] || filtroTomo.meses[sec].has(m);
   const proy = datos.proyecto || {};
   const nombre = id => (datos.perfiles || {})[id] || '—';
   const S = {};
@@ -1449,33 +1477,37 @@ function expedienteSeccionesFase2(datos, seleccion, meta, h){
     const filtros = seleccion?.filtros || {};
     const rango = filtros.libroDesde || filtros.libroHasta ? ` (del ${expFmtFecha(filtros.libroDesde) } al ${expFmtFecha(filtros.libroHasta)})` : '';
     if(!regs.length) return `<section class="sec" id="sec-libro_obra">${titulo('libro_obra', 'Libro de obra')}${vacio('Sin registros del libro de obra' + rango)}</section>`;
-    const meses = [...new Set(regs.map(r => String(r.fecha).slice(0, 7)))].sort();
+    const todosMeses = [...new Set(regs.map(r => String(r.fecha).slice(0, 7)))].sort();
+    const meses = todosMeses.filter(m => mesEnTomo('libro_obra', m));
     const totalFotos = regs.reduce((s, r) => s + (r.fotos || []).length, 0);
     const resumen = `<table class="tabla"><thead><tr><th>Mes</th><th class="num">Registros</th><th class="num">Fotos</th><th class="num">Aprobados</th><th class="num">Pendientes</th><th class="num">Observados</th></tr></thead><tbody>${
       meses.map(m => { const rs = regs.filter(r => String(r.fecha).startsWith(m)); const n = est => rs.filter(r => r.estado_aprobacion === est).length;
         return `<tr><td>${e(expMesLabel(m))}</td><td class="num">${rs.length}</td><td class="num">${rs.reduce((s, r) => s + (r.fotos || []).length, 0)}</td><td class="num">${n('aprobado')}</td><td class="num">${n('pendiente')}</td><td class="num">${n('observado')}</td></tr>`; }).join('')
     }</tbody><tfoot><tr><th>Total</th><th class="num">${regs.length}</th><th class="num">${totalFotos}</th><th colspan="3"></th></tr></tfoot></table>`;
-    const bloques = meses.map((m, k) => {
+    const bloques = meses.map(m => {
       const rs = regs.filter(r => String(r.fecha).startsWith(m));
+      const k = todosMeses.indexOf(m);
       return `<section class="sub libro-doc" id="libro-${m}">${sub('libro_obra', k + 1, `${expMesLabel(m)} — ${rs.length} registro(s)`)}${
         rs.map(r => `<div class="registro">${renderRegistroLibroHTML(r, { nombresAprobadores: datos.perfiles || {}, rubros: r.rubros, fotos: [], inc: { actividades: true, equipos: true, materiales: true, rubros: true, novedades: true, fotos: false } })}${
           r.estado_aprobacion === 'observado' && r.observacion_aprobacion ? `<p class="aviso">Observación de fiscalización: ${e(r.observacion_aprobacion)}</p>` : ''
         }${expFotosHTML(r.fotos, `Registro N° ${r.numero_registro ?? '—'}`, r.fecha)}</div>`).join('')
       }</section>`;
     }).join('');
-    return `<section class="sec" id="sec-libro_obra">${titulo('libro_obra', 'Libro de obra')}<p class="nota">${regs.length} registro(s)${rango}, ${totalFotos} foto(s). Cada registro lleva su estado de aprobación y sello.</p>${resumen}</section>${bloques}`;
+    const notaTomo = filtroTomo && filtroTomo.meses.libro_obra ? ` En este tomo: ${meses.map(expMesLabel).join(', ')}.` : '';
+    return `<section class="sec" id="sec-libro_obra">${titulo('libro_obra', 'Libro de obra')}<p class="nota">${regs.length} registro(s)${rango}, ${totalFotos} foto(s). Cada registro lleva su estado de aprobación y sello.${notaTomo}</p>${resumen}</section>${bloques}`;
   };
 
   // Observaciones: cada una con fotos y respuestas en orden.
   S.observaciones = () => {
-    const obs = datos.observaciones || [];
+    const todasObs = datos.observaciones || [];
+    const obs = todasObs.filter(o => mesEnTomo('observaciones', String(o.created_at).slice(0, 7)));
     const filtros = seleccion?.filtros || {};
     const ESTADO = { abierta: 'Abierta', en_proceso: 'En proceso', resuelta: 'Resuelta' };
     if(!obs.length) return `<section class="sec" id="sec-observaciones">${titulo('observaciones', 'Observaciones de fiscalización')}${vacio(filtros.observaciones === 'resueltas' ? 'Sin observaciones resueltas' : 'Sin observaciones registradas')}</section>`;
     const resumen = `<table class="tabla"><thead><tr><th>N°</th><th>Título</th><th>Fecha</th><th>Estado</th><th class="num">Fotos</th><th class="num">Respuestas</th></tr></thead><tbody>${
       obs.map(o => `<tr><td>${o.numero ?? '—'}</td><td>${e(o.titulo)}</td><td>${expFmtFecha(o.created_at)}</td><td>${ESTADO[o.estado] || e(o.estado)}</td><td class="num">${(o.fotos || []).length}</td><td class="num">${(o.respuestas || []).length}</td></tr>`).join('')
     }</tbody></table>`;
-    const docs = obs.map((o, k) => `<section class="sub" id="obs-${o.id}">${sub('observaciones', k + 1, `Observación N° ${o.numero ?? '—'} — ${o.titulo}`)}
+    const docs = obs.map(o => `<section class="sub" id="obs-${o.id}">${sub('observaciones', todasObs.indexOf(o) + 1, `Observación N° ${o.numero ?? '—'} — ${o.titulo}`)}
       <table class="tabla kv"><tbody>
         <tr><th>Fecha</th><td>${expFmtFechaHora(o.created_at)}</td></tr>
         <tr><th>Autor</th><td>${e(nombre(o.creado_por))}</td></tr>
@@ -1636,4 +1668,216 @@ function expedienteCSSFase2(){
 /* Curva S */
 .curva img { width: 100%; max-width: 180mm; height: auto; display: block; margin: 6px auto; border: 1px solid #e6e9ef; }
 `;
+}
+
+// ── 3.7) Tomos: unidades, estimación por conteos y empaquetado ──────────────
+//
+// Unidades de empaquetado (no se parten): cada sección de la fase 1 es una
+// unidad; el libro de obra se divide en una unidad por mes; las observaciones
+// van en una sola unidad salvo que superen el umbral solas (entonces, por mes);
+// el resto, una unidad por sección. Cada unidad lleva fotos y páginas estimadas.
+//
+// Fórmula de páginas (A4, 45 filas de tabla por página, 6 fotos por página a dos
+// por fila), extensible añadiendo términos:
+//   contrato 2 · presupuesto ⌈rubros/45⌉ · órdenes de cambio Σ(1+⌈ítems/45⌉)
+//   cronograma 2+⌈rubros programados/45⌉ · libro (mes) ⌈0,6·registros + fotos/6⌉
+//   planillas 1+Σ(1+⌈ítems/45⌉ si hay detalle) · ensayos 1+⌈n/45⌉ · formatos 1
+//   observaciones ⌈0,5·n + fotos/6 + respuestas/12⌉ · sst 2+⌈filas/40⌉+⌈capacitaciones/4⌉+⌈fotos/6⌉
+//   subcontratistas 1 · actas 2 · liquidación 1. Portada e índice: 2 por tomo.
+
+// Resumen homogéneo a partir de los datos cargados (para generar).
+function expedienteResumenDeDatos(datos, seleccion){
+  const calc = expedienteCalcular(datos, seleccion);
+  const mes = s => String(s || '').slice(0, 7);
+  const libroMeses = {};
+  (datos.libro || []).forEach(r => { const m = mes(r.fecha); libroMeses[m] = libroMeses[m] || { registros: 0, fotos: 0 }; libroMeses[m].registros++; libroMeses[m].fotos += (r.fotos || []).length; });
+  const obsMeses = {};
+  (datos.observaciones || []).forEach(o => { const m = mes(o.created_at); obsMeses[m] = obsMeses[m] || { n: 0, fotos: 0, respuestas: 0 }; obsMeses[m].n++; obsMeses[m].fotos += (o.fotos || []).length + (o.respuestas || []).filter(r => r.adjunto && r.adjunto.tipo === 'foto').length; obsMeses[m].respuestas += (o.respuestas || []).length; });
+  const s = datos.sst || {};
+  return {
+    rubros: (datos.rubros || []).length,
+    ocs: calc.ocsIncluidas.map(o => (o.items || []).length),
+    planillas: calc.planillas.map(p => (p.rubros || []).length),
+    detallePlanillas: !!calc.filtros.detallePlanillas,
+    cronogramaRubros: (datos.cronograma?.filas || []).length || (datos.rubros || []).filter(r => r.fecha_inicio || r.fecha_fin).length,
+    libroMeses, obsMeses,
+    ensayos: (datos.ensayos?.lista || []).length,
+    formatos: (datos.formatos?.respuestas || []).length,
+    sst: datos.sst ? { filas: (s.riesgos || []).length + (s.eppMatriz || []).length + (s.eppEntregas || []).length + (s.examMatriz || []).length + (s.ptes || []).length + (s.incidentes || []).length + (s.checklist || []).length / 10,
+      capacitaciones: (s.capacitaciones || []).length, fotos: (s.eppEntregas || []).filter(x => x.foto).length + (s.incidentes || []).filter(x => x.foto).length } : null,
+    subcontratos: (datos.subcontratos || []).length,
+    actas: (datos.actas || []).length,
+    liquidacion: datos.liquidacion ? 1 : 0
+  };
+}
+
+// Conteos rápidos antes de cargar (para la estimación del modal). Usa count con
+// head: true donde basta el número y consultas ligeras (solo fecha / id padre)
+// donde hace falta agrupar por mes. Devuelve el mismo resumen que
+// expedienteResumenDeDatos más `fotosTotales` e `imagenesOrigen` aproximadas.
+async function expedienteContar(proyectoId, seleccion, cliente){
+  const c = cliente || (typeof sb !== 'undefined' ? sb : null);
+  if(!c) throw new Error('Sin cliente de Supabase');
+  const activas = new Set(expedienteSeccionesActivas(seleccion));
+  const filtros = seleccion?.filtros || {};
+  const n = async (tabla, armar) => { const { count, error } = await armar(c.from(tabla).select('id', { count: 'exact', head: true })); if(error) throw new Error('No se pudo contar ' + tabla + ': ' + (error.message || error)); return count || 0; };
+  const ligera = (tabla, cols, armar) => expedienteSelectTodo(() => armar(c.from(tabla).select(cols)));
+  const mes = s => String(s || '').slice(0, 7);
+  const r = { rubros: 0, ocs: [], planillas: [], detallePlanillas: !!filtros.detallePlanillas, cronogramaRubros: 0, libroMeses: {}, obsMeses: {}, ensayos: 0, formatos: 0, sst: null, subcontratos: 0, actas: 0, liquidacion: 0, fotosTotales: 0 };
+  const tareas = [];
+  if(activas.has('presupuesto') || activas.has('cronograma')) tareas.push(n('rubros', q => q.eq('proyecto_id', proyectoId)).then(v => { r.rubros = v; }));
+  if(activas.has('ordenes_cambio')) tareas.push((async () => {
+    const ocs = await ligera('ordenes_cambio', 'id,estado', q => q.eq('proyecto_id', proyectoId));
+    const incl = ocs.filter(o => filtros.incluirOCsNoAprobadas || o.estado === 'aprobada');
+    const items = incl.length ? await expedienteEnLotes(incl.map(o => o.id), lote => c.from('orden_cambio_items').select('orden_id').in('orden_id', lote)) : [];
+    r.ocs = incl.map(o => items.filter(i => i.orden_id === o.id).length);
+  })());
+  if(activas.has('planillas')) tareas.push((async () => {
+    const plans = await ligera('planillas_pago', 'id', q => q.eq('proyecto_id', proyectoId));
+    const items = plans.length ? await expedienteEnLotes(plans.map(p => p.id), lote => c.from('planilla_rubros').select('planilla_id').in('planilla_id', lote)) : [];
+    r.planillas = plans.map(p => items.filter(i => i.planilla_id === p.id).length);
+  })());
+  if(activas.has('cronograma')) tareas.push((async () => {
+    // Solo las filas de la línea base activa (las mismas que carga expedienteCargarFase2).
+    const lbs = await ligera('lineas_base', 'id,activa', q => q.eq('proyecto_id', proyectoId));
+    const activa = lbs.find(l => l.activa);
+    r.cronogramaRubros = await n('cronograma_rubros', q => activa ? q.eq('proyecto_id', proyectoId).eq('linea_base_id', activa.id) : q.eq('proyecto_id', proyectoId));
+  })());
+  if(activas.has('libro_obra')) tareas.push((async () => {
+    const regs = await ligera('libro_obra', 'id,fecha', q => { q = q.eq('proyecto_id', proyectoId); if(filtros.libroDesde) q = q.gte('fecha', filtros.libroDesde); if(filtros.libroHasta) q = q.lte('fecha', filtros.libroHasta); return q; });
+    const fotos = regs.length ? await expedienteEnLotes(regs.map(x => x.id), lote => c.from('libro_obra_fotos').select('registro_id').in('registro_id', lote)) : [];
+    const mesDe = {}; regs.forEach(x => { mesDe[x.id] = mes(x.fecha); const m = mesDe[x.id]; r.libroMeses[m] = r.libroMeses[m] || { registros: 0, fotos: 0 }; r.libroMeses[m].registros++; });
+    fotos.forEach(f => { const m = mesDe[f.registro_id]; if(r.libroMeses[m]) r.libroMeses[m].fotos++; });
+    r.fotosTotales += fotos.length;
+  })());
+  if(activas.has('observaciones')) tareas.push((async () => {
+    const obs = await ligera('observaciones', 'id,created_at,estado', q => { q = q.eq('proyecto_id', proyectoId); if(filtros.observaciones === 'resueltas') q = q.eq('estado', 'resuelta'); return q; });
+    const ids = obs.map(o => o.id);
+    const [fotos, resps] = await Promise.all([
+      ids.length ? expedienteEnLotes(ids, lote => c.from('observacion_fotos').select('observacion_id').in('observacion_id', lote)) : [],
+      ids.length ? expedienteEnLotes(ids, lote => c.from('observacion_respuestas').select('observacion_id,archivo_nombre,archivo_url').in('observacion_id', lote)) : []
+    ]);
+    const mesDe = {}; obs.forEach(o => { mesDe[o.id] = mes(o.created_at); const m = mesDe[o.id]; r.obsMeses[m] = r.obsMeses[m] || { n: 0, fotos: 0, respuestas: 0 }; r.obsMeses[m].n++; });
+    fotos.forEach(f => { const m = mesDe[f.observacion_id]; if(r.obsMeses[m]) r.obsMeses[m].fotos++; });
+    resps.forEach(x => { const m = mesDe[x.observacion_id]; if(!r.obsMeses[m]) return; r.obsMeses[m].respuestas++; if(/\.(jpe?g|png|webp|jfif)(\?|$)/i.test(String(x.archivo_nombre || x.archivo_url || ''))) r.obsMeses[m].fotos++; });
+    r.fotosTotales += Object.values(r.obsMeses).reduce((s, m) => s + m.fotos, 0);
+  })());
+  if(activas.has('ensayos')) tareas.push(n('ensayos', q => q.eq('proyecto_id', proyectoId)).then(v => { r.ensayos = v; }));
+  if(activas.has('formatos_calidad')) tareas.push(n('formatos_calidad_respuestas', q => q.eq('proyecto_id', proyectoId)).then(v => { r.formatos = v; }));
+  if(activas.has('sst')) tareas.push((async () => {
+    const [riesgos, epp, entregas, exam, ptes, inc, chk, caps] = await Promise.all(['sst_matriz_riesgos', 'sst_epp_matriz', 'sst_epp_entregas', 'sst_examenes_matriz', 'sst_pte', 'sst_incidentes', 'sst_checklist_respuestas', 'sst_capacitaciones'].map(t => n(t, q => q.eq('proyecto_id', proyectoId))));
+    const conFoto = await ligera('sst_epp_entregas', 'id,foto_url', q => q.eq('proyecto_id', proyectoId));
+    const fotos = conFoto.filter(x => x.foto_url).length;
+    r.sst = { filas: riesgos + epp + entregas + exam + ptes + inc + chk / 10, capacitaciones: caps, fotos };
+    r.fotosTotales += fotos;
+  })());
+  if(activas.has('subcontratistas')) tareas.push(n('subcontratos', q => q.eq('proyecto_id', proyectoId)).then(v => { r.subcontratos = v; }));
+  if(activas.has('actas')) tareas.push(n('actas_recepcion', q => q.eq('proyecto_id', proyectoId)).then(v => { r.actas = v; }));
+  if(activas.has('liquidacion')) tareas.push(n('liquidaciones', q => q.eq('proyecto_id', proyectoId)).then(v => { r.liquidacion = v ? 1 : 0; }));
+  await Promise.all(tareas);
+  r.imagenesOrigen = r.fotosTotales;
+  return r;
+}
+
+// Unidades de empaquetado con fotos y páginas, en el orden del índice.
+function expedienteUnidades(resumen, seleccion, umbrales){
+  const u = Object.assign({}, typeof EXPEDIENTE_UMBRALES !== 'undefined' ? EXPEDIENTE_UMBRALES : { maxFotos: 400, maxPaginas: 150, tolerancia: 0.1 }, umbrales || {});
+  const activas = expedienteSeccionesActivas(seleccion).filter(k => k !== 'portada' && k !== 'indice');
+  const F = 45, ceil = Math.ceil;
+  const etiqueta = clave => (EXPEDIENTE_SECCIONES.find(s => s.clave === clave) || {}).etiqueta || clave;
+  const unidades = [];
+  for(const clave of activas){
+    switch(clave){
+      case 'contrato': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 2 }); break;
+      case 'presupuesto': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: ceil(resumen.rubros / F) || 1 }); break;
+      case 'ordenes_cambio': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: Math.max(1, resumen.ocs.reduce((s, items) => s + 1 + ceil(items / F), 0)) }); break;
+      case 'cronograma': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 2 + ceil(resumen.cronogramaRubros / F) }); break;
+      case 'libro_obra': {
+        const meses = Object.keys(resumen.libroMeses || {}).sort();
+        if(!meses.length) unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 });
+        meses.forEach(m => { const x = resumen.libroMeses[m]; unidades.push({ clave: 'libro_obra:' + m, seccion: 'libro_obra', mes: m, etiqueta: 'Libro de obra — ' + expMesLabel(m), fotos: x.fotos, paginas: Math.max(1, ceil(0.6 * x.registros + x.fotos / 6)) }); });
+        break;
+      }
+      case 'planillas': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 + resumen.planillas.reduce((s, items) => s + 1 + (resumen.detallePlanillas ? ceil(items / F) : 0), 0) }); break;
+      case 'ensayos': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 + ceil(resumen.ensayos / F) }); break;
+      case 'formatos_calidad': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 }); break;
+      case 'observaciones': {
+        const meses = Object.keys(resumen.obsMeses || {}).sort();
+        const tot = meses.reduce((s, m) => { const x = resumen.obsMeses[m]; return { n: s.n + x.n, fotos: s.fotos + x.fotos, respuestas: s.respuestas + x.respuestas }; }, { n: 0, fotos: 0, respuestas: 0 });
+        const pag = x => Math.max(1, ceil(0.5 * x.n + x.fotos / 6 + x.respuestas / 12));
+        if(meses.length > 1 && (tot.fotos > u.maxFotos || pag(tot) > u.maxPaginas)){
+          meses.forEach(m => { const x = resumen.obsMeses[m]; unidades.push({ clave: 'observaciones:' + m, seccion: 'observaciones', mes: m, etiqueta: 'Observaciones — ' + expMesLabel(m), fotos: x.fotos, paginas: pag(x) }); });
+        } else unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: tot.fotos, paginas: pag(tot) });
+        break;
+      }
+      case 'sst': { const s = resumen.sst || { filas: 0, capacitaciones: 0, fotos: 0 }; unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: s.fotos, paginas: 2 + ceil(s.filas / 40) + ceil(s.capacitaciones / 4) + ceil(s.fotos / 6) }); break; }
+      case 'subcontratistas': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 }); break;
+      case 'actas': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 2 }); break;
+      case 'liquidacion': unidades.push({ clave, seccion: clave, etiqueta: etiqueta(clave), fotos: 0, paginas: 1 }); break;
+      default: break; // secciones de la fase 3: sin unidad
+    }
+  }
+  return unidades;
+}
+
+// Empaquetado greedy y determinista: recorre las unidades en orden y llena tomos
+// sin superar el umbral de fotos ni el de páginas (el primero que se alcance),
+// con una tolerancia (10 % por defecto) para no abrir un tomo nuevo por una
+// unidad mínima. Una unidad que excede sola va en su propio tomo; nunca se parte.
+function expedienteEmpaquetarTomos(unidades, umbrales){
+  const u = Object.assign({}, typeof EXPEDIENTE_UMBRALES !== 'undefined' ? EXPEDIENTE_UMBRALES : { maxFotos: 400, maxPaginas: 150, tolerancia: 0.1 }, umbrales || {});
+  const limF = u.maxFotos * (1 + u.tolerancia), limP = u.maxPaginas * (1 + u.tolerancia);
+  const tomos = [];
+  let actual = null;
+  for(const un of unidades){
+    const fotos = Number(un.fotos) || 0, paginas = Number(un.paginas) || 0;
+    if(actual && actual.fotos + fotos <= limF && actual.paginas + paginas <= limP){
+      actual.unidades.push(un.clave); actual.fotos += fotos; actual.paginas += paginas;
+    } else {
+      actual = { unidades: [un.clave], fotos, paginas };
+      tomos.push(actual);
+    }
+  }
+  return tomos.length ? tomos : [{ unidades: [], fotos: 0, paginas: 0 }];
+}
+
+// Plan de tomos: el guardado en filtros.tomos si cubre exactamente las unidades
+// actuales (así «Reutilizar selección» reproduce el mismo corte); si no, se empaqueta.
+function expedientePlanTomos(unidades, seleccion, umbrales){
+  const guardado = seleccion?.filtros?.tomos;
+  const claves = unidades.map(x => x.clave);
+  if(Array.isArray(guardado) && guardado.length && guardado.every(t => Array.isArray(t))){
+    const planas = guardado.flat();
+    if(planas.length === claves.length && planas.every((k, i) => k === claves[i])){
+      const porClave = {}; unidades.forEach(x => { porClave[x.clave] = x; });
+      return guardado.map(t => ({ unidades: t.slice(), fotos: t.reduce((s, k) => s + (porClave[k]?.fotos || 0), 0), paginas: t.reduce((s, k) => s + (porClave[k]?.paginas || 0), 0) }));
+    }
+  }
+  return expedienteEmpaquetarTomos(unidades, umbrales);
+}
+
+// Estimación completa a partir de un resumen (conteos o datos): unidades, tomos,
+// fotos, páginas (2 por tomo de portada e índice) e imágenes de origen.
+function expedienteEstimarResumen(resumen, seleccion, umbrales){
+  const unidades = expedienteUnidades(resumen, seleccion, umbrales);
+  const tomos = expedientePlanTomos(unidades, seleccion, umbrales);
+  const fotos = unidades.reduce((s, x) => s + x.fotos, 0);
+  const paginas = unidades.reduce((s, x) => s + x.paginas, 0) + 2 * tomos.length;
+  return { unidades, tomos, fotos, paginas, secciones: expedienteSeccionesActivas(seleccion), imagenesOrigen: resumen.imagenesOrigen ?? fotos, filas: {
+    presupuesto: resumen.rubros, ordenes_cambio: resumen.ocs.length, planillas: resumen.planillas.length, actas: resumen.actas, liquidacion: resumen.liquidacion,
+    libro_obra: Object.values(resumen.libroMeses || {}).reduce((s, m) => s + m.registros, 0), observaciones: Object.values(resumen.obsMeses || {}).reduce((s, m) => s + m.n, 0),
+    ensayos: resumen.ensayos, formatos_calidad: resumen.formatos, subcontratistas: resumen.subcontratos, cronograma: resumen.cronogramaRubros } };
+}
+
+// Secciones y meses que entran en un tomo: null = todo (un solo PDF).
+function expedienteFiltroTomo(tomo){
+  if(!tomo || !Array.isArray(tomo.unidades)) return null;
+  const secciones = new Set(['portada', 'indice']);
+  const meses = { libro_obra: null, observaciones: null };
+  for(const k of tomo.unidades){
+    const [sec, mes] = String(k).split(':');
+    secciones.add(sec);
+    if(mes){ meses[sec] = meses[sec] || new Set(); meses[sec].add(mes); }
+  }
+  return { secciones, meses };
 }

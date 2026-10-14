@@ -66,15 +66,17 @@ function extraerConst(src, nombre){
 // Soporta: from(t).select('cols' | '*, alias:tabla(cols)').eq().in().neq().order().limit()
 // .range().single().maybeSingle(), y `await` / Promise.all sobre el builder.
 // Las filas salen del fixture {tabla: [filas]}. Devuelve {data, error:null}.
-const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id' };
+const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id', libro_obra: 'registro_id', observaciones: 'observacion_id' };
 
 function crearSb(fixture, opciones = {}){
   const llamadas = [];
   function builder(tabla){
     const b = {
       _tabla: tabla, _filtros: [], _orden: [], _rango: null, _single: false, _maybe: false, _select: '*',
-      select(cols = '*'){ b._select = cols; return b; },
-      eq(c, v){ b._filtros.push(f => f[c] === v); return b; },
+      select(cols = '*', opts){ b._select = cols; b._opts = opts || null; return b; },
+      // Columna con punto (alias.columna): filtra por la fila embebida (alias!inner(...)).
+      _valor(f, c){ if(!c.includes('.')) return f[c]; const [al, col] = c.split('.'); const fk = FK_POR_ALIAS[al] || (al + '_id'); const emb = (fixture[al] || []).find(x => x.id === f[fk]); return emb ? emb[col] : undefined; },
+      eq(c, v){ b._filtros.push(f => b._valor(f, c) === v); return b; },
       neq(c, v){ b._filtros.push(f => f[c] !== v); return b; },
       gte(c, v){ b._filtros.push(f => f[c] != null && f[c] >= v); return b; },
       lte(c, v){ b._filtros.push(f => f[c] != null && f[c] <= v); return b; },
@@ -121,6 +123,7 @@ function crearSb(fixture, opciones = {}){
             return copia;
           });
         }
+        if(b._opts && b._opts.head) return { data: null, error: null, count: filas.length };
         if(b._single || b._maybe) return { data: filas[0] || null, error: b._single && !filas[0] ? { message: 'no rows' } : null };
         return { data: filas, error: null };
       },

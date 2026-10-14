@@ -1195,6 +1195,7 @@
       <button class="btn" onclick="cerrarModal('modalExpediente')">Cancelar</button>
       <button class="btn primary" id="btnGenerarExpedienteOk" onclick="generarExpediente()">Generar y previsualizar</button>
       <div id="expedienteAviso" style="flex-basis:100%;font-size:12px;color:#b8860b"></div>
+      <div id="expedienteTomos" style="flex-basis:100%"></div>
     </div>
   </div>
 </div>
@@ -3757,6 +3758,7 @@ function limpiarEstadoProyecto(){
   window._reajusteTerminos = []; window._extraccion = null; window._editandoGarantiaId = null; window._actaTipo = null;
   // Expediente de obra: lista generada, datos cargados para el modal y selección en curso
   window._expedientes = null; window._expedienteDatos = null; window._expedienteSeleccion = null;
+  window._expedienteConteos = null; window._expedienteGenerado = null; window._expedienteConteoGen = 0;
   // Observaciones y planos
   window._obsActiva = null; window._resaltarObsId = null; window._obsNuevaPlano = null; window._obsNuevaPin = {x:null, y:null};
   window._planosProyecto = []; _selPin = null; _selPinPdf = {doc:null, url:null, pagina:1};
@@ -11567,13 +11569,14 @@ function renderExpedientesLista(){
   const ESTADO = { solicitado:'Solicitado', generando:'Generando', listo:'Listo', error:'Error' };
   const puedeReutilizar = puedeGenerarExpediente() && !esDispositivoMovil();
   cont.innerHTML = `<div style="overflow-x:auto"><table class="tabla" style="width:100%"><thead><tr>
-      <th>Versión</th><th>Fecha y hora</th><th>Usuario</th><th>Preset</th><th style="text-align:center">Secciones</th><th>Estado</th><th></th>
+      <th>Versión</th><th>Fecha y hora</th><th>Usuario</th><th>Preset</th><th style="text-align:center">Secciones</th><th style="text-align:center">Tomos</th><th>Estado</th><th></th>
     </tr></thead><tbody>${lista.map(x=>`<tr>
       <td><b>v${x.version}</b></td>
       <td style="white-space:nowrap">${expFmtFechaHora(x.generado_en)}</td>
       <td>${escAttr(x.perfil ? `${x.perfil.nombre||''} ${x.perfil.apellido||''}`.trim() : '—')}</td>
       <td>${escAttr(EXPEDIENTE_PRESETS[x.preset]?.etiqueta || (x.preset ? x.preset : 'Personalizado'))}</td>
       <td style="text-align:center">${(x.secciones||[]).length}</td>
+      <td style="text-align:center">${x.tomos||1}</td>
       <td>${x.estado==='error' ? `<span style="color:#e2445c" title="${escAttr(x.error_detalle||'')}">Error</span>` : (ESTADO[x.estado]||escAttr(x.estado||''))}</td>
       <td style="white-space:nowrap">${puedeReutilizar ? `<button class="btn" style="padding:3px 10px;font-size:12px" onclick="reutilizarSeleccionExpediente('${x.id}')">↺ Reutilizar selección</button>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>
@@ -11589,32 +11592,56 @@ function reutilizarSeleccionExpediente(id){
 // Abre el modal con una selección: la indicada, o la del último expediente
 // generado del proyecto, o el preset Completo. Carga los datos para los
 // conteos y la estimación.
+// Umbrales de tomos: constante + override desde la consola (window._expedienteUmbrales)
+// para probar tomos en producción bajando el umbral, p. ej. { maxFotos: 100 }.
+function umbralesExpediente(){
+  return Object.assign({}, EXPEDIENTE_UMBRALES, window._expedienteUmbrales || {});
+}
+
+// Abre el modal con una selección: la indicada, o la del último expediente
+// generado del proyecto, o el preset Completo. Cuenta registros y fotos (sin
+// cargar todo) para los conteos, la estimación y los tomos propuestos.
 async function abrirModalExpediente(seleccionPrevia){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   if(!puedeGenerarExpediente()) return;
   if(esDispositivoMovil()){ toast('El expediente se genera desde computador','error'); return; }
   const ultimo = (window._expedientes||[])[0];
+  const base = EXPEDIENTE_PRESETS.completo;
   const sel = seleccionPrevia
-    || (ultimo ? { preset: ultimo.preset||null, secciones: ultimo.secciones||[], filtros: ultimo.filtros||{}, subtitulo: ultimo.subtitulo||'' }
-               : { preset:'completo', secciones: EXPEDIENTE_PRESETS.completo.secciones.slice(), filtros: {...EXPEDIENTE_PRESETS.completo.filtros}, subtitulo:'' });
+    || (ultimo ? { preset: ultimo.preset||null, secciones: ultimo.secciones||[], filtros: { ...base.filtros, ...(ultimo.filtros||{}) }, subtitulo: ultimo.subtitulo||'' }
+               : { preset:'completo', secciones: base.secciones.slice(), filtros: { ...base.filtros }, subtitulo:'' });
   window._expedienteSeleccion = sel;
-  window._expedienteDatos = null;
+  window._expedienteConteos = null;
+  window._expedienteGenerado = null;
   renderModalExpediente(sel);
   document.getElementById('expedienteAviso').innerHTML = '';
-  document.getElementById('expedienteEstimacion').textContent = 'Cargando datos del proyecto…';
+  document.getElementById('expedienteTomos').innerHTML = '';
+  document.getElementById('expedienteEstimacion').textContent = 'Contando registros y fotos…';
   document.getElementById('modalExpediente').classList.add('show');
+  await recontarExpediente();
+}
+
+// Conteos rápidos (count con head:true y consultas ligeras) para la selección
+// actual. Se repite al cambiar filtros; la última llamada manda.
+async function recontarExpediente(){
+  const sel = leerSeleccionExpediente();
+  const gen = (window._expedienteConteoGen = (window._expedienteConteoGen||0) + 1);
+  const est = document.getElementById('expedienteEstimacion');
   try{
-    window._expedienteDatos = await expedienteCargarDatos(currentProyecto, sel);
+    const conteos = await expedienteContar(currentProyecto, sel);
+    if(gen !== window._expedienteConteoGen) return;
+    window._expedienteConteos = conteos;
     actualizarEstimacionExpediente();
   }catch(e){
-    console.error('abrirModalExpediente', e);
-    document.getElementById('expedienteEstimacion').innerHTML = `<span style="color:#e2445c">No se pudieron cargar los datos: ${escAttr(e.message||e)}</span>`;
+    console.error('recontarExpediente', e);
+    if(est) est.innerHTML = `<span style="color:#e2445c">No se pudieron contar los datos: ${escAttr(e.message||e)}</span>`;
   }
 }
 
 function renderModalExpediente(sel){
   const body = document.getElementById('expedienteModalBody');
   const chk = 'style="width:16px;height:16px;accent-color:#0073ea"';
+  const fl = sel.filtros || {};
   const presets = Object.entries(EXPEDIENTE_PRESETS).map(([id,p])=>`
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
       <input type="radio" name="expPreset" value="${id}" ${sel.preset===id?'checked':''} onchange="aplicarPresetExpediente('${id}')" style="accent-color:#0073ea"/> ${escAttr(p.etiqueta)}
@@ -11631,6 +11658,7 @@ function renderModalExpediente(sel){
   }).join('');
   const proy = proyectos.find(p=>p.id===currentProyecto);
   const parcial = (proy?.estado_cierre||'en_ejecucion') !== 'liquidado';
+  const sel13 = 'class="form-control" style="padding:4px 8px;font-size:13px;width:auto"';
   body.innerHTML = `
     <div class="form-group">
       <label class="form-label">Preset</label>
@@ -11648,15 +11676,187 @@ function renderModalExpediente(sel){
       <label class="form-label">Filtros</label>
       <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" id="expFiltroOCs" ${sel.filtros?.incluirOCsNoAprobadas?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Incluir órdenes de cambio no aprobadas (borrador, solicitadas, rechazadas)
+          <input type="checkbox" id="expFiltroOCs" ${fl.incluirOCsNoAprobadas?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Incluir órdenes de cambio no aprobadas (borrador, solicitadas, rechazadas)
         </label>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" id="expFiltroDetalle" ${sel.filtros?.detallePlanillas!==false?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Detalle por rubro en planillas
+          <input type="checkbox" id="expFiltroDetalle" ${fl.detallePlanillas!==false?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Detalle por rubro en planillas
         </label>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap">
+          Libro de obra desde <input type="date" id="expLibroDesde" ${sel13} value="${escAttr(fl.libroDesde||'')}" onchange="expedienteCambioManual()"/>
+          hasta <input type="date" id="expLibroHasta" ${sel13} value="${escAttr(fl.libroHasta||'')}" onchange="expedienteCambioManual()"/>
+          <span style="color:#676879;font-size:12px">(vacío = todo el proyecto)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap">
+          Observaciones <select id="expObs" ${sel13} onchange="expedienteCambioManual()">
+            <option value="todas" ${fl.observaciones!=='resueltas'?'selected':''}>Todas</option>
+            <option value="resueltas" ${fl.observaciones==='resueltas'?'selected':''}>Solo resueltas</option>
+          </select>
+          Calidad de fotos <select id="expCalidad" ${sel13} onchange="expedienteCambioManual()">
+            <option value="estandar" ${fl.calidadFotos!=='alta'?'selected':''}>Estándar (900 px)</option>
+            <option value="alta" ${fl.calidadFotos==='alta'?'selected':''}>Alta (1200 px)</option>
+          </select>
+        </div>
       </div>
     </div>
-    <div style="font-size:12px;color:#676879">Portada e índice se incluyen siempre. Se abre una vista previa en pestaña nueva: ahí se guarda como PDF (A4, márgenes predeterminados, gráficos de fondo activados).${parcial?' El proyecto no está liquidado: el documento llevará la marca de agua «Expediente parcial».':''}</div>`;
+    <div style="font-size:12px;color:#676879">Portada e índice se incluyen siempre. Se abre una vista previa en pestaña nueva: ahí se guarda como PDF (A4, márgenes predeterminados, gráficos de fondo activados). Si el expediente supera el umbral de fotos o páginas, se parte en tomos y cada tomo se abre con su botón.${parcial?' El proyecto no está liquidado: el documento llevará la marca de agua «Expediente parcial».':''}</div>`;
 }
+
+// La selección es la misma estructura que se guarda en expedientes_generados.
+// filtros.tomos (plan guardado) se conserva para que «Reutilizar selección»
+// reproduzca el mismo corte si las unidades coinciden.
+function leerSeleccionExpediente(){
+  const radio = document.querySelector('input[name="expPreset"]:checked');
+  const v = id => document.getElementById(id)?.value || '';
+  const previo = window._expedienteSeleccion?.filtros || {};
+  return {
+    preset: radio ? radio.value : null,
+    secciones: EXPEDIENTE_SECCIONES.filter(s=> s.fija || document.getElementById('chk-exp-'+s.clave)?.checked).map(s=>s.clave),
+    filtros: {
+      incluirOCsNoAprobadas: !!document.getElementById('expFiltroOCs')?.checked,
+      detallePlanillas: !!document.getElementById('expFiltroDetalle')?.checked,
+      libroDesde: v('expLibroDesde') || null,
+      libroHasta: v('expLibroHasta') || null,
+      observaciones: v('expObs') === 'resueltas' ? 'resueltas' : 'todas',
+      calidadFotos: v('expCalidad') === 'alta' ? 'alta' : 'estandar',
+      ...(Array.isArray(previo.tomos) ? { tomos: previo.tomos } : {})
+    },
+    subtitulo: (document.getElementById('expSubtitulo')?.value||'').trim()
+  };
+}
+
+// Un ajuste a mano desmarca el preset (la lista mostrará «Personalizado») y
+// vuelve a contar; el subtítulo no cuenta como ajuste.
+function expedienteCambioManual(soloSubtitulo){
+  if(soloSubtitulo){ window._expedienteSeleccion = leerSeleccionExpediente(); return; }
+  document.querySelectorAll('input[name="expPreset"]').forEach(r=>{ r.checked = false; });
+  window._expedienteSeleccion = leerSeleccionExpediente();
+  clearTimeout(window._expedienteRecuentoTimer);
+  window._expedienteRecuentoTimer = setTimeout(recontarExpediente, 250);
+}
+
+function actualizarEstimacionExpediente(){
+  const sel = leerSeleccionExpediente();
+  window._expedienteSeleccion = sel;
+  const conteos = window._expedienteConteos;
+  const est = document.getElementById('expedienteEstimacion');
+  if(!conteos){ if(est) est.textContent = ''; return; }
+  const umbrales = umbralesExpediente();
+  const e = expedienteEstimarResumen(conteos, sel, umbrales);
+  const libroFotos = Object.values(conteos.libroMeses||{}).reduce((s,m)=>s+m.fotos,0);
+  const obsFotos = Object.values(conteos.obsMeses||{}).reduce((s,m)=>s+m.fotos,0);
+  const conteosTxt = {
+    contrato: '',
+    presupuesto: `(${e.filas.presupuesto})`,
+    ordenes_cambio: `(${e.filas.ordenes_cambio}${sel.filtros.incluirOCsNoAprobadas?'':' aprobadas'})`,
+    cronograma: `(${e.filas.cronograma} rubros programados)`,
+    libro_obra: `(${e.filas.libro_obra} registros, ${libroFotos} fotos, ${Object.keys(conteos.libroMeses||{}).length} meses)`,
+    planillas: `(${e.filas.planillas})`,
+    ensayos: `(${e.filas.ensayos})`,
+    formatos_calidad: `(${e.filas.formatos_calidad})`,
+    observaciones: `(${e.filas.observaciones}, ${obsFotos} fotos)`,
+    sst: conteos.sst ? `(${Math.round(conteos.sst.filas)} filas, ${conteos.sst.capacitaciones} capacitaciones)` : '',
+    subcontratistas: `(${e.filas.subcontratistas})`,
+    actas: `(${e.filas.actas} de 2)`,
+    liquidacion: e.filas.liquidacion ? '(registrada)' : '(pendiente)'
+  };
+  Object.entries(conteosTxt).forEach(([clave, txt])=>{ const el = document.getElementById('cnt-exp-'+clave); if(el) el.textContent = txt; });
+  const personalizados = window._expedienteUmbrales ? ` · umbrales ${umbrales.maxFotos} fotos / ${umbrales.maxPaginas} páginas (override)` : '';
+  if(est) est.innerHTML = `${e.secciones.length} secciones · ${e.fotos} fotos · ≈ ${e.paginas} páginas · <b>${e.tomos.length} tomo(s)</b>${escAttr(personalizados)}<br>` +
+    `<span style="font-size:11px">Procesará ${e.imagenesOrigen} imágenes de origen (transformaciones de Storage).</span>`;
+}
+
+// Inserta el registro (la base asigna la versión), carga los datos con progreso,
+// calcula el plan de tomos y abre la vista previa; con más de un tomo muestra el
+// panel «Abrir tomo k de N» (Chrome solo abre una pestaña por clic). Si algo
+// falla después de insertar, la fila queda en estado 'error' con el detalle.
+async function generarExpediente(){
+  const btn = document.getElementById('btnGenerarExpedienteOk');
+  const aviso = document.getElementById('expedienteAviso');
+  const panel = document.getElementById('expedienteTomos');
+  const sel = leerSeleccionExpediente();
+  window._expedienteSeleccion = sel;
+  btn.disabled = true; btn.textContent = 'Generando…'; aviso.innerHTML = ''; panel.innerHTML = '';
+  let fila = null;
+  try{
+    const umbrales = umbralesExpediente();
+    const datos = await expedienteCargarDatos(currentProyecto, sel, null, { onProgreso: txt => { aviso.textContent = txt; } });
+    if(sel.secciones.includes('cronograma')){ aviso.textContent = 'Preparando cronograma y Curva S…'; await prepararCronogramaExpediente(datos, currentProyecto); }
+    aviso.textContent = '';
+    const est = expedienteEstimar(datos, sel, umbrales);
+    const plan = est.tomos.map(t=>t.unidades);
+    const filtrosGuardados = { ...sel.filtros, tomos: plan };
+    const { data, error } = await sb.from('expedientes_generados').insert({
+      proyecto_id: currentProyecto, generado_por: currentUser?.id, origen: 'navegador', estado: 'listo',
+      preset: sel.preset, secciones: sel.secciones, filtros: filtrosGuardados,
+      estado_proyecto: datos.proyecto?.estado_cierre || 'en_ejecucion',
+      subtitulo: sel.subtitulo || null, paginas_estimadas: est.paginas, tomos: plan.length
+    }).select().single();
+    if(error) throw new Error(error.message);
+    fila = data;
+    const hoy = hoyEcuador();
+    const meta = {
+      version: fila.version, generadoEn: fila.generado_en, hoy,
+      generadoPor: `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim() || 'Usuario',
+      rol: currentPerfil?.rol || '', logoDataUri: await obtenerLogoDataUri()
+    };
+    window._expedienteGenerado = { datos, sel: { ...sel, filtros: filtrosGuardados }, meta, plan, proyectoId: currentProyecto };
+    if(plan.length <= 1){
+      meta.nombreArchivo = expedienteNombreArchivo(datos.proyecto, fila.version, hoy);
+      const html = expedienteGenerarHTML(datos, sel, meta);
+      const { ventana, url } = expedientePrevisualizar(html, meta.nombreArchivo);
+      if(ventana){
+        cerrarModal('modalExpediente');
+      } else {
+        aviso.innerHTML = `El navegador bloqueó la pestaña nueva. <a href="${url}" target="_blank" rel="noopener">Abrir la vista previa del expediente v${fila.version}</a>`;
+      }
+    } else {
+      aviso.textContent = `Expediente v${fila.version} en ${plan.length} tomos (${est.fotos} fotos, ≈ ${est.paginas} páginas). Abre cada tomo con su botón y guárdalo como PDF.`;
+      renderPanelTomosExpediente();
+    }
+    toast(`Expediente v${fila.version} generado ✓`,'success');
+  }catch(e){
+    console.error('generarExpediente', e);
+    if(fila){
+      await sb.from('expedientes_generados').update({ estado:'error', error_detalle: String(e.message||e).slice(0, 2000) }).eq('id', fila.id);
+    }
+    toast('No se pudo generar el expediente: '+(e.message||e),'error');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generar y previsualizar';
+    cargarExpedientesGenerados();
+  }
+}
+
+// Panel con un botón por tomo (el HTML de cada tomo se genera al pulsar, con los datos ya cargados).
+function renderPanelTomosExpediente(){
+  const g = window._expedienteGenerado;
+  const panel = document.getElementById('expedienteTomos');
+  if(!g || !panel) return;
+  const nombres = g.plan.map((unidades, i) => unidades.map(k => {
+    const [sec, mes] = String(k).split(':');
+    const etq = EXPEDIENTE_SECCIONES.find(s=>s.clave===sec)?.etiqueta || sec;
+    return mes ? `${etq.split(' (')[0]} — ${expMesLabel(mes)}` : etq.split(' (')[0];
+  }));
+  panel.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${g.plan.map((unidades, i) => `
+    <div style="display:flex;align-items:center;gap:10px;border:1px solid #e6e9ef;border-radius:8px;padding:8px 10px;flex-wrap:wrap">
+      <button class="btn primary" style="padding:5px 12px;font-size:12px" onclick="abrirTomoExpediente(${i+1})">📄 Abrir tomo ${i+1} de ${g.plan.length}</button>
+      <span style="font-size:12px;color:#676879;flex:1">${escAttr(nombres[i].join(' · '))}</span>
+      <span id="expTomoAviso${i+1}" style="font-size:12px;color:#b8860b"></span>
+    </div>`).join('')}</div>`;
+}
+
+function abrirTomoExpediente(k){
+  const g = window._expedienteGenerado;
+  if(!g || g.proyectoId !== currentProyecto){ toast('Vuelve a generar el expediente','error'); return; }
+  const meta = { ...g.meta, tomo: { k, de: g.plan.length, unidades: g.plan[k-1], plan: g.plan } };
+  meta.nombreArchivo = expedienteNombreArchivo(g.datos.proyecto, g.meta.version, g.meta.hoy, meta.tomo);
+  const html = expedienteGenerarHTML(g.datos, g.sel, meta);
+  const { ventana, url } = expedientePrevisualizar(html, meta.nombreArchivo);
+  const av = document.getElementById('expTomoAviso'+k);
+  if(ventana){ if(av) av.textContent = 'abierto ✓'; }
+  else if(av) av.innerHTML = `Pestaña bloqueada: <a href="${url}" target="_blank" rel="noopener">abrir tomo ${k}</a>`;
+}
+
+
 
 function aplicarPresetExpediente(id){
   const p = EXPEDIENTE_PRESETS[id];
@@ -11669,48 +11869,17 @@ function aplicarPresetExpediente(id){
   document.getElementById('expFiltroDetalle').checked = p.filtros.detallePlanillas !== false;
   const radio = document.querySelector(`input[name="expPreset"][value="${id}"]`);
   if(radio) radio.checked = true;
+  // Los filtros del preset cambian los conteos (p. ej. solo OC aprobadas): se vuelve a contar.
+  window._expedienteSeleccion = leerSeleccionExpediente();
   actualizarEstimacionExpediente();
+  recontarExpediente();
 }
 
 // Un ajuste a mano desmarca el preset (la lista mostrará «Personalizado»);
 // el subtítulo no cuenta como ajuste.
-function expedienteCambioManual(soloSubtitulo){
-  if(!soloSubtitulo) document.querySelectorAll('input[name="expPreset"]').forEach(r=>{ r.checked = false; });
-  actualizarEstimacionExpediente();
-}
 
 // La selección es la misma estructura que se guarda en expedientes_generados.
-function leerSeleccionExpediente(){
-  const radio = document.querySelector('input[name="expPreset"]:checked');
-  return {
-    preset: radio ? radio.value : null,
-    secciones: EXPEDIENTE_SECCIONES.filter(s=> s.fija || document.getElementById('chk-exp-'+s.clave)?.checked).map(s=>s.clave),
-    filtros: {
-      incluirOCsNoAprobadas: !!document.getElementById('expFiltroOCs')?.checked,
-      detallePlanillas: !!document.getElementById('expFiltroDetalle')?.checked
-    },
-    subtitulo: (document.getElementById('expSubtitulo')?.value||'').trim()
-  };
-}
 
-function actualizarEstimacionExpediente(){
-  const sel = leerSeleccionExpediente();
-  window._expedienteSeleccion = sel;
-  const datos = window._expedienteDatos;
-  const est = document.getElementById('expedienteEstimacion');
-  if(!datos){ if(est) est.textContent = ''; return; }
-  const e = expedienteEstimar(datos, sel);
-  const conteos = {
-    contrato: `(${datos.anticipo?'anticipo, ':''}${(datos.garantias||[]).length} garantías, ${(datos.reajusteTerminos||[]).length} términos)`,
-    presupuesto: `(${e.filas.presupuesto})`,
-    ordenes_cambio: `(${e.filas.ordenes_cambio}${sel.filtros.incluirOCsNoAprobadas?'':' aprobadas'})`,
-    planillas: `(${e.filas.planillas})`,
-    actas: `(${e.filas.actas} de 2)`,
-    liquidacion: e.filas.liquidacion ? '(registrada)' : '(pendiente)'
-  };
-  Object.entries(conteos).forEach(([clave, txt])=>{ const el = document.getElementById('cnt-exp-'+clave); if(el) el.textContent = txt; });
-  if(est) est.textContent = `${e.secciones.length} secciones · ≈ ${e.paginas} páginas (estimación)`;
-}
 
 // Curva S para el expediente: carga explícita del cronograma y las líneas base
 // del proyecto indicado (cargarCurvaS refresca cronogramaData, _lbActiva y
@@ -11763,52 +11932,6 @@ async function obtenerLogoDataUri(){
 // Inserta el registro (la base asigna la versión), genera el documento, abre
 // la vista previa y refresca la lista. Si algo falla después de insertar, la
 // fila queda en estado 'error' con el detalle.
-async function generarExpediente(){
-  const btn = document.getElementById('btnGenerarExpedienteOk');
-  const aviso = document.getElementById('expedienteAviso');
-  const sel = leerSeleccionExpediente();
-  window._expedienteSeleccion = sel;
-  btn.disabled = true; btn.textContent = 'Generando…'; aviso.innerHTML = '';
-  let fila = null;
-  try{
-    const datos = await expedienteCargarDatos(currentProyecto, sel, null, { onProgreso: txt => { aviso.textContent = txt; } });
-    if(sel.secciones.includes('cronograma')) await prepararCronogramaExpediente(datos, currentProyecto);
-    aviso.textContent = '';
-    const est = expedienteEstimar(datos, sel);
-    const { data, error } = await sb.from('expedientes_generados').insert({
-      proyecto_id: currentProyecto, generado_por: currentUser?.id, origen: 'navegador', estado: 'listo',
-      preset: sel.preset, secciones: sel.secciones, filtros: sel.filtros,
-      estado_proyecto: datos.proyecto?.estado_cierre || 'en_ejecucion',
-      subtitulo: sel.subtitulo || null, paginas_estimadas: est.paginas
-    }).select().single();
-    if(error) throw new Error(error.message);
-    fila = data;
-    const hoy = hoyEcuador();
-    const meta = {
-      version: fila.version, generadoEn: fila.generado_en, hoy,
-      generadoPor: `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim() || 'Usuario',
-      rol: currentPerfil?.rol || '', logoDataUri: await obtenerLogoDataUri(),
-      nombreArchivo: expedienteNombreArchivo(datos.proyecto, fila.version, hoy)
-    };
-    const html = expedienteGenerarHTML(datos, sel, meta);
-    const { ventana, url } = expedientePrevisualizar(html, meta.nombreArchivo);
-    if(ventana){
-      cerrarModal('modalExpediente');
-    } else {
-      aviso.innerHTML = `El navegador bloqueó la pestaña nueva. <a href="${url}" target="_blank" rel="noopener">Abrir la vista previa del expediente v${fila.version}</a>`;
-    }
-    toast(`Expediente v${fila.version} generado ✓`,'success');
-  }catch(e){
-    console.error('generarExpediente', e);
-    if(fila){
-      await sb.from('expedientes_generados').update({ estado:'error', error_detalle: String(e.message||e).slice(0, 2000) }).eq('id', fila.id);
-    }
-    toast('No se pudo generar el expediente: '+(e.message||e),'error');
-  }finally{
-    btn.disabled = false; btn.textContent = 'Generar y previsualizar';
-    cargarExpedientesGenerados();
-  }
-}
 
 async function cargarTerminosReajuste(puedeEditar){
   const { data: terms } = await sb.from('reajuste_terminos').select('*').eq('proyecto_id', currentProyecto).order('orden');

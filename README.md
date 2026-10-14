@@ -212,6 +212,38 @@ Pendiente para la fase 2: libro de obra con fotos, observaciones, ensayos, forma
 calidad, SST, subcontratistas, cronograma/Curva S y partición en tomos. Fase 3: chat,
 comunicados, índices de archivos/planos/360, render en servidor con folios y archivado.
 
+### Fase 2: fotos, secciones nuevas y tomos
+
+- **Actas con texto persistente:** la ventana de impresión del acta tiene «Guardar acta» y
+  «Restablecer plantilla» (`actas_recepcion.contenido_html`, migración
+  `20261014_actas_contenido_html.sql`); el HTML se sanea al guardar y al renderizar
+  (`sanitizarHtmlActa`). El expediente usa el texto guardado cuando existe.
+- **Secciones nuevas:** cronograma (líneas base, rubros programados, Curva S e indicadores
+  EVM, con `prepararCronogramaExpediente` cargando el cronograma del proyecto explícitamente),
+  libro de obra (todos los registros por mes, sello de aprobación y todas las fotos),
+  observaciones (respuestas y fotos; «Plano X, pág. n»), ensayos, formatos de calidad
+  (listado con referencia), SST (exámenes solo agregados: datos de salud) y subcontratistas.
+  Los renderers del reporte del libro y de las impresiones SST viven en `expediente.js`
+  (`renderRegistroLibroHTML`, `renderEnsayosTablaHTML`, `render*CuerpoHTML`).
+- **Fotos:** `expedienteFotoUrls` pide a Storage la transformación (900 px, o 1200 px en
+  calidad alta, calidad 70) a partir del `path` de la URL guardada; nunca se descargan en la
+  app. El documento lleva un script inline que cuenta las imágenes, espera su carga, pone
+  «Foto no disponible · ruta» en las que fallan (y en los HEIC desde el inicio), habilita
+  «Imprimir / Guardar PDF» al terminar (o «Imprimir de todos modos» a los 60 s) y marca
+  `document.documentElement.dataset.listo = '1'` para Puppeteer (fase 3). Pie de foto
+  «Foto n/N · fecha · Registro N° X · descripción».
+- **Tomos:** unidades de empaquetado (libro por mes; observaciones por mes solo si superan el
+  umbral solas; el resto una por sección), páginas estimadas por unidad (fórmula documentada
+  en `expediente.js`, 3.7) y empaquetado greedy determinista con `EXPEDIENTE_UMBRALES`
+  (400 fotos / 150 páginas / tolerancia 10 %). El modal estima con conteos rápidos
+  (`expedienteContar`, `count` con `head: true`) e informa fotos, páginas, tomos e imágenes
+  de origen. Con más de un tomo, «Generar» muestra un botón por tomo (Chrome abre una pestaña
+  por clic); el tomo 1 lleva la ficha y el índice general; cada tomo, su portada «Tomo k de N»
+  y encabezado «Tomo k/N»; nombre `Expediente_{slug}_v{N}_T{k}de{M}_{fecha}`. El plan se
+  guarda en `expedientes_generados.filtros.tomos` y «Reutilizar selección» lo reproduce.
+  Para probar tomos en producción: `window._expedienteUmbrales = { maxFotos: 100 }` en la
+  consola antes de abrir el modal.
+
 ## Arnés de pruebas (`tests/`)
 
 `cd tests && npm install && npm test`. Ejecuta funciones **reales** de `index.html`,
@@ -224,6 +256,8 @@ que responde desde un fixture JSON (`lib/arnes.js`).
   compara byte a byte con `snapshots/` (`--grabar` los reescribe).
 - `expediente.test.js`: carga, generación, filtros, marca de agua, secciones vacías,
   estimación y nombre de archivo sobre `fixtures/sintetico.json` (proyecto inventado).
+- `expediente-f2.test.js`, `actas.test.js`, `reporte-libro.test.js` (byte a byte del reporte
+  del libro) y `tomos.test.js` (unidades, empaquetado, conteos, documento por tomo).
 - `modal-expediente.test.js`: modal, presets, lista y flujo de generación con jsdom.
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera

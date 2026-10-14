@@ -346,6 +346,11 @@ const EXPEDIENTE_SECCIONES = [
 // estén implementadas. El usuario puede ajustar a mano después de elegir uno.
 // Filtros de la fase 2: libroDesde/libroHasta (null = todo el proyecto),
 // observaciones ('todas' | 'resueltas') y calidadFotos ('estandar' 900 px | 'alta' 1200 px).
+// Umbrales de partición en tomos (fotos o páginas estimadas, lo que se alcance
+// primero; tolerancia para no abrir un tomo por una unidad mínima). Se pueden
+// bajar en producción desde la consola: window._expedienteUmbrales = { maxFotos: 100 }.
+const EXPEDIENTE_UMBRALES = { maxFotos: 400, maxPaginas: 150, tolerancia: 0.1 };
+
 const EXPEDIENTE_PRESETS = {
   completo:    { etiqueta:'Completo (interno)',      secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave),
                  filtros:{ incluirOCsNoAprobadas:true,  detallePlanillas:true, libroDesde:null, libroHasta:null, observaciones:'todas', calidadFotos:'estandar' } },
