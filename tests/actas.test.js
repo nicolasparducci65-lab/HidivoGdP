@@ -7,7 +7,7 @@ const { JSDOM } = require('jsdom');
 const { RAIZ, leer, scriptPrincipal, extraerFuncion, crearSb, crearContexto, cargarFixture, prueba, resumen, assert } = require('./lib/arnes');
 
 const src = scriptPrincipal();
-const FUNCIONES = ['imprimirActa', 'abrirVentanaDocCierre', 'inyectarBarraActa', 'guardarActaDesdeVentana', 'restablecerPlantillaActa', 'cargarCierreProyecto', 'escAttr'];
+const FUNCIONES = ['imprimirActa', 'abrirVentanaDocCierre', 'inyectarBarraActa', 'guardarActaDesdeVentana', 'restablecerPlantillaActa', 'cargarCierreProyecto'];
 const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')].join('\n');
 
 // Fixture malicioso: todo lo que el sanitizador debe quitar, mezclado con marcado legítimo.

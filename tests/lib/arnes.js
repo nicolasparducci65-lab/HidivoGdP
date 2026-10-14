@@ -39,6 +39,21 @@ function extraerFuncion(src, nombre){
   return src.slice(m.index, hasta) + '\n';
 }
 
+// Bloque de nivel superior desde una línea que empieza por `inicio` hasta la primera
+// línea que es exactamente `fin` (incluida). Para `const X = {` … `};`.
+function extraerBloque(src, inicio, fin = '};'){
+  const m = new RegExp('^' + inicio.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'm').exec(src);
+  if(!m) throw new Error('No se encontró el bloque ' + inicio);
+  const idx = src.indexOf('\n' + fin, m.index);
+  if(idx < 0) throw new Error('No se encontró el cierre de ' + inicio);
+  let hasta = idx + 1 + fin.length;
+  if(src[hasta] === '\r') hasta++;
+  return src.slice(m.index, hasta) + '\n';
+}
+// Fuente de una función si está en el script principal; '' si ya vive en expediente.js.
+function fuenteSiExiste(src, nombre){
+  return new RegExp('^(?:async )?function ' + nombre + '\\(', 'm').test(src) ? extraerFuncion(src, nombre) : '';
+}
 // Fuente de una constante de nivel superior de una sola línea: `const NOMBRE = ...;`
 function extraerConst(src, nombre){
   const re = new RegExp('^(?:const|let) ' + nombre + ' = .*$', 'm');
@@ -51,7 +66,7 @@ function extraerConst(src, nombre){
 // Soporta: from(t).select('cols' | '*, alias:tabla(cols)').eq().in().neq().order().limit()
 // .range().single().maybeSingle(), y `await` / Promise.all sobre el builder.
 // Las filas salen del fixture {tabla: [filas]}. Devuelve {data, error:null}.
-const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id' };
+const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id' };
 
 function crearSb(fixture, opciones = {}){
   const llamadas = [];
@@ -61,6 +76,10 @@ function crearSb(fixture, opciones = {}){
       select(cols = '*'){ b._select = cols; return b; },
       eq(c, v){ b._filtros.push(f => f[c] === v); return b; },
       neq(c, v){ b._filtros.push(f => f[c] !== v); return b; },
+      gte(c, v){ b._filtros.push(f => f[c] != null && f[c] >= v); return b; },
+      lte(c, v){ b._filtros.push(f => f[c] != null && f[c] <= v); return b; },
+      gt(c, v){ b._filtros.push(f => f[c] != null && f[c] > v); return b; },
+      lt(c, v){ b._filtros.push(f => f[c] != null && f[c] < v); return b; },
       in(c, arr){ b._filtros.push(f => (arr||[]).includes(f[c])); return b; },
       is(c, v){ b._filtros.push(f => f[c] === v); return b; },
       order(c, o){ b._orden.push([c, !(o && o.ascending === false)]); return b; },
@@ -89,7 +108,9 @@ function crearSb(fixture, opciones = {}){
         }
         if(b._rango) filas = filas.slice(b._rango[0], b._rango[1] + 1);
         // Incrustaciones `alias:tabla(cols)`
-        const embeds = [...String(b._select).matchAll(/(\w+):(\w+)\(([^)]*)\)/g)];
+        // `alias:tabla(cols)` y `tabla!inner(cols)` (alias = tabla)
+        const embeds = [...String(b._select).matchAll(/(\w+):(\w+)\(([^)]*)\)/g)]
+          .concat([...String(b._select).matchAll(/(\w+)!inner\(([^)]*)\)/g)].map(m => [m[0], m[1], m[1], m[2]]));
         if(embeds.length){
           filas = filas.map(f => {
             const copia = { ...f };
@@ -169,4 +190,4 @@ function resumen(){
 }
 function assert(cond, msg){ if(!cond) throw new Error(msg || 'aserción fallida'); }
 
-module.exports = { RAIZ, RUTA_INDEX, leer, scriptPrincipal, extraerFuncion, extraerConst, crearSb, crearContexto, cargarFixture, prueba, resumen, assert };
+module.exports = { RAIZ, RUTA_INDEX, leer, scriptPrincipal, extraerFuncion, extraerConst, extraerBloque, fuenteSiExiste, crearSb, crearContexto, cargarFixture, prueba, resumen, assert };

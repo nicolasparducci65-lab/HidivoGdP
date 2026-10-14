@@ -17,18 +17,29 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { RAIZ, leer, scriptPrincipal, extraerFuncion, extraerConst, crearSb, crearContexto, cargarFixture, prueba, resumen, assert } = require('./lib/arnes');
+const { RAIZ, leer, scriptPrincipal, extraerFuncion, fuenteSiExiste, crearSb, crearContexto, cargarFixture, prueba, resumen, assert } = require('./lib/arnes');
 
 const GRABAR = process.argv.includes('--grabar');
 const DIR_SNAP = path.join(__dirname, 'snapshots');
 fs.mkdirSync(DIR_SNAP, { recursive: true });
 
 const src = scriptPrincipal();
-const FUNCIONES = ['imprimirOC', 'obtenerMontoContratoProyecto', 'imprimirActa', 'imprimirLiquidacion', 'abrirVentanaDocCierre'];
+const FUNCIONES = ['imprimirOC', 'obtenerMontoContratoProyecto', 'imprimirActa', 'imprimirLiquidacion', 'abrirVentanaDocCierre',
+  'imprimirActaEPP', 'imprimirRegistroCapacitacion', 'imprimirInformeIncidente', 'imprimirPTE', 'sstGetProyecto'];
+// Helpers que el refactor de la fase 2 mueve a expediente.js: se extraen de index.html
+// solo mientras sigan allí (fuenteSiExiste devuelve '' si ya no están).
+const HELPERS = ['formatFecha', 'escapeHtml', 'sstFilaDato', 'climaIcon', 'escAttr'];
+const BLOQUES = [["const PTE_TIPOS = {", '};'], ["const sstEstiloTabla = ", null]];
+function bloquesSiExisten(){
+  let s = '';
+  if(/^const PTE_TIPOS = \{/m.test(src)) s += require('./lib/arnes').extraerBloque(src, 'const PTE_TIPOS = {') + '\n';
+  for(const c of ['sstEstiloTabla', 'sstEstiloTh', 'sstEstiloTd']) if(new RegExp('^const ' + c + ' = ', 'm').test(src)) s += require('./lib/arnes').extraerConst(src, c);
+  return s;
+}
 const codigoBase = [
   { ruta: path.join(RAIZ, 'constantes.js'), nombre: 'constantes.js' },
   ...(fs.existsSync(path.join(RAIZ, 'expediente.js')) ? [{ ruta: path.join(RAIZ, 'expediente.js'), nombre: 'expediente.js' }] : []),
-  FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')
+  bloquesSiExisten() + HELPERS.map(f => fuenteSiExiste(src, f)).join('\n') + '\n' + FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')
 ];
 
 function comparar(nombreSnap, html){
@@ -48,7 +59,8 @@ function comparar(nombreSnap, html){
 
 async function correr(etiqueta, fixture){
   const proyectoId = fixture.proyectos[0].id;
-  const ctx = () => crearContexto({ codigo: codigoBase, globals: { sb: crearSb(fixture), currentProyecto: proyectoId, currentPerfil: null } });
+  const sstCache = { eppEntregas: fixture.sst_epp_entregas || [], capacitaciones: fixture.sst_capacitaciones || [], incidentes: fixture.sst_incidentes || [], ptes: fixture.sst_pte || [] };
+  const ctx = () => crearContexto({ codigo: codigoBase, globals: { sb: crearSb(fixture), currentProyecto: proyectoId, currentPerfil: null, proyectos: fixture.proyectos, sstCache } });
 
   for(const oc of fixture.ordenes_cambio){
     await prueba(`${etiqueta}: imprimirOC OC-${oc.numero} (${oc.estado})`, async () => {
@@ -71,6 +83,26 @@ async function correr(etiqueta, fixture){
       assert(!/undefined|NaN/.test(html), 'sin undefined ni NaN');
       comparar(`acta-${a.tipo}.${etiqueta}.html`, html);
     });
+  }
+  // Impresiones SST: cuerpos que la fase 2 mueve a expediente.js.
+  const sst = [
+    ['imprimirActaEPP', 'sst_epp_entregas', 'acta-epp', 'Acta de Entrega-Recepción de EPP'],
+    ['imprimirRegistroCapacitacion', 'sst_capacitaciones', 'capacitacion', 'Registro de Asistencia'],
+    ['imprimirInformeIncidente', 'sst_incidentes', 'incidente', 'Informe de Investigación'],
+    ['imprimirPTE', 'sst_pte', 'pte', 'Permiso de Trabajo Especial']
+  ];
+  for(const [funcion, tabla, nombre, titulo] of sst){
+    for(const fila of (fixture[tabla] || []).slice(0, 2)){
+      await prueba(`${etiqueta}: ${funcion} ${fila.numero ?? fila.tema ?? fila.trabajador_nombre ?? fila.id}`, async () => {
+        const c = ctx();
+        await c[funcion](fila.id);
+        assert(c._ventanas.length === 1, 'debe abrir exactamente una ventana');
+        const html = c._ventanas[0].html;
+        assert(html.includes(titulo), 'título: ' + titulo);
+        assert(!/undefined|NaN/.test(html), 'sin undefined ni NaN');
+        comparar(`${nombre}-${(fila.numero ?? fila.id).toString().slice(0, 8)}.${etiqueta}.html`, html);
+      });
+    }
   }
   if(fixture.liquidaciones.length){
     await prueba(`${etiqueta}: imprimirLiquidacion`, async () => {

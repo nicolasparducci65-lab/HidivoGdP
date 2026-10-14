@@ -14,7 +14,7 @@ assert(ini > 0 && fin > ini, 'modalExpediente debe estar antes de modalOC');
 const MODAL_HTML = html.slice(ini, fin);
 const FUNCIONES = ['permisoExpediente', 'puedeGenerarExpediente', 'puedeVerExpedientes', 'esDispositivoMovil', 'bloqueExpedienteHTML', 'cargarExpedientesGenerados', 'renderExpedientesLista',
   'reutilizarSeleccionExpediente', 'abrirModalExpediente', 'renderModalExpediente', 'aplicarPresetExpediente', 'expedienteCambioManual',
-  'leerSeleccionExpediente', 'actualizarEstimacionExpediente', 'obtenerLogoDataUri', 'generarExpediente', 'escAttr', 'cerrarModal', 'hoyEcuador'];
+  'leerSeleccionExpediente', 'actualizarEstimacionExpediente', 'obtenerLogoDataUri', 'generarExpediente', 'cerrarModal', 'hoyEcuador'];
 // Una sola evaluación: las const de constantes.js solo son visibles dentro del mismo eval.
 const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')].join('\n');
 

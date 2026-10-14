@@ -286,6 +286,122 @@ function firmasCierre(proy){
   return [['Fiscalización',''],['Contratista',proy?.contratista||''],['Contratante',proy?.contratante||'']];
 }
 
+// ── 2c) Helpers compartidos y renderers del reporte del libro y de SST ─────────
+// Movidos desde index.html sin cambios (la app los sigue usando): escAttr,
+// climaIcon, formatFecha, escapeHtml, PTE_TIPOS y los estilos/filas de SST.
+
+// Escapa texto para insertarlo de forma segura en HTML (atributos y nodos de texto)
+function escAttr(texto){
+  return String(texto??'')
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function climaIcon(clima){
+  const map = {'Soleado':'☀️','Nublado':'☁️','Lluvioso':'🌧️','Parcialmente nublado':'⛅','Tormenta':'⛈️'};
+  return map[clima]||'🌤️';
+}
+
+
+
+// Fecha corta (dd mmm aa) y escape con saltos de línea: los usan los cuerpos SST.
+function formatFecha(f){ const d=new Date(f+'T00:00:00'); return d.toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'2-digit'}); }
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+
+const PTE_TIPOS = {
+  caliente:'🔥 Trabajo en caliente', frio:'❄️ Trabajo en frío', alturas:'🪜 Trabajo en alturas',
+  electrico:'⚡ Trabajo eléctrico', confinado:'🕳️ Espacio confinado', maritimo:'🌊 Marítimo/submarino/aguas abiertas',
+  aereo:'🚁 Trabajo aéreo', radiaciones:'☢️ Radiaciones ionizantes', subterraneo:'⛏️ Trabajo subterráneo',
+  sustancias:'☣️ Sustancias/materiales peligrosos'
+};
+
+const sstEstiloTabla = 'width:100%;border-collapse:collapse;font-size:12px;margin:10px 0';
+const sstEstiloTh = 'border:1px solid #999;padding:6px 8px;background:#f0f0f0;text-align:left;font-size:11px';
+const sstEstiloTd = 'border:1px solid #999;padding:6px 8px';
+
+function sstFilaDato(label, valor){
+  return `<tr><td style="${sstEstiloTd};background:#f7f7f7;font-weight:700;width:220px">${label}</td><td style="${sstEstiloTd}">${escapeHtml(valor||'—')}</td></tr>`;
+}
+
+// ── Registro del libro de obra (bloque del reporte PDF) ──────────────────────
+// ctx = { nombresAprobadores: {id → nombre}, rubros: filas de libro_obra_rubros con
+// `rubros` embebido, fotos: filas de libro_obra_fotos, inc: {actividades, equipos,
+// materiales, rubros, novedades, fotos} }. Mismo HTML que imprimía el reporte.
+function renderRegistroLibroHTML(r, ctx){
+  const nombresAprobadores = ctx.nombresAprobadores || {};
+  const rubrosReg = ctx.rubros || [];
+  const fotosReg = ctx.fotos || [];
+  const inc = ctx.inc || {};
+  const incActividades = !!inc.actividades, incEquipos = !!inc.equipos, incMateriales = !!inc.materiales;
+  const incRubros = !!inc.rubros, incNovedades = !!inc.novedades, incFotos = !!inc.fotos;
+  return `
+  <div class="registro-block">
+    <div class="registro-header">
+      <span class="reg-num">Registro N° ${r.numero_registro||'—'} — ${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</span>
+      ${r.estado_aprobacion==='aprobado'
+        ? `<span style="float:right;font-size:9px;color:#00854d;font-weight:700">✓ APROBADO${nombresAprobadores[r.aprobado_por]?' por '+nombresAprobadores[r.aprobado_por]:''}${r.aprobado_at?' — '+new Date(r.aprobado_at).toLocaleString('es-EC',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}</span>`
+        : `<span style="float:right;font-size:9px;color:${r.estado_aprobacion==='observado'?'#e2445c':'#b8860b'};font-weight:700">${r.estado_aprobacion==='observado'?'⚠ OBSERVADO':'⏳ PENDIENTE DE APROBACIÓN'}</span>`}
+    </div>
+    <div class="registro-meta">
+      <span>${climaIcon(r.clima_diurno||r.clima)} ${r.clima_diurno||r.clima||'—'} / 🌙 ${climaIcon(r.clima_nocturno)} ${r.clima_nocturno||'—'}</span>
+      <span>🌡️ ${r.temperatura_min!=null?r.temperatura_min+'°C':'—'} / ${r.temperatura_max!=null?r.temperatura_max+'°C':'—'}</span>
+      <span>👷 ${r.personal_total||0} personas</span>
+    </div>
+    <div class="registro-body">
+      ${incActividades && r.actividades_ejecutadas ? `<div class="campo"><span class="lbl">Actividades ejecutadas</span><div class="val">${r.actividades_ejecutadas}</div></div>` : ''}
+      ${incEquipos && r.equipos_maquinaria ? `<div class="campo"><span class="lbl">Equipos y maquinaria</span><div class="val">${r.equipos_maquinaria}</div></div>` : ''}
+      ${incMateriales && r.materiales_utilizados ? `<div class="campo"><span class="lbl">Materiales utilizados</span><div class="val">${r.materiales_utilizados}</div></div>` : ''}
+      ${incRubros && rubrosReg.length ? `<div class="campo"><span class="lbl">Rubros trabajados</span>
+        <table><thead><tr><th>Cód.</th><th>Descripción</th><th style="text-align:right">Cantidad</th><th>Unidad</th></tr></thead><tbody>
+        ${rubrosReg.map(rr=>`<tr><td>${rr.rubros?.codigo||'—'}</td><td>${rr.rubros?.descripcion||'—'}</td><td class="td-qty">${rr.cantidad_dia}</td><td>${rr.rubros?.unidad||'—'}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+      ${incNovedades && r.novedades ? `<div class="campo"><span class="lbl">Novedades</span><div class="novedad-box">${r.novedades}</div></div>` : ''}
+      ${incNovedades && r.resoluciones ? `<div class="campo"><span class="lbl">Resoluciones</span><div class="val">${r.resoluciones}</div></div>` : ''}
+      ${incFotos && fotosReg.length ? `<div class="campo"><span class="lbl">Fotos de avance (${fotosReg.length})</span>
+        <div class="fotos-grid">
+          ${fotosReg.map(f=>`<div class="foto-item">
+            <img src="${f.url}" crossorigin="anonymous"/>
+            ${f.descripcion ? `<div class="foto-desc">${escAttr(f.descripcion)}</div>` : ''}
+          </div>`).join('')}
+        </div></div>` : ''}
+    </div>
+  </div>`;
+}
+
+// Ensayos con su especificación resuelta (nombreTipo, espTxt, unidad), tal como
+// los muestra la tabla de calidad del reporte.
+function enriquecerEnsayos(ensR, espR, tipR){
+  return (ensR||[]).map(e=>{
+        const esp = (espR||[]).find(x=>x.id===e.especificacion_id)||{};
+        const t = (tipR||[]).find(x=>x.id===esp.tipo_id)||{};
+        const espTxt = t.criterio==='menor_igual' ? `≤ ${esp.valor_max}` : t.criterio==='rango' ? `${esp.valor_min}–${esp.valor_max}` : `≥ ${esp.valor_min}`;
+        return {...e, nombreTipo: `${t.nombre||''}${esp.etiqueta?' — '+esp.etiqueta:''}`, espTxt, unidad: t.unidad||''};
+  });
+}
+
+// ── Tabla de ensayos del período (reporte PDF) ───────────────────────────────
+function renderEnsayosTablaHTML(ensayos){
+  return `
+  <h2 style="font-size:14px;color:#0073ea;margin-top:20px">Control de Calidad — Ensayos del Período</h2>
+  <div style="font-size:11px;margin-bottom:6px">Total: <b>${ensayos.length}</b> · Cumplen: <b style="color:#00854d">${ensayos.filter(e=>e.cumple).length}</b> · No cumplen: <b style="color:#e2445c">${ensayos.filter(e=>!e.cumple).length}</b> (${ensayos.filter(e=>!e.cumple&&!e.resuelto).length} sin resolver) · Cumplimiento: <b>${(ensayos.filter(e=>e.cumple).length/ensayos.length*100).toFixed(1)}%</b></div>
+  <table style="margin-top:4px">
+    <thead><tr><th>N°</th><th>Fecha</th><th>Ensayo</th><th>Ubicación</th><th style="text-align:right">Valor</th><th style="text-align:right">Espec.</th><th>Veredicto</th></tr></thead>
+    <tbody>
+    ${ensayos.map(e=>`<tr>
+      <td style="font-size:10px">E-${String(e.numero).padStart(3,'0')}${e.reensayo_de?' (R)':''}</td>
+      <td style="font-size:10px;white-space:nowrap">${e.fecha}</td>
+      <td style="font-size:10px">${e.nombreTipo}</td>
+      <td style="font-size:10px">${(e.ubicacion||'—').replace(/</g,'&lt;')}</td>
+      <td style="font-size:10px;text-align:right"><b>${e.valor}</b> ${e.unidad}</td>
+      <td style="font-size:10px;text-align:right">${e.espTxt}</td>
+      <td style="font-size:10px;font-weight:700;color:${e.cumple?'#00854d':'#e2445c'}">${e.cumple?'✓ CUMPLE':(e.resuelto?'✗ Resuelto':'✗ NO CUMPLE')}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
 // ── 3) Expediente de obra ────────────────────────────────────────────────────
 //
 // Tres piezas separadas:
@@ -901,4 +1017,111 @@ function expedientePrevisualizar(html, nombreArchivo){
     try{ ventana.document.title = nombreArchivo; }catch(_){ /* distinto origen hasta cargar: el <title> del HTML ya lo lleva */ }
   }
   return { ventana, url, nombreArchivo };
+}
+
+// ── SST: acta de entrega-recepción de EPP (cuerpo) ───────────────────────────
+function renderActaEppCuerpoHTML(reg){
+  return `
+    <p style="font-size:12px">En cumplimiento del Decreto Ejecutivo 255 (Art. 15) y del Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 10), se deja constancia de la entrega gratuita del siguiente equipo de protección personal:</p>
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Trabajador', reg.trabajador_nombre)}
+      ${sstFilaDato('Cédula', reg.trabajador_cedula)}
+      ${sstFilaDato('Puesto de trabajo', reg.puesto)}
+      ${sstFilaDato('Fecha de entrega', formatFecha(reg.fecha_entrega))}
+      ${sstFilaDato('Detalle del EPP entregado', reg.detalle_epp)}
+    </table>
+    <p style="font-size:11px;color:#444">El trabajador declara haber recibido el EPP detallado en buen estado, así como la instrucción sobre su uso, mantenimiento y disposición final, y se compromete a utilizarlo conforme a la capacitación recibida (Acuerdo MDT-2024-196, Art. 6).</p>`;
+}
+
+// ── SST: registro de asistencia a capacitación (cuerpo) ──────────────────────
+const SST_TIPO_CAPACITACION = {induccion:'Inducción', reinduccion:'Re-inducción', capacitacion:'Capacitación', simulacro:'Simulacro'};
+function renderCapacitacionCuerpoHTML(cap, asistentes){
+  const tipoLabel = SST_TIPO_CAPACITACION;
+  return `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Tema', cap.tema)}
+      ${sstFilaDato('Tipo', tipoLabel[cap.tipo]||cap.tipo)}
+      ${sstFilaDato('Fecha', formatFecha(cap.fecha))}
+      ${sstFilaDato('Duración', cap.duracion_horas?cap.duracion_horas+' horas':'—')}
+      ${sstFilaDato('Responsable / instructor', cap.responsable)}
+      ${sstFilaDato('Metodología', cap.metodologia)}
+    </table>
+    <h3 style="font-size:13px;margin:16px 0 6px">Registro de asistencia</h3>
+    <table style="${sstEstiloTabla}">
+      <tr><th style="${sstEstiloTh}">N°</th><th style="${sstEstiloTh}">Nombre</th><th style="${sstEstiloTh}">Cédula</th><th style="${sstEstiloTh}">Puesto</th><th style="${sstEstiloTh};width:120px">Firma</th></tr>
+      ${(asistentes||[]).map((a,i)=>`<tr>
+        <td style="${sstEstiloTd}">${i+1}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.nombre)}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.cedula||'')}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(a.puesto||'')}</td>
+        <td style="${sstEstiloTd}"></td>
+      </tr>`).join('')}
+      ${!(asistentes||[]).length?`<tr><td colspan="5" style="${sstEstiloTd};text-align:center;color:#777">Sin asistentes registrados</td></tr>`:''}
+    </table>
+    <p style="font-size:11px;color:#444">Registro conforme al Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 6) y a la Lista de Verificación SST del MDT (Gestión del Talento Humano, ítems 6-10).</p>`;
+}
+
+// ── SST: informe de investigación de incidente/accidente (cuerpo) ────────────
+const SST_TIPO_INCIDENTE = {incidente:'Incidente', accidente:'Accidente de trabajo', enfermedad_profesional:'Presunción de enfermedad profesional'};
+function renderIncidenteCuerpoHTML(x){
+  const tipoLabel = SST_TIPO_INCIDENTE;
+  const fh = new Date(x.fecha_hora);
+  return `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Tipo de evento', tipoLabel[x.tipo]||x.tipo)}
+      ${sstFilaDato('Fecha y hora', fh.toLocaleDateString('es-EC')+' '+fh.toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}))}
+      ${sstFilaDato('Trabajador', x.trabajador_nombre)}
+      ${sstFilaDato('Cédula', x.trabajador_cedula)}
+      ${sstFilaDato('Puesto de trabajo', x.puesto)}
+      ${sstFilaDato('Lugar del evento', x.lugar)}
+      ${sstFilaDato('Gravedad', x.gravedad)}
+    </table>
+    <h3 style="font-size:13px;margin:14px 0 4px">Descripción del evento</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px;min-height:50px">${escapeHtml(x.descripcion||'')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Testigos</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.testigos||'—')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Análisis de causas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px;min-height:40px">${escapeHtml(x.causas||'')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Acciones inmediatas adoptadas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.acciones_inmediatas||'—')}</p>
+    <h3 style="font-size:13px;margin:14px 0 4px">Acciones correctivas y preventivas</h3>
+    <p style="font-size:12px;border:1px solid #ccc;padding:8px">${escapeHtml(x.acciones_correctivas||'—')}</p>
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('Plazo legal de aviso al IESS (10 días hábiles)', x.fecha_limite_reporte_iess?formatFecha(x.fecha_limite_reporte_iess):'—')}
+      ${sstFilaDato('Reportado al IESS', x.reportado_iess?('Sí'+(x.fecha_reporte_iess?' — '+formatFecha(x.fecha_reporte_iess):'')):'No')}
+    </table>
+    <p style="font-size:11px;color:#444">Informe de investigación conforme a la Resolución C.D. 513 del IESS (Art. 44-45 y Anexo B) y al Acuerdo Ministerial MDT-2024-196 (Art. 4 num. 7).</p>`;
+}
+
+// ── SST: permiso de trabajo especial (cuerpo) ────────────────────────────────
+function renderPteCuerpoHTML(p){
+  return `
+    <table style="${sstEstiloTabla}">
+      ${sstFilaDato('N° de permiso', 'PTE-'+String(p.numero).padStart(3,'0'))}
+      ${sstFilaDato('Tipo de trabajo especial', (PTE_TIPOS[p.tipo]||p.tipo).replace(/^[^\s]+\s/,''))}
+      ${sstFilaDato('Fecha (vigencia: una jornada, no renovable)', formatFecha(p.fecha))}
+      ${sstFilaDato('Horario', (p.hora_inicio?p.hora_inicio.slice(0,5):'—')+' a '+(p.hora_fin_prevista?p.hora_fin_prevista.slice(0,5):'—'))}
+      ${sstFilaDato('Ubicación', p.ubicacion)}
+      ${sstFilaDato('Descripción del trabajo', p.descripcion_trabajo)}
+      ${sstFilaDato('Riesgos identificados', p.riesgos)}
+      ${sstFilaDato('Medidas de control', p.medidas_control)}
+      ${sstFilaDato('EPP requerido', p.epp_requerido)}
+      ${p.plan_rescate?sstFilaDato('Plan de rescate', p.plan_rescate):''}
+    </table>
+    <h3 style="font-size:13px;margin:14px 0 4px">Cuadrilla autorizada (firma obligatoria de todos)</h3>
+    <table style="${sstEstiloTabla}">
+      <tr><th style="${sstEstiloTh}">N°</th><th style="${sstEstiloTh}">Nombre</th><th style="${sstEstiloTh}">Cédula</th><th style="${sstEstiloTh};width:120px">Firma</th></tr>
+      ${(p.trabajadores||[]).map((t,i)=>`<tr>
+        <td style="${sstEstiloTd}">${i+1}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(t.nombre||'')}</td>
+        <td style="${sstEstiloTd}">${escapeHtml(t.cedula||'')}</td>
+        <td style="${sstEstiloTd}"></td>
+      </tr>`).join('')}
+    </table>
+    ${p.estado==='cerrado'?`<table style="${sstEstiloTabla}">
+      ${sstFilaDato('Cierre del permiso', p.hora_cierre?new Date(p.hora_cierre).toLocaleString('es-EC'):'')}
+      ${sstFilaDato('Observaciones de cierre', p.observaciones_cierre)}
+    </table>`:''}
+    ${p.estado==='anulado'?`<table style="${sstEstiloTabla}">${sstFilaDato('ANULADO — motivo', p.motivo_anulacion)}</table>`:''}
+    <p style="font-size:11px;color:#444">Permiso emitido conforme al Decreto Ejecutivo 255 (Art. 58) y a la Norma Técnica de Seguridad e Higiene del Trabajo (Anexo 3 del A.M. MDT-2024-196, Art. 110-115). Este permiso caduca al término de la jornada y se anula automáticamente si cambian las condiciones físicas o climáticas del sitio o la conformación del grupo de trabajo.</p>`;
 }

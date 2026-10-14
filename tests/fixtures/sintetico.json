@@ -1,5 +1,5 @@
 {
- "_nota": "Proyecto INVENTADO para pruebas. Ningún dato corresponde a un contrato real. Cubre: rubros contractuales y de OC, OC aprobada y en borrador, 2 planillas con reajuste/amortización/retención/multa, 2 garantías (una vencida), 3 términos de reajuste que suman 1,000, actas provisional y definitiva, liquidación.",
+ "_nota": "Proyecto INVENTADO para pruebas. Ningún dato corresponde a un contrato real. Cubre: rubros contractuales y de OC, OC aprobada y en borrador, 2 planillas con reajuste/amortización/retención/multa, 2 garantías (una vencida), 3 términos de reajuste que suman 1,000, actas provisional y definitiva, liquidación. Fase 2: libro de obra (3 registros, 4 fotos, rubros, aprobaciones), observaciones (2, con respuestas y fotos), plano, ensayos (3, con re-ensayo e informe), formatos de calidad (plantilla, asignación, respuesta, foto), SST (config, riesgos, EPP, capacitación, checklist, exámenes, incidente, PTE), subcontrato, líneas base y cronograma.",
  "proyectos": [
   {
    "id": "a0000000-0000-4000-8000-000000000001",
@@ -9,7 +9,7 @@
    "contratante": "GAD Municipal de Río Verde (ficticio)",
    "contratista": "Constructora Ejemplo Cía. Ltda. (ficticia)",
    "fiscalizador": "HIDIVO S.A.S.",
-   "monto_contrato": 124218.00,
+   "monto_contrato": 124218,
    "fecha_inicio": "2026-02-02",
    "fecha_fin_planificada": "2026-06-30",
    "fecha_fin_real": "2026-07-10",
@@ -20,10 +20,16 @@
    "created_by": "b0000000-0000-4000-8000-000000000001",
    "created_at": "2026-01-10T14:00:00+00:00",
    "updated_at": "2026-08-20T16:00:00+00:00",
-   "modulos": {"curvaS": true, "planillas": true},
+   "modulos": {
+    "curvaS": true,
+    "planillas": true
+   },
    "estado_cierre": "liquidado",
    "contrato_datos": {
-    "anticipo": {"porcentaje": 30, "notas": "30% a la firma del contrato contra entrega de la garantía de buen uso."},
+    "anticipo": {
+     "porcentaje": 30,
+     "notas": "30% a la firma del contrato contra entrega de la garantía de buen uso."
+    },
     "extraido_at": "2026-01-16T10:00:00.000Z",
     "fiscalizador": "HIDIVO",
     "datos_adicionales": {
@@ -35,88 +41,1473 @@
      "fecha_suscripcion_contrato": "2026-01-15",
      "representante_legal_contratante": "Alcalde (ficticio)",
      "representante_legal_contratista": "Gerente (ficticio)",
-     "lista_ejemplo": ["primer punto", "segundo punto"]
+     "lista_ejemplo": [
+      "primer punto",
+      "segundo punto"
+     ]
     }
    }
   }
  ],
  "contrato_anticipo": [
-  {"id": "c0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "monto": 37265.40, "fecha_entrega": "2026-01-25", "modo_amortizacion": "proporcional", "retencion_pct": 5, "notas": null, "created_at": "2026-01-20T12:00:00+00:00", "iva_pct": 15}
+  {
+   "id": "c0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "monto": 37265.4,
+   "fecha_entrega": "2026-01-25",
+   "modo_amortizacion": "proporcional",
+   "retencion_pct": 5,
+   "notas": null,
+   "created_at": "2026-01-20T12:00:00+00:00",
+   "iva_pct": 15
+  }
  ],
  "garantias": [
-  {"id": "d0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "fiel_cumplimiento", "aseguradora": "Seguros Ejemplo S.A.", "numero": "FC-2026-0001", "monto": 6210.90, "vigencia_desde": "2026-01-20", "vigencia_hasta": "2027-01-20", "archivo_url": null, "estado": "vigente", "notas": null, "created_at": "2026-01-20T12:00:00+00:00"},
-  {"id": "d0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "buen_uso_anticipo", "aseguradora": "Seguros Ejemplo S.A.", "numero": "BUA-2026-0001", "monto": 37265.40, "vigencia_desde": "2026-01-20", "vigencia_hasta": "2026-08-20", "archivo_url": null, "estado": "vigente", "notas": "Se devuelve al amortizar el anticipo", "created_at": "2026-01-20T12:00:00+00:00"}
+  {
+   "id": "d0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo": "fiel_cumplimiento",
+   "aseguradora": "Seguros Ejemplo S.A.",
+   "numero": "FC-2026-0001",
+   "monto": 6210.9,
+   "vigencia_desde": "2026-01-20",
+   "vigencia_hasta": "2027-01-20",
+   "archivo_url": null,
+   "estado": "vigente",
+   "notas": null,
+   "created_at": "2026-01-20T12:00:00+00:00"
+  },
+  {
+   "id": "d0000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo": "buen_uso_anticipo",
+   "aseguradora": "Seguros Ejemplo S.A.",
+   "numero": "BUA-2026-0001",
+   "monto": 37265.4,
+   "vigencia_desde": "2026-01-20",
+   "vigencia_hasta": "2026-08-20",
+   "archivo_url": null,
+   "estado": "vigente",
+   "notas": "Se devuelve al amortizar el anticipo",
+   "created_at": "2026-01-20T12:00:00+00:00"
+  }
  ],
  "reajuste_terminos": [
-  {"id": "e0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "A", "descripcion": "Mano de obra", "coeficiente": 0.40, "indice_base": 1.000, "orden": 1, "created_at": "2026-01-20T12:00:00+00:00"},
-  {"id": "e0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "B", "descripcion": "Cemento y acero", "coeficiente": 0.35, "indice_base": 1.000, "orden": 2, "created_at": "2026-01-20T12:00:00+00:00"},
-  {"id": "e0000000-0000-4000-8000-000000000003", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "C", "descripcion": "Otros componentes", "coeficiente": 0.25, "indice_base": 1.000, "orden": 3, "created_at": "2026-01-20T12:00:00+00:00"}
+  {
+   "id": "e0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "simbolo": "A",
+   "descripcion": "Mano de obra",
+   "coeficiente": 0.4,
+   "indice_base": 1,
+   "orden": 1,
+   "created_at": "2026-01-20T12:00:00+00:00"
+  },
+  {
+   "id": "e0000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "simbolo": "B",
+   "descripcion": "Cemento y acero",
+   "coeficiente": 0.35,
+   "indice_base": 1,
+   "orden": 2,
+   "created_at": "2026-01-20T12:00:00+00:00"
+  },
+  {
+   "id": "e0000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "simbolo": "C",
+   "descripcion": "Otros componentes",
+   "coeficiente": 0.25,
+   "indice_base": 1,
+   "orden": 3,
+   "created_at": "2026-01-20T12:00:00+00:00"
+  }
  ],
  "rubros": [
-  {"id": "f0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "1", "descripcion": "Replanteo y nivelación", "unidad": "m2", "cantidad_contrato": 320, "precio_unitario": 1.25, "monto_contrato": 400.00, "cantidad_ejecutada": 320, "total_produccion": 400.00, "estado": "terminado", "orden": 1, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 320, "precio_contractual": 1.25},
-  {"id": "f0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "2", "descripcion": "Excavación manual", "unidad": "m3", "cantidad_contrato": 180, "precio_unitario": 12.50, "monto_contrato": 2250.00, "cantidad_ejecutada": 180, "total_produccion": 2250.00, "estado": "terminado", "orden": 2, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 180, "precio_contractual": 12.50},
-  {"id": "f0000000-0000-4000-8000-000000000003", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "3", "descripcion": "Hormigón f'c=240 kg/cm2 en pilas", "unidad": "m3", "cantidad_contrato": 60, "precio_unitario": 210.00, "monto_contrato": 12600.00, "cantidad_ejecutada": 60, "total_produccion": 12600.00, "estado": "terminado", "orden": 3, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 50, "precio_contractual": 210.00},
-  {"id": "f0000000-0000-4000-8000-000000000004", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "4", "descripcion": "Acero de refuerzo fy=4200 kg/cm2", "unidad": "kg", "cantidad_contrato": 9500, "precio_unitario": 2.10, "monto_contrato": 19950.00, "cantidad_ejecutada": 9500, "total_produccion": 19950.00, "estado": "terminado", "orden": 4, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 9500, "precio_contractual": 2.10},
-  {"id": "f0000000-0000-4000-8000-000000000005", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "5", "descripcion": "Estructura metálica A-36 <incluye montaje>", "unidad": "kg", "cantidad_contrato": 12000, "precio_unitario": 4.75, "monto_contrato": 57000.00, "cantidad_ejecutada": 12000, "total_produccion": 57000.00, "estado": "terminado", "orden": 5, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 12400, "precio_contractual": 4.75},
-  {"id": "f0000000-0000-4000-8000-000000000006", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "6", "descripcion": "Tablero de hormigón e=15 cm", "unidad": "m2", "cantidad_contrato": 120, "precio_unitario": 95.00, "monto_contrato": 11400.00, "cantidad_ejecutada": 120, "total_produccion": 11400.00, "estado": "terminado", "orden": 6, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 120, "precio_contractual": 95.00},
-  {"id": "f0000000-0000-4000-8000-000000000007", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "7", "descripcion": "Rampas de acceso", "unidad": "m2", "cantidad_contrato": 90, "precio_unitario": 68.00, "monto_contrato": 6120.00, "cantidad_ejecutada": 90, "total_produccion": 6120.00, "estado": "terminado", "orden": 7, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 90, "precio_contractual": 68.00},
-  {"id": "f0000000-0000-4000-8000-000000000008", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "8", "descripcion": "Barandas metálicas h=1,10 m", "unidad": "m", "cantidad_contrato": 96, "precio_unitario": 72.50, "monto_contrato": 6960.00, "cantidad_ejecutada": 96, "total_produccion": 6960.00, "estado": "terminado", "orden": 8, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 96, "precio_contractual": 72.50},
-  {"id": "f0000000-0000-4000-8000-000000000009", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "9", "descripcion": "Luminarias LED 60 W", "unidad": "u", "cantidad_contrato": 12, "precio_unitario": 310.00, "monto_contrato": 3720.00, "cantidad_ejecutada": 12, "total_produccion": 3720.00, "estado": "terminado", "orden": 9, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 12, "precio_contractual": 310.00},
-  {"id": "f0000000-0000-4000-8000-000000000010", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "10", "descripcion": "Pintura anticorrosiva", "unidad": "m2", "cantidad_contrato": 410, "precio_unitario": 9.80, "monto_contrato": 4018.00, "cantidad_ejecutada": 410, "total_produccion": 4018.00, "estado": "terminado", "orden": 10, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 410, "precio_contractual": 9.80},
-  {"id": "f0000000-0000-4000-8000-000000000011", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "OC-01-01", "descripcion": "Pasamanos de acero inoxidable", "unidad": "m", "cantidad_contrato": 48, "precio_unitario": 85.00, "monto_contrato": 4080.00, "cantidad_ejecutada": 48, "total_produccion": 4080.00, "estado": "terminado", "orden": 11, "es_orden_cambio": true, "orden_cambio_codigo": "OC-01", "orden_cambio_id": "10000000-0000-4000-8000-000000000001", "cantidad_contractual": null, "precio_contractual": null}
+  {
+   "id": "f0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "1",
+   "descripcion": "Replanteo y nivelación",
+   "unidad": "m2",
+   "cantidad_contrato": 320,
+   "precio_unitario": 1.25,
+   "monto_contrato": 400,
+   "cantidad_ejecutada": 320,
+   "total_produccion": 400,
+   "estado": "terminado",
+   "orden": 1,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 320,
+   "precio_contractual": 1.25
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "2",
+   "descripcion": "Excavación manual",
+   "unidad": "m3",
+   "cantidad_contrato": 180,
+   "precio_unitario": 12.5,
+   "monto_contrato": 2250,
+   "cantidad_ejecutada": 180,
+   "total_produccion": 2250,
+   "estado": "terminado",
+   "orden": 2,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 180,
+   "precio_contractual": 12.5
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "3",
+   "descripcion": "Hormigón f'c=240 kg/cm2 en pilas",
+   "unidad": "m3",
+   "cantidad_contrato": 60,
+   "precio_unitario": 210,
+   "monto_contrato": 12600,
+   "cantidad_ejecutada": 60,
+   "total_produccion": 12600,
+   "estado": "terminado",
+   "orden": 3,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 50,
+   "precio_contractual": 210
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000004",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "4",
+   "descripcion": "Acero de refuerzo fy=4200 kg/cm2",
+   "unidad": "kg",
+   "cantidad_contrato": 9500,
+   "precio_unitario": 2.1,
+   "monto_contrato": 19950,
+   "cantidad_ejecutada": 9500,
+   "total_produccion": 19950,
+   "estado": "terminado",
+   "orden": 4,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 9500,
+   "precio_contractual": 2.1
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000005",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "5",
+   "descripcion": "Estructura metálica A-36 <incluye montaje>",
+   "unidad": "kg",
+   "cantidad_contrato": 12000,
+   "precio_unitario": 4.75,
+   "monto_contrato": 57000,
+   "cantidad_ejecutada": 12000,
+   "total_produccion": 57000,
+   "estado": "terminado",
+   "orden": 5,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 12400,
+   "precio_contractual": 4.75
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000006",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "6",
+   "descripcion": "Tablero de hormigón e=15 cm",
+   "unidad": "m2",
+   "cantidad_contrato": 120,
+   "precio_unitario": 95,
+   "monto_contrato": 11400,
+   "cantidad_ejecutada": 120,
+   "total_produccion": 11400,
+   "estado": "terminado",
+   "orden": 6,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 120,
+   "precio_contractual": 95
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000007",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "7",
+   "descripcion": "Rampas de acceso",
+   "unidad": "m2",
+   "cantidad_contrato": 90,
+   "precio_unitario": 68,
+   "monto_contrato": 6120,
+   "cantidad_ejecutada": 90,
+   "total_produccion": 6120,
+   "estado": "terminado",
+   "orden": 7,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 90,
+   "precio_contractual": 68
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000008",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "8",
+   "descripcion": "Barandas metálicas h=1,10 m",
+   "unidad": "m",
+   "cantidad_contrato": 96,
+   "precio_unitario": 72.5,
+   "monto_contrato": 6960,
+   "cantidad_ejecutada": 96,
+   "total_produccion": 6960,
+   "estado": "terminado",
+   "orden": 8,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 96,
+   "precio_contractual": 72.5
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000009",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "9",
+   "descripcion": "Luminarias LED 60 W",
+   "unidad": "u",
+   "cantidad_contrato": 12,
+   "precio_unitario": 310,
+   "monto_contrato": 3720,
+   "cantidad_ejecutada": 12,
+   "total_produccion": 3720,
+   "estado": "terminado",
+   "orden": 9,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 12,
+   "precio_contractual": 310
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000010",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "10",
+   "descripcion": "Pintura anticorrosiva",
+   "unidad": "m2",
+   "cantidad_contrato": 410,
+   "precio_unitario": 9.8,
+   "monto_contrato": 4018,
+   "cantidad_ejecutada": 410,
+   "total_produccion": 4018,
+   "estado": "terminado",
+   "orden": 10,
+   "es_orden_cambio": false,
+   "orden_cambio_codigo": null,
+   "orden_cambio_id": null,
+   "cantidad_contractual": 410,
+   "precio_contractual": 9.8
+  },
+  {
+   "id": "f0000000-0000-4000-8000-000000000011",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "codigo": "OC-01-01",
+   "descripcion": "Pasamanos de acero inoxidable",
+   "unidad": "m",
+   "cantidad_contrato": 48,
+   "precio_unitario": 85,
+   "monto_contrato": 4080,
+   "cantidad_ejecutada": 48,
+   "total_produccion": 4080,
+   "estado": "terminado",
+   "orden": 11,
+   "es_orden_cambio": true,
+   "orden_cambio_codigo": "OC-01",
+   "orden_cambio_id": "10000000-0000-4000-8000-000000000001",
+   "cantidad_contractual": null,
+   "precio_contractual": null
+  }
  ],
  "ordenes_cambio": [
-  {"id": "10000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 1, "titulo": "Ajuste de pilas y pasamanos", "justificacion": "El estudio de suelos definitivo exige 10 m3 adicionales de hormigón en pilas.\nSe reduce acero estructural y se añade pasamanos de acero inoxidable por pedido del contratante.", "estado": "aprobada", "oficio_referencia": "OF-GAD-2026-118", "fecha_aprobacion": "2026-04-10", "archivo_url": null, "monto_total": 4280.00, "motivo_rechazo": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "aprobado_por": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-04-02T15:00:00+00:00"},
-  {"id": "10000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 2, "titulo": "Cambio de luminarias", "justificacion": "Dos luminarias adicionales en los accesos.", "estado": "borrador", "oficio_referencia": null, "fecha_aprobacion": null, "archivo_url": null, "monto_total": 620.00, "motivo_rechazo": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "aprobado_por": null, "created_at": "2026-06-20T15:00:00+00:00"}
+  {
+   "id": "10000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 1,
+   "titulo": "Ajuste de pilas y pasamanos",
+   "justificacion": "El estudio de suelos definitivo exige 10 m3 adicionales de hormigón en pilas.\nSe reduce acero estructural y se añade pasamanos de acero inoxidable por pedido del contratante.",
+   "estado": "aprobada",
+   "oficio_referencia": "OF-GAD-2026-118",
+   "fecha_aprobacion": "2026-04-10",
+   "archivo_url": null,
+   "monto_total": 4280,
+   "motivo_rechazo": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "aprobado_por": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-04-02T15:00:00+00:00"
+  },
+  {
+   "id": "10000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 2,
+   "titulo": "Cambio de luminarias",
+   "justificacion": "Dos luminarias adicionales en los accesos.",
+   "estado": "borrador",
+   "oficio_referencia": null,
+   "fecha_aprobacion": null,
+   "archivo_url": null,
+   "monto_total": 620,
+   "motivo_rechazo": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "aprobado_por": null,
+   "created_at": "2026-06-20T15:00:00+00:00"
+  }
  ],
  "orden_cambio_items": [
-  {"id": "20000000-0000-4000-8000-000000000001", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "nuevo", "rubro_id": null, "codigo": "OC-01-01", "descripcion": "Pasamanos de acero inoxidable", "unidad": "m", "precio_unitario": 85.00, "cantidad": 48, "monto": 4080.00, "created_at": "2026-04-02T15:00:01+00:00"},
-  {"id": "20000000-0000-4000-8000-000000000002", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000003", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 210.00, "cantidad": 10, "monto": 2100.00, "created_at": "2026-04-02T15:00:02+00:00"},
-  {"id": "20000000-0000-4000-8000-000000000003", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000005", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 4.75, "cantidad": -400, "monto": -1900.00, "created_at": "2026-04-02T15:00:03+00:00"},
-  {"id": "20000000-0000-4000-8000-000000000004", "orden_id": "10000000-0000-4000-8000-000000000002", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000009", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 310.00, "cantidad": 2, "monto": 620.00, "created_at": "2026-06-20T15:00:01+00:00"}
+  {
+   "id": "20000000-0000-4000-8000-000000000001",
+   "orden_id": "10000000-0000-4000-8000-000000000001",
+   "tipo": "nuevo",
+   "rubro_id": null,
+   "codigo": "OC-01-01",
+   "descripcion": "Pasamanos de acero inoxidable",
+   "unidad": "m",
+   "precio_unitario": 85,
+   "cantidad": 48,
+   "monto": 4080,
+   "created_at": "2026-04-02T15:00:01+00:00"
+  },
+  {
+   "id": "20000000-0000-4000-8000-000000000002",
+   "orden_id": "10000000-0000-4000-8000-000000000001",
+   "tipo": "modificacion",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "codigo": null,
+   "descripcion": null,
+   "unidad": null,
+   "precio_unitario": 210,
+   "cantidad": 10,
+   "monto": 2100,
+   "created_at": "2026-04-02T15:00:02+00:00"
+  },
+  {
+   "id": "20000000-0000-4000-8000-000000000003",
+   "orden_id": "10000000-0000-4000-8000-000000000001",
+   "tipo": "modificacion",
+   "rubro_id": "f0000000-0000-4000-8000-000000000005",
+   "codigo": null,
+   "descripcion": null,
+   "unidad": null,
+   "precio_unitario": 4.75,
+   "cantidad": -400,
+   "monto": -1900,
+   "created_at": "2026-04-02T15:00:03+00:00"
+  },
+  {
+   "id": "20000000-0000-4000-8000-000000000004",
+   "orden_id": "10000000-0000-4000-8000-000000000002",
+   "tipo": "modificacion",
+   "rubro_id": "f0000000-0000-4000-8000-000000000009",
+   "codigo": null,
+   "descripcion": null,
+   "unidad": null,
+   "precio_unitario": 310,
+   "cantidad": 2,
+   "monto": 620,
+   "created_at": "2026-06-20T15:00:01+00:00"
+  }
  ],
  "planillas_pago": [
-  {"id": "30000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 1, "fecha_inicio": "2026-02-02", "fecha_fin": "2026-03-31", "estado": "aprobada", "total_monto": 48030.00, "observaciones": "Primera planilla de avance.", "creado_por": "b0000000-0000-4000-8000-000000000003", "revisado_por": null, "aprobado_por": "b0000000-0000-4000-8000-000000000002", "fecha_aprobacion": "2026-04-08", "fecha_pago": null, "created_at": "2026-04-01T12:00:00+00:00", "updated_at": "2026-04-08T12:00:00+00:00", "amortizacion_anticipo": 14409.00, "retencion_garantia": 2401.50, "total_liquido": 32444.27, "reajuste_indices": {"A": 1.02, "B": 1.05, "C": 1.00}, "reajuste_factor": 1.0255, "reajuste_monto": 1224.77, "multa_monto": 0, "multa_concepto": null},
-  {"id": "30000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 2, "fecha_inicio": "2026-04-01", "fecha_fin": "2026-07-10", "estado": "pagada", "total_monto": 80468.00, "observaciones": null, "creado_por": "b0000000-0000-4000-8000-000000000003", "revisado_por": null, "aprobado_por": "b0000000-0000-4000-8000-000000000002", "fecha_aprobacion": "2026-07-20", "fecha_pago": "2026-08-05", "created_at": "2026-07-12T12:00:00+00:00", "updated_at": "2026-08-05T12:00:00+00:00", "amortizacion_anticipo": 22856.40, "retencion_garantia": 4023.40, "total_liquido": 55944.81, "reajuste_indices": {"A": 1.03, "B": 1.06, "C": 1.01}, "reajuste_factor": 1.0355, "reajuste_monto": 2856.61, "multa_monto": 500.00, "multa_concepto": "Retraso de 5 días en la entrega final"}
+  {
+   "id": "30000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 1,
+   "fecha_inicio": "2026-02-02",
+   "fecha_fin": "2026-03-31",
+   "estado": "aprobada",
+   "total_monto": 48030,
+   "observaciones": "Primera planilla de avance.",
+   "creado_por": "b0000000-0000-4000-8000-000000000003",
+   "revisado_por": null,
+   "aprobado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha_aprobacion": "2026-04-08",
+   "fecha_pago": null,
+   "created_at": "2026-04-01T12:00:00+00:00",
+   "updated_at": "2026-04-08T12:00:00+00:00",
+   "amortizacion_anticipo": 14409,
+   "retencion_garantia": 2401.5,
+   "total_liquido": 32444.27,
+   "reajuste_indices": {
+    "A": 1.02,
+    "B": 1.05,
+    "C": 1
+   },
+   "reajuste_factor": 1.0255,
+   "reajuste_monto": 1224.77,
+   "multa_monto": 0,
+   "multa_concepto": null
+  },
+  {
+   "id": "30000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 2,
+   "fecha_inicio": "2026-04-01",
+   "fecha_fin": "2026-07-10",
+   "estado": "pagada",
+   "total_monto": 80468,
+   "observaciones": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000003",
+   "revisado_por": null,
+   "aprobado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha_aprobacion": "2026-07-20",
+   "fecha_pago": "2026-08-05",
+   "created_at": "2026-07-12T12:00:00+00:00",
+   "updated_at": "2026-08-05T12:00:00+00:00",
+   "amortizacion_anticipo": 22856.4,
+   "retencion_garantia": 4023.4,
+   "total_liquido": 55944.81,
+   "reajuste_indices": {
+    "A": 1.03,
+    "B": 1.06,
+    "C": 1.01
+   },
+   "reajuste_factor": 1.0355,
+   "reajuste_monto": 2856.61,
+   "multa_monto": 500,
+   "multa_concepto": "Retraso de 5 días en la entrega final"
+  }
  ],
  "planilla_rubros": [
-  {"id": "40000000-0000-4000-8000-000000000001", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000001", "cantidad_anterior": 0, "cantidad_periodo": 320, "cantidad_acumulada": 320, "precio_unitario": 1.25, "monto_periodo": 400.00},
-  {"id": "40000000-0000-4000-8000-000000000002", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000002", "cantidad_anterior": 0, "cantidad_periodo": 180, "cantidad_acumulada": 180, "precio_unitario": 12.50, "monto_periodo": 2250.00},
-  {"id": "40000000-0000-4000-8000-000000000003", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000003", "cantidad_anterior": 0, "cantidad_periodo": 8, "cantidad_acumulada": 8, "precio_unitario": 210.00, "monto_periodo": 1680.00},
-  {"id": "40000000-0000-4000-8000-000000000004", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000004", "cantidad_anterior": 0, "cantidad_periodo": 9500, "cantidad_acumulada": 9500, "precio_unitario": 2.10, "monto_periodo": 19950.00},
-  {"id": "40000000-0000-4000-8000-000000000005", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000005", "cantidad_anterior": 0, "cantidad_periodo": 5000, "cantidad_acumulada": 5000, "precio_unitario": 4.75, "monto_periodo": 23750.00},
-  {"id": "40000000-0000-4000-8000-000000000006", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000003", "cantidad_anterior": 8, "cantidad_periodo": 52, "cantidad_acumulada": 60, "precio_unitario": 210.00, "monto_periodo": 10920.00},
-  {"id": "40000000-0000-4000-8000-000000000007", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000005", "cantidad_anterior": 5000, "cantidad_periodo": 7000, "cantidad_acumulada": 12000, "precio_unitario": 4.75, "monto_periodo": 33250.00},
-  {"id": "40000000-0000-4000-8000-000000000008", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000006", "cantidad_anterior": 0, "cantidad_periodo": 120, "cantidad_acumulada": 120, "precio_unitario": 95.00, "monto_periodo": 11400.00},
-  {"id": "40000000-0000-4000-8000-000000000009", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000007", "cantidad_anterior": 0, "cantidad_periodo": 90, "cantidad_acumulada": 90, "precio_unitario": 68.00, "monto_periodo": 6120.00},
-  {"id": "40000000-0000-4000-8000-000000000010", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000008", "cantidad_anterior": 0, "cantidad_periodo": 96, "cantidad_acumulada": 96, "precio_unitario": 72.50, "monto_periodo": 6960.00},
-  {"id": "40000000-0000-4000-8000-000000000011", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000009", "cantidad_anterior": 0, "cantidad_periodo": 12, "cantidad_acumulada": 12, "precio_unitario": 310.00, "monto_periodo": 3720.00},
-  {"id": "40000000-0000-4000-8000-000000000012", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000010", "cantidad_anterior": 0, "cantidad_periodo": 410, "cantidad_acumulada": 410, "precio_unitario": 9.80, "monto_periodo": 4018.00},
-  {"id": "40000000-0000-4000-8000-000000000013", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000011", "cantidad_anterior": 0, "cantidad_periodo": 48, "cantidad_acumulada": 48, "precio_unitario": 85.00, "monto_periodo": 4080.00}
+  {
+   "id": "40000000-0000-4000-8000-000000000001",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000001",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 320,
+   "cantidad_acumulada": 320,
+   "precio_unitario": 1.25,
+   "monto_periodo": 400
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000002",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000002",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 180,
+   "cantidad_acumulada": 180,
+   "precio_unitario": 12.5,
+   "monto_periodo": 2250
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000003",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 8,
+   "cantidad_acumulada": 8,
+   "precio_unitario": 210,
+   "monto_periodo": 1680
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000004",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000004",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 9500,
+   "cantidad_acumulada": 9500,
+   "precio_unitario": 2.1,
+   "monto_periodo": 19950
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000005",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000005",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 5000,
+   "cantidad_acumulada": 5000,
+   "precio_unitario": 4.75,
+   "monto_periodo": 23750
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000006",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "cantidad_anterior": 8,
+   "cantidad_periodo": 52,
+   "cantidad_acumulada": 60,
+   "precio_unitario": 210,
+   "monto_periodo": 10920
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000007",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000005",
+   "cantidad_anterior": 5000,
+   "cantidad_periodo": 7000,
+   "cantidad_acumulada": 12000,
+   "precio_unitario": 4.75,
+   "monto_periodo": 33250
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000008",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000006",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 120,
+   "cantidad_acumulada": 120,
+   "precio_unitario": 95,
+   "monto_periodo": 11400
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000009",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000007",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 90,
+   "cantidad_acumulada": 90,
+   "precio_unitario": 68,
+   "monto_periodo": 6120
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000010",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000008",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 96,
+   "cantidad_acumulada": 96,
+   "precio_unitario": 72.5,
+   "monto_periodo": 6960
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000011",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000009",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 12,
+   "cantidad_acumulada": 12,
+   "precio_unitario": 310,
+   "monto_periodo": 3720
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000012",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000010",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 410,
+   "cantidad_acumulada": 410,
+   "precio_unitario": 9.8,
+   "monto_periodo": 4018
+  },
+  {
+   "id": "40000000-0000-4000-8000-000000000013",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000011",
+   "cantidad_anterior": 0,
+   "cantidad_periodo": 48,
+   "cantidad_acumulada": 48,
+   "precio_unitario": 85,
+   "monto_periodo": 4080
+  }
  ],
  "planilla_historial": [
-  {"id": "50000000-0000-4000-8000-000000000001", "planilla_id": "30000000-0000-4000-8000-000000000001", "accion": "Planilla enviada a revisión", "comentario": null, "autor_id": "b0000000-0000-4000-8000-000000000003", "created_at": "2026-04-01T12:05:00+00:00"},
-  {"id": "50000000-0000-4000-8000-000000000002", "planilla_id": "30000000-0000-4000-8000-000000000001", "accion": "Planilla aprobada por fiscalizador", "comentario": "Cantidades verificadas en obra.", "autor_id": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-04-08T12:00:00+00:00"},
-  {"id": "50000000-0000-4000-8000-000000000003", "planilla_id": "30000000-0000-4000-8000-000000000002", "accion": "Planilla aprobada por fiscalizador", "comentario": null, "autor_id": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-07-20T12:00:00+00:00"},
-  {"id": "50000000-0000-4000-8000-000000000004", "planilla_id": "30000000-0000-4000-8000-000000000002", "accion": "Planilla marcada como pagada", "comentario": "Transferencia 2026-08-05", "autor_id": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-08-05T12:00:00+00:00"}
+  {
+   "id": "50000000-0000-4000-8000-000000000001",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "accion": "Planilla enviada a revisión",
+   "comentario": null,
+   "autor_id": "b0000000-0000-4000-8000-000000000003",
+   "created_at": "2026-04-01T12:05:00+00:00"
+  },
+  {
+   "id": "50000000-0000-4000-8000-000000000002",
+   "planilla_id": "30000000-0000-4000-8000-000000000001",
+   "accion": "Planilla aprobada por fiscalizador",
+   "comentario": "Cantidades verificadas en obra.",
+   "autor_id": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-04-08T12:00:00+00:00"
+  },
+  {
+   "id": "50000000-0000-4000-8000-000000000003",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "accion": "Planilla aprobada por fiscalizador",
+   "comentario": null,
+   "autor_id": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-07-20T12:00:00+00:00"
+  },
+  {
+   "id": "50000000-0000-4000-8000-000000000004",
+   "planilla_id": "30000000-0000-4000-8000-000000000002",
+   "accion": "Planilla marcada como pagada",
+   "comentario": "Transferencia 2026-08-05",
+   "autor_id": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-08-05T12:00:00+00:00"
+  }
  ],
  "actas_recepcion": [
-  {"id": "60000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "provisional", "fecha": "2026-07-15", "lugar": "Río Verde", "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista\nArq. Modelo — Contratante", "observaciones": "Retoque de pintura en barandas del tramo norte.", "archivo_url": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-07-15T20:00:00+00:00"},
-  {"id": "60000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "definitiva", "fecha": "2026-08-18", "lugar": "Río Verde", "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista", "observaciones": null, "archivo_url": "https://storage.test/actas/definitiva.pdf", "creado_por": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-08-18T20:00:00+00:00"}
+  {
+   "id": "60000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo": "provisional",
+   "fecha": "2026-07-15",
+   "lugar": "Río Verde",
+   "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista\nArq. Modelo — Contratante",
+   "observaciones": "Retoque de pintura en barandas del tramo norte.",
+   "archivo_url": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-07-15T20:00:00+00:00"
+  },
+  {
+   "id": "60000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo": "definitiva",
+   "fecha": "2026-08-18",
+   "lugar": "Río Verde",
+   "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista",
+   "observaciones": null,
+   "archivo_url": "https://storage.test/actas/definitiva.pdf",
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-08-18T20:00:00+00:00"
+  }
  ],
  "liquidaciones": [
-  {"id": "70000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "fecha": "2026-08-20",
-   "datos": {"monto_contrato_original": 124218.00, "monto_ocs_aprobadas": 4280.00, "monto_contrato_vigente": 128498.00, "total_ejecutado": 128498.00, "total_planillado": 128498.00, "total_reajustes": 4081.38, "anticipo_entregado": 37265.40, "anticipo_amortizado": 37265.40, "retenciones_acumuladas": 6424.90, "multas": 500.00, "liquido_pagado": 88389.08, "anticipo_por_amortizar": 0, "saldo_final": 6424.90},
-   "observaciones": null, "archivo_url": null, "creado_por": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-08-20T16:00:00+00:00"}
+  {
+   "id": "70000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "fecha": "2026-08-20",
+   "datos": {
+    "monto_contrato_original": 124218,
+    "monto_ocs_aprobadas": 4280,
+    "monto_contrato_vigente": 128498,
+    "total_ejecutado": 128498,
+    "total_planillado": 128498,
+    "total_reajustes": 4081.38,
+    "anticipo_entregado": 37265.4,
+    "anticipo_amortizado": 37265.4,
+    "retenciones_acumuladas": 6424.9,
+    "multas": 500,
+    "liquido_pagado": 88389.08,
+    "anticipo_por_amortizar": 0,
+    "saldo_final": 6424.9
+   },
+   "observaciones": null,
+   "archivo_url": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-08-20T16:00:00+00:00"
+  }
  ],
  "proyecto_miembros": [
-  {"id": "80000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "perfil_id": null, "rol": "fiscalizador", "usuario_id": "b0000000-0000-4000-8000-000000000002"},
-  {"id": "80000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "perfil_id": null, "rol": "residente", "usuario_id": "b0000000-0000-4000-8000-000000000003"}
+  {
+   "id": "80000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "perfil_id": null,
+   "rol": "fiscalizador",
+   "usuario_id": "b0000000-0000-4000-8000-000000000002"
+  },
+  {
+   "id": "80000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "perfil_id": null,
+   "rol": "residente",
+   "usuario_id": "b0000000-0000-4000-8000-000000000003"
+  }
  ],
  "perfiles": [
-  {"id": "b0000000-0000-4000-8000-000000000001", "nombre": "Prueba", "apellido": "Admin", "rol": "admin"},
-  {"id": "b0000000-0000-4000-8000-000000000002", "nombre": "Prueba", "apellido": "Fiscalizador", "rol": "fiscalizador"},
-  {"id": "b0000000-0000-4000-8000-000000000003", "nombre": "Prueba", "apellido": "Residente", "rol": "residente"}
+  {
+   "id": "b0000000-0000-4000-8000-000000000001",
+   "nombre": "Prueba",
+   "apellido": "Admin",
+   "rol": "admin"
+  },
+  {
+   "id": "b0000000-0000-4000-8000-000000000002",
+   "nombre": "Prueba",
+   "apellido": "Fiscalizador",
+   "rol": "fiscalizador"
+  },
+  {
+   "id": "b0000000-0000-4000-8000-000000000003",
+   "nombre": "Prueba",
+   "apellido": "Residente",
+   "rol": "residente"
+  }
  ],
- "expedientes_generados": []
+ "expedientes_generados": [],
+ "libro_obra": [
+  {
+   "id": "90000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "fecha": "2026-02-03",
+   "numero_registro": 1,
+   "clima": "Soleado",
+   "temperatura_min": 22.5,
+   "temperatura_max": 31,
+   "personal_total": 12,
+   "actividades_ejecutadas": "Replanteo y nivelación del eje del puente.\nExcavación manual de las zapatas norte.",
+   "equipos_maquinaria": "Estación total, 1 retroexcavadora",
+   "materiales_utilizados": "Estacas, cal, 2 m3 de piedra",
+   "novedades": "Lluvia ligera a las 15:00; se suspendió una hora.",
+   "resoluciones": "Se recupera el sábado.",
+   "created_by": "b0000000-0000-4000-8000-000000000003",
+   "created_at": "2026-02-03T22:10:00+00:00",
+   "updated_at": "2026-02-04T13:00:00+00:00",
+   "residente_nombre": "Prueba Residente",
+   "residente_email": "residente@ejemplo.test",
+   "residente_empresa": "Constructora Ejemplo",
+   "clima_diurno": "Soleado",
+   "clima_nocturno": "Nublado",
+   "estado_aprobacion": "aprobado",
+   "aprobado_por": "b0000000-0000-4000-8000-000000000002",
+   "aprobado_at": "2026-02-04T13:00:00+00:00",
+   "observacion_aprobacion": null
+  },
+  {
+   "id": "90000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "fecha": "2026-02-10",
+   "numero_registro": 2,
+   "clima": "Lluvioso",
+   "temperatura_min": 21,
+   "temperatura_max": 27.5,
+   "personal_total": 15,
+   "actividades_ejecutadas": "Armado de acero de las pilas <P1> y <P2>.",
+   "equipos_maquinaria": "Dobladora, cortadora",
+   "materiales_utilizados": "2.400 kg de acero",
+   "novedades": null,
+   "resoluciones": null,
+   "created_by": "b0000000-0000-4000-8000-000000000003",
+   "created_at": "2026-02-10T22:00:00+00:00",
+   "updated_at": "2026-02-10T22:00:00+00:00",
+   "residente_nombre": "Prueba Residente",
+   "residente_email": null,
+   "residente_empresa": null,
+   "clima_diurno": "Lluvioso",
+   "clima_nocturno": "Tormenta",
+   "estado_aprobacion": "observado",
+   "aprobado_por": null,
+   "aprobado_at": null,
+   "observacion_aprobacion": "Falta la cantidad de acero por pila."
+  },
+  {
+   "id": "90000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "fecha": "2026-03-02",
+   "numero_registro": 3,
+   "clima": "Parcialmente nublado",
+   "temperatura_min": 23,
+   "temperatura_max": 30,
+   "personal_total": 14,
+   "actividades_ejecutadas": "Hormigonado de la pila P1 (8 m3).",
+   "equipos_maquinaria": "Mixer, vibrador",
+   "materiales_utilizados": "Hormigón f'c=240",
+   "novedades": "Visita del contratante.",
+   "resoluciones": null,
+   "created_by": "b0000000-0000-4000-8000-000000000003",
+   "created_at": "2026-03-02T23:30:00+00:00",
+   "updated_at": "2026-03-02T23:30:00+00:00",
+   "residente_nombre": "Prueba Residente",
+   "residente_email": null,
+   "residente_empresa": null,
+   "clima_diurno": "Parcialmente nublado",
+   "clima_nocturno": null,
+   "estado_aprobacion": "pendiente",
+   "aprobado_por": null,
+   "aprobado_at": null,
+   "observacion_aprobacion": null
+  }
+ ],
+ "libro_obra_fotos": [
+  {
+   "id": "91000000-0000-4000-8000-000000000001",
+   "registro_id": "90000000-0000-4000-8000-000000000001",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/libro_obra/90000000-0000-4000-8000-000000000001/1770000000000_1.jpg",
+   "descripcion": "Replanteo del eje",
+   "orden": 1,
+   "created_at": "2026-02-03T22:11:00+00:00"
+  },
+  {
+   "id": "91000000-0000-4000-8000-000000000002",
+   "registro_id": "90000000-0000-4000-8000-000000000001",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/libro_obra/90000000-0000-4000-8000-000000000001/1770000000001_2 con espacio y tilde á.jpeg",
+   "descripcion": null,
+   "orden": 2,
+   "created_at": "2026-02-03T22:12:00+00:00"
+  },
+  {
+   "id": "91000000-0000-4000-8000-000000000003",
+   "registro_id": "90000000-0000-4000-8000-000000000002",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/libro_obra/90000000-0000-4000-8000-000000000002/1770600000000_1.heic",
+   "descripcion": "Acero pila P1",
+   "orden": 1,
+   "created_at": "2026-02-10T22:01:00+00:00"
+  },
+  {
+   "id": "91000000-0000-4000-8000-000000000004",
+   "registro_id": "90000000-0000-4000-8000-000000000003",
+   "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+   "descripcion": "Hormigonado",
+   "orden": 1,
+   "created_at": "2026-03-02T23:31:00+00:00"
+  }
+ ],
+ "libro_obra_rubros": [
+  {
+   "id": "92000000-0000-4000-8000-000000000001",
+   "registro_id": "90000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000001",
+   "cantidad_dia": 320,
+   "observacion": null
+  },
+  {
+   "id": "92000000-0000-4000-8000-000000000002",
+   "registro_id": "90000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000002",
+   "cantidad_dia": 40.5,
+   "observacion": null
+  },
+  {
+   "id": "92000000-0000-4000-8000-000000000003",
+   "registro_id": "90000000-0000-4000-8000-000000000003",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "cantidad_dia": 8,
+   "observacion": "Pila P1"
+  }
+ ],
+ "libro_obra_aprobaciones": [
+  {
+   "id": "93000000-0000-4000-8000-000000000001",
+   "registro_id": "90000000-0000-4000-8000-000000000001",
+   "accion": "aprobado",
+   "comentario": null,
+   "autor_id": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-04T13:00:00+00:00"
+  },
+  {
+   "id": "93000000-0000-4000-8000-000000000002",
+   "registro_id": "90000000-0000-4000-8000-000000000002",
+   "accion": "observado",
+   "comentario": "Falta la cantidad de acero por pila.",
+   "autor_id": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-11T13:00:00+00:00"
+  }
+ ],
+ "planos": [
+  {
+   "id": "94000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "nombre": "Planta general",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-archivos/planos/planta.pdf",
+   "tipo": "pdf",
+   "subido_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-01-20T12:00:00+00:00"
+  }
+ ],
+ "observaciones": [
+  {
+   "id": "95000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "plano_id": "94000000-0000-4000-8000-000000000001",
+   "titulo": "Recubrimiento insuficiente en pila P2",
+   "descripcion": "El recubrimiento medido es de 2 cm; el plano exige 4 cm.",
+   "estado": "resuelta",
+   "pin_x": 42.5,
+   "pin_y": 61.2,
+   "pin_pagina": 2,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-12T15:00:00+00:00",
+   "numero": 1
+  },
+  {
+   "id": "95000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "plano_id": null,
+   "titulo": "Acopio de acero sin protección",
+   "descripcion": "El acero está en contacto con el suelo.",
+   "estado": "abierta",
+   "pin_x": null,
+   "pin_y": null,
+   "pin_pagina": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-03-05T15:00:00+00:00",
+   "numero": 2
+  }
+ ],
+ "observacion_respuestas": [
+  {
+   "id": "96000000-0000-4000-8000-000000000001",
+   "observacion_id": "95000000-0000-4000-8000-000000000001",
+   "texto": "Se corrigió con separadores de 4 cm.",
+   "autor_id": "b0000000-0000-4000-8000-000000000003",
+   "created_at": "2026-02-13T14:00:00+00:00",
+   "archivo_url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/observaciones/95000000-0000-4000-8000-000000000001/respuestas/1770900000000_separadores.jpg",
+   "archivo_nombre": "separadores.jpg"
+  },
+  {
+   "id": "96000000-0000-4000-8000-000000000002",
+   "observacion_id": "95000000-0000-4000-8000-000000000001",
+   "texto": "Verificado en sitio. Resuelta.",
+   "autor_id": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-14T14:00:00+00:00",
+   "archivo_url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/observaciones/x/informe.pdf",
+   "archivo_nombre": "informe.pdf"
+  }
+ ],
+ "observacion_fotos": [
+  {
+   "id": "97000000-0000-4000-8000-000000000001",
+   "observacion_id": "95000000-0000-4000-8000-000000000001",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/observaciones/95000000-0000-4000-8000-000000000001/1770800000000_recubrimiento.jpg",
+   "created_at": "2026-02-12T15:01:00+00:00"
+  },
+  {
+   "id": "97000000-0000-4000-8000-000000000002",
+   "observacion_id": "95000000-0000-4000-8000-000000000002",
+   "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+   "created_at": "2026-03-05T15:01:00+00:00"
+  }
+ ],
+ "ensayo_tipos": [
+  {
+   "id": "98000000-0000-4000-8000-000000000001",
+   "nombre": "Compresión de hormigón",
+   "norma": "NTE INEN 1573",
+   "unidad": "kg/cm2",
+   "criterio": "mayor_igual",
+   "created_at": "2026-01-01T00:00:00+00:00"
+  },
+  {
+   "id": "98000000-0000-4000-8000-000000000002",
+   "nombre": "Densidad de campo",
+   "norma": "ASTM D1556",
+   "unidad": "%",
+   "criterio": "rango",
+   "created_at": "2026-01-01T00:00:00+00:00"
+  }
+ ],
+ "ensayo_especificaciones": [
+  {
+   "id": "99000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo_id": "98000000-0000-4000-8000-000000000001",
+   "etiqueta": "Pilas",
+   "valor_min": 240,
+   "valor_max": null,
+   "created_at": "2026-01-25T12:00:00+00:00"
+  },
+  {
+   "id": "99000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo_id": "98000000-0000-4000-8000-000000000002",
+   "etiqueta": "Relleno de rampas",
+   "valor_min": 95,
+   "valor_max": 100,
+   "created_at": "2026-01-25T12:00:00+00:00"
+  }
+ ],
+ "ensayos": [
+  {
+   "id": "a1000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "especificacion_id": "99000000-0000-4000-8000-000000000001",
+   "numero": 1,
+   "fecha": "2026-03-30",
+   "ubicacion": "Pila P1",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "laboratorio": "Lab Ejemplo",
+   "valor": 262.4,
+   "detalle": "Cilindro 28 días",
+   "cumple": true,
+   "resuelto": false,
+   "reensayo_de": null,
+   "observacion_id": null,
+   "archivo_url": "https://hidivo.test/storage/v1/object/public/hidivo-archivos/ensayos/e1.pdf",
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-03-30T12:00:00+00:00"
+  },
+  {
+   "id": "a1000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "especificacion_id": "99000000-0000-4000-8000-000000000002",
+   "numero": 2,
+   "fecha": "2026-05-10",
+   "ubicacion": "Rampa norte",
+   "rubro_id": "f0000000-0000-4000-8000-000000000007",
+   "laboratorio": "Lab Ejemplo",
+   "valor": 92.1,
+   "detalle": null,
+   "cumple": false,
+   "resuelto": true,
+   "reensayo_de": null,
+   "observacion_id": "95000000-0000-4000-8000-000000000002",
+   "archivo_url": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-05-10T12:00:00+00:00"
+  },
+  {
+   "id": "a1000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "especificacion_id": "99000000-0000-4000-8000-000000000002",
+   "numero": 3,
+   "fecha": "2026-05-14",
+   "ubicacion": "Rampa norte",
+   "rubro_id": "f0000000-0000-4000-8000-000000000007",
+   "laboratorio": "Lab Ejemplo",
+   "valor": 96.3,
+   "detalle": "Recompactado",
+   "cumple": true,
+   "resuelto": false,
+   "reensayo_de": "a1000000-0000-4000-8000-000000000002",
+   "observacion_id": null,
+   "archivo_url": null,
+   "creado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-05-14T12:00:00+00:00"
+  }
+ ],
+ "formatos_calidad_plantillas": [
+  {
+   "id": "a2000000-0000-4000-8000-000000000001",
+   "empresa_id": null,
+   "nombre": "Registro de hormigonado",
+   "descripcion": "Control por vaciado",
+   "campos": [
+    {
+     "id": "c1",
+     "tipo": "texto",
+     "etiqueta": "Elemento"
+    },
+    {
+     "id": "c2",
+     "tipo": "foto",
+     "etiqueta": "Foto del vaciado"
+    }
+   ],
+   "activo": true,
+   "creado_por": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-01-15T12:00:00+00:00"
+  }
+ ],
+ "formatos_calidad_asignaciones": [
+  {
+   "id": "a3000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "plantilla_id": "a2000000-0000-4000-8000-000000000001",
+   "created_at": "2026-01-20T12:00:00+00:00",
+   "rol_llenado": "residente"
+  }
+ ],
+ "formatos_calidad_respuestas": [
+  {
+   "id": "a4000000-0000-4000-8000-000000000001",
+   "plantilla_id": "a2000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "residente_id": "b0000000-0000-4000-8000-000000000003",
+   "respuestas": {
+    "c1": "Pila P1"
+   },
+   "estado": "corregido",
+   "corregido_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-03-02T20:00:00+00:00",
+   "updated_at": "2026-03-03T10:00:00+00:00"
+  }
+ ],
+ "formatos_calidad_fotos": [
+  {
+   "id": "a5000000-0000-4000-8000-000000000001",
+   "respuesta_id": "a4000000-0000-4000-8000-000000000001",
+   "campo_id": "c2",
+   "url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/formatos-calidad/a4000000-0000-4000-8000-000000000001/c2_1770000000000.jpg",
+   "created_at": "2026-03-02T20:01:00+00:00"
+  }
+ ],
+ "sst_config": [
+  {
+   "id": "b1000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo_gestion": "propia",
+   "num_trabajadores": 15,
+   "num_hombres": 13,
+   "num_mujeres": 2,
+   "grupos_atencion_prioritaria": [
+    "mujeres embarazadas"
+   ],
+   "responsable_sst_tipo": "monitor",
+   "responsable_sst_nombre": "Monitor Ejemplo",
+   "medico_ocupacional_nombre": "Dr. Ejemplo",
+   "representacion_tipo": "delegado",
+   "registrado_sut": true,
+   "created_at": "2026-02-01T12:00:00+00:00",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  }
+ ],
+ "sst_matriz_riesgos": [
+  {
+   "id": "b2000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "puesto": "Fierrero",
+   "num_expuestos": 4,
+   "actividades": "Corte y doblado de acero",
+   "tipo_riesgo": "mecanico",
+   "peligro": "Corte con varilla",
+   "probabilidad": "media",
+   "consecuencia": "grave",
+   "nivel_riesgo": "Importante",
+   "jerarquia_control": "epp",
+   "medidas_control": "Guantes de cuero, gafas",
+   "riesgo_residual": "Moderado",
+   "fecha_evaluacion": "2026-02-01",
+   "evaluado_por": "Monitor Ejemplo",
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-01T12:00:00+00:00",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  },
+  {
+   "id": "b2000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "puesto": "Albañil",
+   "num_expuestos": 6,
+   "actividades": "Trabajo en altura sobre andamio",
+   "tipo_riesgo": "locativo",
+   "peligro": "Caída a distinto nivel",
+   "probabilidad": "alta",
+   "consecuencia": "muy_grave",
+   "nivel_riesgo": "Intolerable",
+   "jerarquia_control": "ing",
+   "medidas_control": "Barandas, línea de vida, arnés",
+   "riesgo_residual": "Importante",
+   "fecha_evaluacion": "2026-02-01",
+   "evaluado_por": "Monitor Ejemplo",
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-01T12:00:00+00:00",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  }
+ ],
+ "sst_epp_matriz": [
+  {
+   "id": "b3000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "puesto": "Fierrero",
+   "riesgo_asociado": "Corte",
+   "epp_requerido": "Guantes de cuero, gafas",
+   "especificacion_tecnica": "ANSI Z87.1",
+   "frecuencia_reposicion": "Mensual",
+   "created_at": "2026-02-01T12:00:00+00:00"
+  },
+  {
+   "id": "b3000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "puesto": "Albañil",
+   "riesgo_asociado": "Caída",
+   "epp_requerido": "Arnés, casco, botas",
+   "especificacion_tecnica": "ANSI Z359",
+   "frecuencia_reposicion": "Semestral",
+   "created_at": "2026-02-01T12:00:00+00:00"
+  }
+ ],
+ "sst_epp_entregas": [
+  {
+   "id": "b4000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "trabajador_nombre": "Trabajador Ejemplo Uno",
+   "trabajador_cedula": "0000000001",
+   "puesto": "Fierrero",
+   "fecha_entrega": "2026-02-05",
+   "detalle_epp": "Guantes de cuero (2 pares), gafas",
+   "confirmado_trabajador": true,
+   "foto_url": "https://hidivo.test/storage/v1/object/public/hidivo-fotos/sst/epp/entrega1.jpg",
+   "registrado_por": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-05T12:00:00+00:00"
+  }
+ ],
+ "sst_capacitaciones": [
+  {
+   "id": "b5000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tema": "Trabajo en alturas",
+   "tipo": "capacitacion",
+   "fecha": "2026-02-06",
+   "duracion_horas": 2,
+   "responsable": "Monitor Ejemplo",
+   "metodologia": "Charla y práctica",
+   "material_url": null,
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-02-06T12:00:00+00:00"
+  }
+ ],
+ "sst_capacitacion_asistentes": [
+  {
+   "id": "b6000000-0000-4000-8000-000000000001",
+   "capacitacion_id": "b5000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "nombre": "Trabajador Ejemplo Uno",
+   "cedula": "0000000001",
+   "puesto": "Fierrero",
+   "asistio": true,
+   "firma_confirmada": true,
+   "created_at": "2026-02-06T12:01:00+00:00"
+  },
+  {
+   "id": "b6000000-0000-4000-8000-000000000002",
+   "capacitacion_id": "b5000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "nombre": "Trabajador Ejemplo Dos",
+   "cedula": null,
+   "puesto": "Albañil",
+   "asistio": true,
+   "firma_confirmada": false,
+   "created_at": "2026-02-06T12:02:00+00:00"
+  }
+ ],
+ "sst_checklist_respuestas": [
+  {
+   "id": "b7000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "modo": "autoevaluacion",
+   "item_codigo": "I.1",
+   "respuesta": "cumple",
+   "observacion": null,
+   "evaluado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha": "2026-02-01",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  },
+  {
+   "id": "b7000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "modo": "autoevaluacion",
+   "item_codigo": "I.2",
+   "respuesta": "no_cumple",
+   "observacion": "En trámite",
+   "evaluado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha": "2026-02-01",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  },
+  {
+   "id": "b7000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "modo": "autoevaluacion",
+   "item_codigo": "II.1",
+   "respuesta": "no_aplica",
+   "observacion": null,
+   "evaluado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha": "2026-02-01",
+   "updated_at": "2026-02-01T12:00:00+00:00"
+  },
+  {
+   "id": "b7000000-0000-4000-8000-000000000004",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "modo": "auditoria",
+   "item_codigo": "I.1",
+   "respuesta": "cumple",
+   "observacion": null,
+   "evaluado_por": "b0000000-0000-4000-8000-000000000002",
+   "fecha": "2026-06-01",
+   "updated_at": "2026-06-01T12:00:00+00:00"
+  }
+ ],
+ "sst_examenes_matriz": [
+  {
+   "id": "b8000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "puesto": "Albañil",
+   "riesgo_asociado": "Altura",
+   "tipo_examen": "Audiometría",
+   "frecuencia_meses": 12,
+   "responsable": "Dr. Ejemplo",
+   "created_at": "2026-02-01T12:00:00+00:00"
+  }
+ ],
+ "sst_examenes_registros": [
+  {
+   "id": "b9000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "trabajador_nombre": "Trabajador Ejemplo Uno",
+   "trabajador_cedula": "0000000001",
+   "puesto": "Fierrero",
+   "tipo": "preempleo",
+   "fecha_examen": "2026-01-28",
+   "fecha_proximo": "2027-01-28",
+   "aptitud": "apto",
+   "observaciones": "DATO DE SALUD QUE NO DEBE SALIR",
+   "medico_nombre": "Dr. Ejemplo",
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-01-28T12:00:00+00:00",
+   "updated_at": "2026-01-28T12:00:00+00:00"
+  },
+  {
+   "id": "b9000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "trabajador_nombre": "Trabajador Ejemplo Dos",
+   "trabajador_cedula": null,
+   "puesto": "Albañil",
+   "tipo": "periodico",
+   "fecha_examen": "2025-09-01",
+   "fecha_proximo": "2026-09-01",
+   "aptitud": "apto_observaciones",
+   "observaciones": "OTRO DATO DE SALUD",
+   "medico_nombre": "Dr. Ejemplo",
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2025-09-01T12:00:00+00:00",
+   "updated_at": "2025-09-01T12:00:00+00:00"
+  }
+ ],
+ "sst_incidentes": [
+  {
+   "id": "c1000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "tipo": "incidente",
+   "fecha_hora": "2026-04-02T14:30:00+00:00",
+   "trabajador_nombre": "Trabajador Ejemplo Dos",
+   "trabajador_cedula": null,
+   "puesto": "Albañil",
+   "lugar": "Rampa sur",
+   "descripcion": "Resbalón sin lesión.",
+   "testigos": "Trabajador Ejemplo Uno",
+   "causas": "Superficie húmeda",
+   "consecuencias": "Ninguna",
+   "gravedad": "leve",
+   "acciones_inmediatas": "Señalización",
+   "acciones_correctivas": "Antideslizante",
+   "fecha_limite_reporte_iess": null,
+   "reportado_iess": false,
+   "fecha_reporte_iess": null,
+   "estado": "cerrado",
+   "foto_url": null,
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-04-02T15:00:00+00:00",
+   "updated_at": "2026-04-03T15:00:00+00:00"
+  }
+ ],
+ "sst_pte": [
+  {
+   "id": "c2000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 1,
+   "tipo": "alturas",
+   "fecha": "2026-03-10",
+   "hora_inicio": "08:00:00",
+   "hora_fin_prevista": "12:00:00",
+   "ubicacion": "Pila P2, andamio",
+   "descripcion_trabajo": "Encofrado del cabezal",
+   "riesgos": "Caída",
+   "medidas_control": "Línea de vida",
+   "epp_requerido": "Arnés",
+   "plan_rescate": "Descenso con escalera",
+   "tecnico_nombre": "Monitor Ejemplo",
+   "supervisor_nombre": "Prueba Residente",
+   "trabajadores": [
+    {
+     "nombre": "Trabajador Ejemplo Dos",
+     "cedula": ""
+    }
+   ],
+   "estado": "cerrado",
+   "hora_cierre": "2026-03-10T16:30:00+00:00",
+   "observaciones_cierre": "Sin novedad",
+   "motivo_anulacion": null,
+   "created_by": "b0000000-0000-4000-8000-000000000002",
+   "created_at": "2026-03-10T12:00:00+00:00",
+   "updated_at": "2026-03-10T21:30:00+00:00"
+  }
+ ],
+ "subcontratistas": [
+  {
+   "id": "c3000000-0000-4000-8000-000000000001",
+   "empresa_id": null,
+   "nombre": "Metálicas Ejemplo S.A. (ficticia)",
+   "ruc": "0000000000001",
+   "representante": "Representante Ejemplo",
+   "telefono": "000000000",
+   "email": "metalicas@ejemplo.test",
+   "especialidad": "Estructura metálica",
+   "created_at": "2026-01-10T12:00:00+00:00"
+  }
+ ],
+ "subcontratos": [
+  {
+   "id": "c4000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "subcontratista_id": "c3000000-0000-4000-8000-000000000001",
+   "monto": 57000,
+   "fecha_inicio": "2026-03-15",
+   "fecha_fin": "2026-06-15",
+   "estado": "finalizado",
+   "notas": "Incluye montaje",
+   "created_at": "2026-03-01T12:00:00+00:00"
+  }
+ ],
+ "subcontrato_rubros": [
+  {
+   "id": "c5000000-0000-4000-8000-000000000001",
+   "subcontrato_id": "c4000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000005"
+  }
+ ],
+ "lineas_base": [
+  {
+   "id": "c6000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 1,
+   "motivo": "Línea base inicial",
+   "referencia": "Contrato",
+   "activa": false,
+   "creado_por": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-01-25T12:00:00+00:00"
+  },
+  {
+   "id": "c6000000-0000-4000-8000-000000000002",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "numero": 2,
+   "motivo": "Reprogramación por OC-01",
+   "referencia": "OC-01",
+   "activa": true,
+   "creado_por": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-04-12T12:00:00+00:00"
+  }
+ ],
+ "cronograma_rubros": [
+  {
+   "id": "c7000000-0000-4000-8000-000000000001",
+   "rubro_id": "f0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "peso_pct": 0.31,
+   "fecha_inicio": "2026-02-02",
+   "fecha_fin": "2026-02-06",
+   "created_at": "2026-04-12T12:00:00+00:00",
+   "linea_base_id": "c6000000-0000-4000-8000-000000000002"
+  },
+  {
+   "id": "c7000000-0000-4000-8000-000000000002",
+   "rubro_id": "f0000000-0000-4000-8000-000000000003",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "peso_pct": 9.81,
+   "fecha_inicio": "2026-02-20",
+   "fecha_fin": "2026-03-20",
+   "created_at": "2026-04-12T12:00:00+00:00",
+   "linea_base_id": "c6000000-0000-4000-8000-000000000002"
+  },
+  {
+   "id": "c7000000-0000-4000-8000-000000000003",
+   "rubro_id": "f0000000-0000-4000-8000-000000000005",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "peso_pct": 44.36,
+   "fecha_inicio": "2026-03-15",
+   "fecha_fin": "2026-06-15",
+   "created_at": "2026-04-12T12:00:00+00:00",
+   "linea_base_id": "c6000000-0000-4000-8000-000000000002"
+  },
+  {
+   "id": "c7000000-0000-4000-8000-000000000004",
+   "rubro_id": "f0000000-0000-4000-8000-000000000001",
+   "proyecto_id": "a0000000-0000-4000-8000-000000000001",
+   "peso_pct": 0.31,
+   "fecha_inicio": "2026-02-02",
+   "fecha_fin": "2026-02-04",
+   "created_at": "2026-01-25T12:00:00+00:00",
+   "linea_base_id": "c6000000-0000-4000-8000-000000000001"
+  }
+ ]
 }
