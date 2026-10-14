@@ -1182,6 +1182,22 @@
     </div>
   </div>
 </div>
+<!-- MODAL EXPEDIENTE DE OBRA (Cierre de proyecto). El cuerpo lo arma renderModalExpediente -->
+<div class="modal-overlay" id="modalExpediente">
+  <div class="modal" style="width:640px;max-width:98vw;max-height:92vh">
+    <div class="modal-header">
+      <div class="modal-title">📚 Expediente de obra</div>
+      <button class="btn" onclick="cerrarModal('modalExpediente')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" id="expedienteModalBody" style="overflow-y:auto;flex:1"></div>
+    <div class="modal-footer" style="flex-wrap:wrap;align-items:center">
+      <div id="expedienteEstimacion" style="flex:1;min-width:200px;font-size:12px;color:#676879"></div>
+      <button class="btn" onclick="cerrarModal('modalExpediente')">Cancelar</button>
+      <button class="btn primary" id="btnGenerarExpedienteOk" onclick="generarExpediente()">Generar y previsualizar</button>
+      <div id="expedienteAviso" style="flex-basis:100%;font-size:12px;color:#b8860b"></div>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modalOC">
   <div class="modal" style="max-width:840px">
     <div class="modal-header"><h3 id="ocTituloModal">Órdenes de cambio</h3>
@@ -3739,6 +3755,8 @@ function limpiarEstadoProyecto(){
   window._planillaActiva = null; window._planillaAccion = null; window._planillaPreciosGuardados = null;
   // Contrato: reajuste, extracción de PDF, garantías, actas
   window._reajusteTerminos = []; window._extraccion = null; window._editandoGarantiaId = null; window._actaTipo = null;
+  // Expediente de obra: lista generada, datos cargados para el modal y selección en curso
+  window._expedientes = null; window._expedienteDatos = null; window._expedienteSeleccion = null;
   // Observaciones y planos
   window._obsActiva = null; window._resaltarObsId = null; window._obsNuevaPlano = null; window._obsNuevaPin = {x:null, y:null};
   window._planosProyecto = []; _selPin = null; _selPinPdf = {doc:null, url:null, pagina:1};
@@ -11313,7 +11331,10 @@ async function cargarCierreProyecto(puedeEditar){
         <button class="btn" style="padding:3px 10px;font-size:12px" onclick="imprimirLiquidacion()">🖨️ PDF</button>
       </div>`
       : (estado==='recepcion_definitiva' && puedeEditar ? `<div style="margin-top:8px"><button class="btn primary" style="background:#00854d" onclick="generarLiquidacion()">🧮 Generar liquidación y cerrar proyecto</button></div>` : '')}
-    ${estado==='liquidado' ? '<div style="margin-top:12px;font-size:12px;color:#676879">El proyecto está cerrado en solo lectura. Los datos siguen consultables y en los respaldos.</div>':''}`;
+    ${estado==='liquidado' ? '<div style="margin-top:12px;font-size:12px;color:#676879">El proyecto está cerrado en solo lectura. Los datos siguen consultables y en los respaldos.</div>':''}
+    ${bloqueExpedienteHTML()}`;
+  // El expediente final se genera después de liquidar: el bloque no pasa por bloquearSiCerrado.
+  cargarExpedientesGenerados();
 }
 
 function abrirModalActa(tipo){
@@ -11427,6 +11448,270 @@ function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas){
   const ventana = window.open('', '_blank');
   ventana.document.write(docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto));
   ventana.document.close();
+}
+
+// ── EXPEDIENTE DE OBRA (Cierre de proyecto): modal, lista y generación ──
+// La carga de datos, el documento y la vista previa viven en expediente.js.
+// Aquí solo está la interfaz: gate de rol, bloque en #cardCierre, modal de
+// selección, estimación, registro en expedientes_generados y lista.
+
+// Gate por rol. Es la primera celda de PERMISOS que lee el código (las demás
+// siguen siendo documentación): admin y fiscalizador del proyecto.
+function puedeGenerarExpediente(){
+  const fila = PERMISOS.secciones.find(s=>s.id==='expediente');
+  return !!fila && fila.roles[currentPerfil?.rol] === 'gestionar';
+}
+
+// Pantalla angosta o puntero táctil: el expediente se genera desde computador
+// (vista previa en pestaña nueva y "Guardar como PDF" del navegador de escritorio).
+function esDispositivoMovil(){
+  return window.innerWidth <= 768 || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
+
+// Bloque del expediente dentro de la tarjeta de Cierre. Solo lo ven quienes
+// pueden generarlo; en móvil el botón queda deshabilitado pero la lista se ve.
+function bloqueExpedienteHTML(){
+  if(!puedeGenerarExpediente()) return '';
+  const movil = esDispositivoMovil();
+  return `<div id="expedienteBloque" style="margin-top:18px;border-top:1px solid #e6e9ef;padding-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div>
+        <div style="font-size:14px;font-weight:700">📚 Expediente de obra</div>
+        <div style="font-size:12px;color:#676879">PDF con todo lo registrado del proyecto: contrato, presupuesto, órdenes de cambio, planillas, actas y liquidación.</div>
+      </div>
+      <button class="btn primary" id="btnGenerarExpediente" onclick="abrirModalExpediente()" ${movil?'disabled':''}>${movil?'El expediente se genera desde computador':'📄 Generar expediente'}</button>
+    </div>
+    <div id="expedientesLista" style="font-size:12px;color:#676879">Cargando expedientes generados…</div>
+  </div>`;
+}
+
+async function cargarExpedientesGenerados(){
+  const cont = document.getElementById('expedientesLista');
+  if(!cont || !currentProyecto) return;
+  const { data, error } = await sb.from('expedientes_generados')
+    .select('*, perfil:perfiles(nombre,apellido)').eq('proyecto_id', currentProyecto).order('version', {ascending:false});
+  if(error){ cont.innerHTML = `<span style="color:#e2445c">No se pudo cargar la lista: ${escAttr(error.message)}</span>`; return; }
+  window._expedientes = data||[];
+  renderExpedientesLista();
+}
+
+function renderExpedientesLista(){
+  const cont = document.getElementById('expedientesLista');
+  if(!cont) return;
+  const lista = window._expedientes||[];
+  if(!lista.length){ cont.innerHTML = 'Aún no se ha generado ningún expediente de este proyecto.'; return; }
+  const ESTADO = { solicitado:'Solicitado', generando:'Generando', listo:'Listo', error:'Error' };
+  const puedeReutilizar = puedeGenerarExpediente() && !esDispositivoMovil();
+  cont.innerHTML = `<div style="overflow-x:auto"><table class="tabla" style="width:100%"><thead><tr>
+      <th>Versión</th><th>Fecha y hora</th><th>Usuario</th><th>Preset</th><th style="text-align:center">Secciones</th><th>Estado</th><th></th>
+    </tr></thead><tbody>${lista.map(x=>`<tr>
+      <td><b>v${x.version}</b></td>
+      <td style="white-space:nowrap">${expFmtFechaHora(x.generado_en)}</td>
+      <td>${escAttr(x.perfil ? `${x.perfil.nombre||''} ${x.perfil.apellido||''}`.trim() : '—')}</td>
+      <td>${escAttr(EXPEDIENTE_PRESETS[x.preset]?.etiqueta || (x.preset ? x.preset : 'Personalizado'))}</td>
+      <td style="text-align:center">${(x.secciones||[]).length}</td>
+      <td>${x.estado==='error' ? `<span style="color:#e2445c" title="${escAttr(x.error_detalle||'')}">Error</span>` : (ESTADO[x.estado]||escAttr(x.estado||''))}</td>
+      <td style="white-space:nowrap">${puedeReutilizar ? `<button class="btn" style="padding:3px 10px;font-size:12px" onclick="reutilizarSeleccionExpediente('${x.id}')">↺ Reutilizar selección</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:6px">En esta fase el PDF se guarda desde la vista previa del navegador; la lista registra cada generación.</div>`;
+}
+
+function reutilizarSeleccionExpediente(id){
+  const x = (window._expedientes||[]).find(e=>e.id===id);
+  if(!x) return;
+  abrirModalExpediente({ preset: x.preset||null, secciones: x.secciones||[], filtros: x.filtros||{}, subtitulo: x.subtitulo||'' });
+}
+
+// Abre el modal con una selección: la indicada, o la del último expediente
+// generado del proyecto, o el preset Completo. Carga los datos para los
+// conteos y la estimación.
+async function abrirModalExpediente(seleccionPrevia){
+  if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
+  if(!puedeGenerarExpediente()) return;
+  if(esDispositivoMovil()){ toast('El expediente se genera desde computador','error'); return; }
+  const ultimo = (window._expedientes||[])[0];
+  const sel = seleccionPrevia
+    || (ultimo ? { preset: ultimo.preset||null, secciones: ultimo.secciones||[], filtros: ultimo.filtros||{}, subtitulo: ultimo.subtitulo||'' }
+               : { preset:'completo', secciones: EXPEDIENTE_PRESETS.completo.secciones.slice(), filtros: {...EXPEDIENTE_PRESETS.completo.filtros}, subtitulo:'' });
+  window._expedienteSeleccion = sel;
+  window._expedienteDatos = null;
+  renderModalExpediente(sel);
+  document.getElementById('expedienteAviso').innerHTML = '';
+  document.getElementById('expedienteEstimacion').textContent = 'Cargando datos del proyecto…';
+  document.getElementById('modalExpediente').classList.add('show');
+  try{
+    window._expedienteDatos = await expedienteCargarDatos(currentProyecto, sel);
+    actualizarEstimacionExpediente();
+  }catch(e){
+    console.error('abrirModalExpediente', e);
+    document.getElementById('expedienteEstimacion').innerHTML = `<span style="color:#e2445c">No se pudieron cargar los datos: ${escAttr(e.message||e)}</span>`;
+  }
+}
+
+function renderModalExpediente(sel){
+  const body = document.getElementById('expedienteModalBody');
+  const chk = 'style="width:16px;height:16px;accent-color:#0073ea"';
+  const presets = Object.entries(EXPEDIENTE_PRESETS).map(([id,p])=>`
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+      <input type="radio" name="expPreset" value="${id}" ${sel.preset===id?'checked':''} onchange="aplicarPresetExpediente('${id}')" style="accent-color:#0073ea"/> ${escAttr(p.etiqueta)}
+    </label>`).join('');
+  const secciones = EXPEDIENTE_SECCIONES.map(s=>{
+    const marcada = s.fija || (sel.secciones||[]).includes(s.clave);
+    const deshabilitada = s.fija || s.fase > 1;
+    return `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:${deshabilitada?'default':'pointer'};${s.fase>1?'color:#9fa2b2':''}">
+      <input type="checkbox" id="chk-exp-${s.clave}" ${marcada?'checked':''} ${deshabilitada?'disabled':''} onchange="expedienteCambioManual()" ${chk}/>
+      <span>${escAttr(s.etiqueta)} <span id="cnt-exp-${s.clave}" style="color:#676879"></span></span>
+      ${s.fija?'<span style="font-size:10px;color:#676879">siempre</span>':''}
+      ${s.fase>1?'<span style="background:#f5f6f8;color:#676879;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700">próximamente</span>':''}
+    </label>`;
+  }).join('');
+  const proy = proyectos.find(p=>p.id===currentProyecto);
+  const parcial = (proy?.estado_cierre||'en_ejecucion') !== 'liquidado';
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Preset</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${presets}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Secciones</label>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px">${secciones}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subtítulo de portada (opcional)</label>
+      <input type="text" class="form-control" id="expSubtitulo" value="${escAttr(sel.subtitulo||'')}" placeholder="Project close-out dossier" oninput="expedienteCambioManual(true)"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Filtros</label>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="expFiltroOCs" ${sel.filtros?.incluirOCsNoAprobadas?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Incluir órdenes de cambio no aprobadas (borrador, solicitadas, rechazadas)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="expFiltroDetalle" ${sel.filtros?.detallePlanillas!==false?'checked':''} onchange="expedienteCambioManual()" ${chk}/> Detalle por rubro en planillas
+        </label>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#676879">Portada e índice se incluyen siempre. Se abre una vista previa en pestaña nueva: ahí se guarda como PDF (A4, márgenes predeterminados, gráficos de fondo activados).${parcial?' El proyecto no está liquidado: el documento llevará la marca de agua «Expediente parcial».':''}</div>`;
+}
+
+function aplicarPresetExpediente(id){
+  const p = EXPEDIENTE_PRESETS[id];
+  if(!p) return;
+  EXPEDIENTE_SECCIONES.forEach(s=>{
+    const el = document.getElementById('chk-exp-'+s.clave);
+    if(el) el.checked = s.fija || p.secciones.includes(s.clave);
+  });
+  document.getElementById('expFiltroOCs').checked = !!p.filtros.incluirOCsNoAprobadas;
+  document.getElementById('expFiltroDetalle').checked = p.filtros.detallePlanillas !== false;
+  const radio = document.querySelector(`input[name="expPreset"][value="${id}"]`);
+  if(radio) radio.checked = true;
+  actualizarEstimacionExpediente();
+}
+
+// Un ajuste a mano desmarca el preset (la lista mostrará «Personalizado»);
+// el subtítulo no cuenta como ajuste.
+function expedienteCambioManual(soloSubtitulo){
+  if(!soloSubtitulo) document.querySelectorAll('input[name="expPreset"]').forEach(r=>{ r.checked = false; });
+  actualizarEstimacionExpediente();
+}
+
+// La selección es la misma estructura que se guarda en expedientes_generados.
+function leerSeleccionExpediente(){
+  const radio = document.querySelector('input[name="expPreset"]:checked');
+  return {
+    preset: radio ? radio.value : null,
+    secciones: EXPEDIENTE_SECCIONES.filter(s=> s.fija || document.getElementById('chk-exp-'+s.clave)?.checked).map(s=>s.clave),
+    filtros: {
+      incluirOCsNoAprobadas: !!document.getElementById('expFiltroOCs')?.checked,
+      detallePlanillas: !!document.getElementById('expFiltroDetalle')?.checked
+    },
+    subtitulo: (document.getElementById('expSubtitulo')?.value||'').trim()
+  };
+}
+
+function actualizarEstimacionExpediente(){
+  const sel = leerSeleccionExpediente();
+  window._expedienteSeleccion = sel;
+  const datos = window._expedienteDatos;
+  const est = document.getElementById('expedienteEstimacion');
+  if(!datos){ if(est) est.textContent = ''; return; }
+  const e = expedienteEstimar(datos, sel);
+  const conteos = {
+    contrato: `(${datos.anticipo?'anticipo, ':''}${(datos.garantias||[]).length} garantías, ${(datos.reajusteTerminos||[]).length} términos)`,
+    presupuesto: `(${e.filas.presupuesto})`,
+    ordenes_cambio: `(${e.filas.ordenes_cambio}${sel.filtros.incluirOCsNoAprobadas?'':' aprobadas'})`,
+    planillas: `(${e.filas.planillas})`,
+    actas: `(${e.filas.actas} de 2)`,
+    liquidacion: e.filas.liquidacion ? '(registrada)' : '(pendiente)'
+  };
+  Object.entries(conteos).forEach(([clave, txt])=>{ const el = document.getElementById('cnt-exp-'+clave); if(el) el.textContent = txt; });
+  if(est) est.textContent = `${e.secciones.length} secciones · ≈ ${e.paginas} páginas (estimación)`;
+}
+
+// Logo como data URI (documento autocontenido). Se lee del mismo origen
+// (vendor/logo-hidivo.png) y se cachea para la sesión; si falla, el documento
+// usa la URL del logo.
+async function obtenerLogoDataUri(){
+  if(window._logoDataUri) return window._logoDataUri;
+  try{
+    const resp = await fetch(LOGO_URL);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const blob = await resp.blob();
+    const dataUri = await new Promise((res, rej)=>{ const r = new FileReader(); r.onload = ()=>res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+    window._logoDataUri = dataUri;
+    return dataUri;
+  }catch(e){
+    console.warn('No se pudo incrustar el logo', e);
+    return LOGO_URL;
+  }
+}
+
+// Inserta el registro (la base asigna la versión), genera el documento, abre
+// la vista previa y refresca la lista. Si algo falla después de insertar, la
+// fila queda en estado 'error' con el detalle.
+async function generarExpediente(){
+  const btn = document.getElementById('btnGenerarExpedienteOk');
+  const aviso = document.getElementById('expedienteAviso');
+  const sel = leerSeleccionExpediente();
+  window._expedienteSeleccion = sel;
+  btn.disabled = true; btn.textContent = 'Generando…'; aviso.innerHTML = '';
+  let fila = null;
+  try{
+    const datos = await expedienteCargarDatos(currentProyecto, sel);
+    const est = expedienteEstimar(datos, sel);
+    const { data, error } = await sb.from('expedientes_generados').insert({
+      proyecto_id: currentProyecto, generado_por: currentUser?.id, origen: 'navegador', estado: 'listo',
+      preset: sel.preset, secciones: sel.secciones, filtros: sel.filtros,
+      estado_proyecto: datos.proyecto?.estado_cierre || 'en_ejecucion',
+      subtitulo: sel.subtitulo || null, paginas_estimadas: est.paginas
+    }).select().single();
+    if(error) throw new Error(error.message);
+    fila = data;
+    const hoy = hoyEcuador();
+    const meta = {
+      version: fila.version, generadoEn: fila.generado_en, hoy,
+      generadoPor: `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim() || 'Usuario',
+      rol: currentPerfil?.rol || '', logoDataUri: await obtenerLogoDataUri(),
+      nombreArchivo: expedienteNombreArchivo(datos.proyecto, fila.version, hoy)
+    };
+    const html = expedienteGenerarHTML(datos, sel, meta);
+    const { ventana, url } = expedientePrevisualizar(html, meta.nombreArchivo);
+    if(ventana){
+      cerrarModal('modalExpediente');
+    } else {
+      aviso.innerHTML = `El navegador bloqueó la pestaña nueva. <a href="${url}" target="_blank" rel="noopener">Abrir la vista previa del expediente v${fila.version}</a>`;
+    }
+    toast(`Expediente v${fila.version} generado ✓`,'success');
+  }catch(e){
+    console.error('generarExpediente', e);
+    if(fila){
+      await sb.from('expedientes_generados').update({ estado:'error', error_detalle: String(e.message||e).slice(0, 2000) }).eq('id', fila.id);
+    }
+    toast('No se pudo generar el expediente: '+(e.message||e),'error');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generar y previsualizar';
+    cargarExpedientesGenerados();
+  }
 }
 
 async function cargarTerminosReajuste(puedeEditar){
@@ -13813,7 +14098,7 @@ async function responderSolicitud(accion){
 // ── USUARIOS ──
 // ── MATRIZ DE PERMISOS (FASE 1) ──
 // Renderiza el cuadro desde la constante PERMISOS (constantes.js). Solo
-// documentación: ningún chequeo de la app lee PERMISOS todavía.
+// documentación, salvo la fila `expediente`, que sí la lee puedeGenerarExpediente().
 function cargarPermisos(){
   const content = document.getElementById('permisosContent');
   if(currentPerfil?.rol !== 'admin'){

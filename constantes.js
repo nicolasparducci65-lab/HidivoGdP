@@ -5,9 +5,10 @@
 // URL absoluta porque los documentos de impresión se abren en una ventana about:blank,
 // donde una ruta relativa no resuelve. Fuera del navegador (pruebas, Puppeteer) apunta
 // al dominio público.
-const LOGO_URL = (typeof document !== 'undefined' && document.baseURI)
-  ? new URL('vendor/logo-hidivo.png', document.baseURI).href
-  : 'https://hidivo.com/vendor/logo-hidivo.png';
+const LOGO_URL = (() => {
+  try{ if(typeof document !== 'undefined' && document.baseURI) return new URL('vendor/logo-hidivo.png', document.baseURI).href; }catch(_){ /* about:blank u otra base no válida */ }
+  return 'https://hidivo.com/vendor/logo-hidivo.png';
+})();
 const PLANTILLA_RUBROS_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co/storage/v1/object/public/hidivo-archivos/plantillas/plantilla_rubros_hidivo.xlsx';
 
 const ESTADOS_OC = {
@@ -215,7 +216,9 @@ const ANEXO1_CHECKLIST = [
 // Refleja EXACTAMENTE la realidad actual del código (auditoría en PERMISOS.md,
 // commit aa6757a). Las celdas afectadas por inconsistencias llevan un comentario
 // // I-n que refiere a la sección 5 de PERMISOS.md. NINGÚN chequeo de la app lee
-// esta constante todavía: es solo la fuente del cuadro de la vista "Permisos".
+// esta constante todavía, salvo la fila `expediente` (puedeGenerarExpediente() la
+// consulta); las demás siguen siendo solo la fuente del cuadro de la vista "Permisos"
+// hasta que se migren los gates.
 // Valores por celda: 'gestionar' (edita/crea/elimina algo en la sección),
 // 'ver' (solo lectura), null (sin acceso).
 const PERMISOS = {
@@ -274,6 +277,10 @@ const PERMISOS = {
       // I-3: visible para TODOS salvo tecnico_sst (incluso sin membresía); solo-lectura de facto sin aviso.
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
       nota:'I-3: visible para todos salvo Técnico SST, incluso sin rol en el proyecto; solo lectura de facto sin aviso.' },
+    { id:'expediente', nombre:'Expediente de obra', ambito:'proyecto', requiereModulo:null,
+      // Primera fila consumida por código: puedeGenerarExpediente() lee esta celda.
+      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Vive en Cierre de proyecto (dentro de Contrato). Generar y ver la lista: admin y fiscalizador; en móvil solo la lista. Esta fila la lee el código (puedeGenerarExpediente); las demás siguen siendo documentación. RLS: tabla expedientes_generados.' },
     { id:'ensayos', nombre:'Ensayos', ambito:'proyecto', requiereModulo:null,
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:null },
       nota:'Oculto para Técnico SST y Cliente. Eliminar solo admin. Los no-miembros ya no ven datos (RLS Ola 1).' },

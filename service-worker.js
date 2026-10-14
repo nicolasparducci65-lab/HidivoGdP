@@ -1,9 +1,11 @@
-const CACHE_NAME = 'hidivo-v38';
+const CACHE_NAME = 'hidivo-v39';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
   '/HidivoGdP/styles.css',
   '/HidivoGdP/constantes.js',
+  '/HidivoGdP/expediente.js',
+  '/HidivoGdP/vendor/logo-hidivo.png',
   '/HidivoGdP/manifest.json',
   // Recorridos 360: módulo propio + librerías vendorizadas (sin CDN)
   '/HidivoGdP/js/recorridos360.js',

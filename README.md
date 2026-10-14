@@ -177,3 +177,53 @@ aplicar en el SQL Editor (o `supabase db push`). Al pie trae la verificación:
 Fuera de alcance (preparado, no implementado): checklists por hito/rubro, agente IA de visión,
 migración a Cloudflare R2 (cambiar solo `storage360.*`), auditoría planillas vs evidencia,
 fotogrametría.
+
+## Expediente de obra (`expediente.js`, fase 1)
+
+PDF que reúne todo lo registrado de un proyecto. Vive en **Contrato → Cierre de proyecto**
+(botón «Generar expediente» y lista «Expedientes generados»), solo para admin y fiscalizador
+(`puedeGenerarExpediente()`, que lee la fila `expediente` de `PERMISOS`). Se genera en el
+navegador de escritorio: vista previa en pestaña nueva y «Guardar como PDF»; en móvil el botón
+queda deshabilitado. `bloquearSiCerrado` no lo afecta: el expediente final se genera después de
+liquidar. Mientras el proyecto no esté liquidado, el documento lleva la marca de agua
+«Expediente parcial».
+
+- `expedienteCargarDatos(proyectoId, seleccion)` → objeto plano con proyecto, anticipo,
+  garantías, fórmula polinómica, rubros, órdenes de cambio con ítems, planillas con rubros e
+  historial, actas, liquidación y nombres de usuarios (consultas en paralelo, paginadas por
+  `expedienteSelectTodo`, que lanza error si una llamada falla).
+- `expedienteGenerarHTML(datos, seleccion, meta)` → documento HTML completo y autocontenido
+  (CSS inline, logo como data URI, A4, encabezado y pie fijos, `thead` repetido). Función
+  pura: en la fase 3 la ejecutará Puppeteer tal cual. Incrusta los mismos renderers que las
+  impresiones sueltas (`ocCuerpoHTML`, `actaCuerpoHTML`, `liquidacionCuerpoHTML`).
+- `expedienteEstimar` (fórmula documentada en el código) y `expedientePrevisualizar` (Blob en
+  pestaña nueva; si el navegador la bloquea, el modal muestra un enlace).
+- Catálogo `EXPEDIENTE_SECCIONES` y presets `EXPEDIENTE_PRESETS` en `constantes.js`; las
+  secciones de las fases 2 y 3 aparecen deshabilitadas como «próximamente».
+- Registro en `expedientes_generados` (migración `20261014_expedientes_generados.sql`): la base
+  asigna la versión por proyecto; «Reutilizar selección» reabre el modal con lo guardado.
+- Las plantillas de `imprimirOC`, `imprimirActa` e `imprimirLiquidacion` viven en
+  `expediente.js` como funciones que devuelven HTML; `montoContratoProyecto`,
+  `agregarPlanillas` y `semaforoGarantia` también, para que el generador use los mismos
+  cálculos que la app. El logo está vendorizado en `vendor/logo-hidivo.png` (`LOGO_URL`).
+
+Pendiente para la fase 2: libro de obra con fotos, observaciones, ensayos, formatos de
+calidad, SST, subcontratistas, cronograma/Curva S y partición en tomos. Fase 3: chat,
+comunicados, índices de archivos/planos/360, render en servidor con folios y archivado.
+
+## Arnés de pruebas (`tests/`)
+
+`cd tests && npm install && npm test`. Ejecuta funciones **reales** de `index.html`,
+`constantes.js` y `expediente.js` en Node (`vm` + jsdom) con un cliente Supabase simulado
+que responde desde un fixture JSON (`lib/arnes.js`).
+
+- `check-index.js`: `node --check` del script principal y de los .js, balance de `<div>`
+  respecto a HEAD y CRLF.
+- `impresion.test.js`: ejecuta `imprimirOC`, `imprimirActa` e `imprimirLiquidacion` y
+  compara byte a byte con `snapshots/` (`--grabar` los reescribe).
+- `expediente.test.js`: carga, generación, filtros, marca de agua, secciones vacías,
+  estimación y nombre de archivo sobre `fixtures/sintetico.json` (proyecto inventado).
+- `modal-expediente.test.js`: modal, presets, lista y flujo de generación con jsdom.
+
+Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
+`fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.
