@@ -97,7 +97,12 @@ create or replace function public.exp_guard_update()
 returns trigger language plpgsql set search_path = public, pg_temp as $$
 declare permitidas text[] := array['estado','error_detalle','subtitulo'];
 begin
-  if auth.uid() is null then return new; end if;        -- service_role / SQL Editor / runner de la fase 3
+  -- Exentos, antes de cualquier otra rama:
+  --   · service_role (runner de la fase 3): su JWT trae role = 'service_role' y no trae sub,
+  --     así que auth.role() = 'service_role' y auth.uid() es null;
+  --   · sesión sin JWT (SQL Editor, psql como postgres): auth.uid() y auth.role() son null.
+  -- En ambos casos se devuelve new sin evaluar la rama de autor.
+  if auth.uid() is null or coalesce(auth.role(), '') = 'service_role' then return new; end if;
   if sst_es_admin_global() then return new; end if;
   if (to_jsonb(new) - permitidas) is distinct from (to_jsonb(old) - permitidas) then
     raise exception 'De un expediente generado solo se puede cambiar el estado, el detalle del error y el subtítulo.'
@@ -173,6 +178,10 @@ commit;
 --     insert into public.expedientes_generados (proyecto_id, version, secciones)
 --       values ('P', 99, '["portada"]');
 --     select max(version) from public.expedientes_generados where proyecto_id = 'P';                   -- 3 (el 99 se ignora)
+--     -- Guard exento sin JWT: desde el SQL Editor auth.uid() y auth.role() son null y el
+--     -- UPDATE de una columna prohibida (preset) pasa sin excepción.
+--     select auth.uid(), auth.role();                                                                 -- null, null
+--     update public.expedientes_generados set preset = 'editor' where proyecto_id = 'P' and version = 1;  -- UPDATE 1
 --   rollback;
 --
 -- 4) Reglas (consola del navegador, con la sesión indicada; X = id de una fila propia):
@@ -194,5 +203,10 @@ commit;
 --   drop trigger  if exists trg_exp_asignar_version  on public.expedientes_generados;
 --   drop function if exists public.exp_guard_update();
 --   drop function if exists public.exp_asignar_version();
---   drop table    if exists public.expedientes_generados;   -- se lleva índice, políticas y restricciones
+--   drop policy   if exists exp_select on public.expedientes_generados;
+--   drop policy   if exists exp_insert on public.expedientes_generados;
+--   drop policy   if exists exp_update on public.expedientes_generados;
+--   drop policy   if exists exp_delete on public.expedientes_generados;
+--   drop index    if exists public.expedientes_generados_proyecto_idx;
+--   drop table    if exists public.expedientes_generados;   -- se lleva las restricciones (unique, checks, FKs)
 -- commit;
