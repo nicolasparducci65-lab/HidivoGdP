@@ -326,14 +326,14 @@ const EXPEDIENTE_SECCIONES = [
   { clave:'contrato',            etiqueta:'Contrato (datos, anticipo, garantías, fórmula polinómica)', fase:1, orden:3 },
   { clave:'presupuesto',         etiqueta:'Presupuesto (rubros)',                               fase:1, orden:4 },
   { clave:'ordenes_cambio',      etiqueta:'Órdenes de cambio',                                  fase:1, orden:5 },
-  { clave:'cronograma',          etiqueta:'Cronograma, líneas base y Curva S',                  fase:2, orden:6 },
-  { clave:'libro_obra',          etiqueta:'Libro de obra',                                      fase:2, orden:7 },
+  { clave:'cronograma',          etiqueta:'Cronograma, líneas base y Curva S',                  fase:1, orden:6 },
+  { clave:'libro_obra',          etiqueta:'Libro de obra (todos los registros y sus fotos)',    fase:1, orden:7 },
   { clave:'planillas',           etiqueta:'Planillas de pago',                                  fase:1, orden:8 },
-  { clave:'ensayos',             etiqueta:'Ensayos de laboratorio',                             fase:2, orden:9 },
-  { clave:'formatos_calidad',    etiqueta:'Formatos de calidad',                                fase:2, orden:10 },
-  { clave:'observaciones',       etiqueta:'Observaciones de fiscalización',                     fase:2, orden:11 },
-  { clave:'sst',                 etiqueta:'Seguridad y salud en el trabajo',                    fase:2, orden:12 },
-  { clave:'subcontratistas',     etiqueta:'Subcontratistas',                                    fase:2, orden:13 },
+  { clave:'ensayos',             etiqueta:'Ensayos de laboratorio',                             fase:1, orden:9 },
+  { clave:'formatos_calidad',    etiqueta:'Formatos de calidad (listado con referencia)',       fase:1, orden:10 },
+  { clave:'observaciones',       etiqueta:'Observaciones de fiscalización (con respuestas y fotos)', fase:1, orden:11 },
+  { clave:'sst',                 etiqueta:'Seguridad y salud en el trabajo',                    fase:1, orden:12 },
+  { clave:'subcontratistas',     etiqueta:'Subcontratistas',                                    fase:1, orden:13 },
   { clave:'comunicados',         etiqueta:'Comunicados',                                        fase:3, orden:14 },
   { clave:'chat',                etiqueta:'Chat del proyecto (anexo, solo canales)',            fase:3, orden:15 },
   { clave:'archivos_planos_360', etiqueta:'Índice de archivos, planos y recorridos 360',        fase:3, orden:16 },
@@ -344,11 +344,13 @@ const EXPEDIENTE_SECCIONES = [
 // Presets por audiencia: secciones marcadas y filtros por defecto. Que un preset
 // liste secciones de fases futuras no importa: el generador ignora las que no
 // estén implementadas. El usuario puede ajustar a mano después de elegir uno.
+// Filtros de la fase 2: libroDesde/libroHasta (null = todo el proyecto),
+// observaciones ('todas' | 'resueltas') y calidadFotos ('estandar' 900 px | 'alta' 1200 px).
 const EXPEDIENTE_PRESETS = {
   completo:    { etiqueta:'Completo (interno)',      secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave),
-                 filtros:{ incluirOCsNoAprobadas:true,  detallePlanillas:true } },
+                 filtros:{ incluirOCsNoAprobadas:true,  detallePlanillas:true, libroDesde:null, libroHasta:null, observaciones:'todas', calidadFotos:'estandar' } },
   contratante: { etiqueta:'Entrega al contratante', secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave).filter(c=>c!=='chat'),
-                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true } },
+                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true, libroDesde:null, libroHasta:null, observaciones:'todas', calidadFotos:'estandar' } },
   contratista: { etiqueta:'Entrega al contratista', secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave).filter(c=>c!=='chat'),
-                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true } }
+                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true, libroDesde:null, libroHasta:null, observaciones:'todas', calidadFotos:'estandar' } }
 };

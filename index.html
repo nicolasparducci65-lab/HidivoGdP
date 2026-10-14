@@ -7329,14 +7329,15 @@ function dibujarGraficoCurvaS(rubros, proy){
 
 // Genera el gráfico de Curva S como imagen PNG (data URL), usando un canvas oculto temporal.
 // Pensado para insertarse en el HTML del reporte PDF de Libro de Obra, donde no hay un canvas visible en pantalla.
-async function generarImagenGraficoCurvaS(rubros, modo){
+// ancho/alto opcionales: el expediente pide resolución de impresión (1600 px).
+async function generarImagenGraficoCurvaS(rubros, modo, ancho = 760, alto = 320){
   const { labels, planArr, realArr, sinCronograma, fechasPlan } = calcularDatosGraficoCurvaS(rubros, modo);
   if(!labels.length) return null;
   const ghostArr = sinCronograma ? null : calcularCurvaPrevia(rubros, fechasPlan);
 
   const canvasTemp = document.createElement('canvas');
-  canvasTemp.width = 760;
-  canvasTemp.height = 320;
+  canvasTemp.width = ancho;
+  canvasTemp.height = alto;
   canvasTemp.style.position = 'fixed';
   canvasTemp.style.left = '-9999px';
   document.body.appendChild(canvasTemp);
@@ -11711,6 +11712,36 @@ function actualizarEstimacionExpediente(){
   if(est) est.textContent = `${e.secciones.length} secciones · ≈ ${e.paginas} páginas (estimación)`;
 }
 
+// Curva S para el expediente: carga explícita del cronograma y las líneas base
+// del proyecto indicado (cargarCurvaS refresca cronogramaData, _lbActiva y
+// _curvaGhostRows para currentProyecto; se exige que coincida) y luego
+// indicadores EVM e imagen del gráfico a resolución de impresión (1600 px).
+// Nunca se usa lo que haya quedado en los globals de otra sección.
+async function prepararCronogramaExpediente(datos, proyectoId){
+  if(proyectoId !== currentProyecto) throw new Error('El cronograma solo se prepara para el proyecto activo');
+  cronogramaData = []; window._lbActiva = null; window._lineasBase = null; window._curvaGhostRows = null; window._curvaGhostNum = null;
+  await cargarCurvaS();
+  const cr = datos.cronograma = datos.cronograma || {};
+  if(!cronogramaData.length){ cr.indicadores = null; cr.imagen = null; return cr; }
+  const totalMonto = cronogramaData.reduce((s,r)=>s+(r.monto_contrato||0),0)||1;
+  const rubrosConPeso = cronogramaData.map(r=>({ ...r, pesoEfectivo: (r.monto_contrato||0)/totalMonto*100 }));
+  const ind = calcularIndicadoresPuro(rubrosConPeso, datos.proyecto);
+  cr.indicadores = {
+    avanceRealTotal: ind.avanceRealTotal, SPI: ind.SPI, BCWP: ind.BCWP ?? null, BCWS: ind.BCWS ?? null,
+    totalProduccion: ind.totalProduccion, atrasados: ind.atrasados,
+    proyeccion: ind.proyeccion ? {
+      fechaPlanificada: ind.proyeccion.fechaPlanificada instanceof Date ? ind.proyeccion.fechaPlanificada.toISOString().slice(0,10) : ind.proyeccion.fechaPlanificada,
+      fechaEstimada: ind.proyeccion.fechaEstimada instanceof Date ? ind.proyeccion.fechaEstimada.toISOString().slice(0,10) : ind.proyeccion.fechaEstimada,
+      diasAtraso: ind.proyeccion.diasAtraso
+    } : null
+  };
+  cr.imagen = await generarImagenGraficoCurvaS(rubrosConPeso, curvaSModo || 'semanas', 1600, 680);
+  cr.notaLineaBase = (window._lbActiva && window._lbActiva.numero > 1)
+    ? `Cronograma según Línea Base ${window._lbActiva.numero} — ${window._lbActiva.motivo||''} (${new Date(window._lbActiva.created_at).toLocaleDateString('es-EC')})`
+    : null;
+  return cr;
+}
+
 // Logo como data URI (documento autocontenido). Se lee del mismo origen
 // (vendor/logo-hidivo.png) y se cachea para la sesión; si falla, el documento
 // usa la URL del logo.
@@ -11740,7 +11771,9 @@ async function generarExpediente(){
   btn.disabled = true; btn.textContent = 'Generando…'; aviso.innerHTML = '';
   let fila = null;
   try{
-    const datos = await expedienteCargarDatos(currentProyecto, sel);
+    const datos = await expedienteCargarDatos(currentProyecto, sel, null, { onProgreso: txt => { aviso.textContent = txt; } });
+    if(sel.secciones.includes('cronograma')) await prepararCronogramaExpediente(datos, currentProyecto);
+    aviso.textContent = '';
     const est = expedienteEstimar(datos, sel);
     const { data, error } = await sb.from('expedientes_generados').insert({
       proyecto_id: currentProyecto, generado_por: currentUser?.id, origen: 'navegador', estado: 'listo',

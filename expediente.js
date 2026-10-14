@@ -509,8 +509,10 @@ async function expedienteUna(consulta){
 // Dos tandas de consultas en paralelo: primero todo lo que depende solo del
 // proyecto; después lo que depende de los ids obtenidos (ítems de OC, rubros e
 // historial de planillas, nombres de usuarios). Devuelve un objeto plano.
-async function expedienteCargarDatos(proyectoId, seleccion, cliente){
+async function expedienteCargarDatos(proyectoId, seleccion, cliente, opciones){
   const c = cliente || (typeof sb !== 'undefined' ? sb : null);
+  const progreso = typeof opciones?.onProgreso === 'function' ? opciones.onProgreso : () => {};
+  progreso('Cargando contrato, presupuesto, órdenes de cambio y planillas…');
   if(!c) throw new Error('Sin cliente de Supabase');
   const todo = (tabla, armar) => expedienteSelectTodo(() => armar(c.from(tabla).select('*')));
 
@@ -549,7 +551,7 @@ async function expedienteCargarDatos(proyectoId, seleccion, cliente){
 
   const ordenRubro = {};
   rubros.forEach((r, i) => { ordenRubro[r.id] = i; });
-  return {
+  const datos = {
     proyecto, anticipo: anticipo || null, garantias, reajusteTerminos, rubros,
     ordenesCambio: ocs.map(o => ({ ...o, items: items.filter(i => i.orden_id === o.id) })),
     planillas: planillas.map(p => ({
@@ -559,6 +561,10 @@ async function expedienteCargarDatos(proyectoId, seleccion, cliente){
     })),
     actas, liquidacion: liquidacion || null, perfiles
   };
+  // Fase 2: libro, observaciones, ensayos, formatos, SST, subcontratos, cronograma (solo las seleccionadas).
+  await expedienteCargarFase2(datos, proyectoId, seleccion, c, opciones || {});
+  progreso('Datos cargados');
+  return datos;
 }
 
 // ── 3.3) Cálculos compartidos del documento ─────────────────────────────────
@@ -889,6 +895,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
     </section>`;
   };
 
+  Object.assign(S, expedienteSeccionesFase2(datos, seleccion, meta, { e, f, titulo, sub, vacio, numero }));
   const cuerpo = activas.map(clave => S[clave] ? S[clave]() : '').join('\n');
   const pie = `Expediente v${version} · HidivoGdP · generado ${e(fechaTexto)}`;
 
@@ -902,8 +909,9 @@ function expedienteGenerarHTML(datos, seleccion, meta){
 </head>
 <body class="${calc.parcial ? 'parcial' : 'final'}">
 <div class="ui-barra">
-  <button type="button" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+  <button type="button" id="btnImprimir" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
   <span>A4, márgenes predeterminados, activar «Gráficos de fondo». Nombre sugerido: ${e(nombreArchivo)}.pdf</span>
+  <span class="fotos-estado" id="fotosEstado"></span>
 </div>
 <header class="enc-pagina"><img src="${logo}" alt="HIDIVO"><span class="enc-proyecto">${e(proy.nombre || '')}</span><span class="enc-version">Expediente v${version}</span></header>
 <footer class="pie-pagina">${pie}</footer>
@@ -911,6 +919,7 @@ ${calc.parcial ? '<div class="marca-agua" aria-hidden="true">EXPEDIENTE PARCIAL 
 <main>
 ${cuerpo}
 </main>
+<script>${expedienteScriptCarga()}</script>
 </body>
 </html>`;
 }
@@ -969,6 +978,7 @@ h1, h2, h3 { margin: 0 0 8px; color: #1a1a2e; }
 .enc-proyecto { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: #323338; }
 .pie-pagina { position: fixed; bottom: 0; left: 0; right: 0; height: 10mm; display: flex; align-items: center; justify-content: center; font-size: 8pt; color: #676879; border-top: 1px solid #e6e9ef; background: #fff; }
 .marca-agua { position: fixed; top: 45%; left: 0; right: 0; text-align: center; transform: rotate(-30deg); font-size: 34pt; font-weight: 800; color: rgba(226, 68, 92, .13); letter-spacing: 2px; pointer-events: none; z-index: 5; }
+${expedienteCSSFase2()}
 /* Barra de pantalla (no se imprime) */
 .ui-barra { position: fixed; top: 14mm; right: 8mm; z-index: 10; display: flex; align-items: center; gap: 10px; background: #1a1a2e; color: #fff; border-radius: 10px; padding: 8px 12px; font-size: 9pt; box-shadow: 0 6px 20px rgba(0,0,0,.25); max-width: 70%; }
 .ui-barra button { background: #0073ea; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 10pt; }
@@ -1124,4 +1134,506 @@ function renderPteCuerpoHTML(p){
     </table>`:''}
     ${p.estado==='anulado'?`<table style="${sstEstiloTabla}">${sstFilaDato('ANULADO — motivo', p.motivo_anulacion)}</table>`:''}
     <p style="font-size:11px;color:#444">Permiso emitido conforme al Decreto Ejecutivo 255 (Art. 58) y a la Norma Técnica de Seguridad e Higiene del Trabajo (Anexo 3 del A.M. MDT-2024-196, Art. 110-115). Este permiso caduca al término de la jornada y se anula automáticamente si cambian las condiciones físicas o climáticas del sitio o la conformación del grupo de trabajo.</p>`;
+}
+
+// ── 3.6) Fase 2: fotos, secciones nuevas y script de carga ──────────────────
+
+// Lotes de ids para consultas `in` (URL corta y paginación por lote).
+async function expedienteEnLotes(ids, consulta, tam = 100){
+  const filas = [];
+  for(let i = 0; i < ids.length; i += tam){
+    const lote = ids.slice(i, i + tam);
+    filas.push(...await expedienteSelectTodo(() => consulta(lote)));
+  }
+  return filas;
+}
+
+// URLs de una foto para el documento. `url` es lo guardado en la fila (URL pública
+// completa de Storage, o un data URI en pruebas). Devuelve { url, path, urlRender,
+// noDisponible }: urlRender es la transformación de Storage (900 px o 1200 px,
+// calidad 70) pedida con getPublicUrl(path, { transform }); el path se obtiene
+// decodificando lo que sigue a /object/public/{bucket}/ y getPublicUrl lo vuelve a
+// codificar. HEIC/HEIF no lo transforma Storage ni lo muestra Chrome: va directo al
+// recuadro «Foto no disponible (formato HEIC)». Nunca se descarga nada aquí.
+function expedienteFotoUrls(url, calidad, cliente){
+  const u = String(url || '');
+  if(!u) return { url: u, path: null, urlRender: null, noDisponible: 'sin URL' };
+  if(u.startsWith('data:')) return { url: u, path: null, urlRender: u, noDisponible: null };
+  const m = u.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+?)(\?.*)?$/);
+  if(!m) return { url: u, path: null, urlRender: u, noDisponible: null };
+  let path = m[2];
+  try{ path = decodeURIComponent(path); }catch(_){ /* se deja tal cual */ }
+  if(/\.(heic|heif)$/i.test(path)) return { url: u, path, urlRender: null, noDisponible: 'formato HEIC' };
+  const width = calidad === 'alta' ? 1200 : 900;
+  let urlRender = u;
+  try{
+    const r = cliente?.storage?.from(m[1]).getPublicUrl(path, { transform: { width, quality: 70 } });
+    if(r?.data?.publicUrl) urlRender = r.data.publicUrl;
+  }catch(_){ /* sin cliente: se usa la URL original */ }
+  return { url: u, path, urlRender, noDisponible: null };
+}
+
+// Carga de las secciones de la fase 2 (solo las seleccionadas). Añade a `datos`:
+// libro, observaciones, ensayos, formatos, sst, subcontratos, cronograma (filas),
+// amplía `perfiles` y cuenta `imagenesOrigen` (fotos distintas de Storage).
+async function expedienteCargarFase2(datos, proyectoId, seleccion, c, opciones){
+  const activas = new Set(expedienteSeccionesActivas(seleccion));
+  const filtros = seleccion?.filtros || {};
+  const calidad = filtros.calidadFotos === 'alta' ? 'alta' : 'estandar';
+  const progreso = typeof opciones.onProgreso === 'function' ? opciones.onProgreso : () => {};
+  const todo = (tabla, armar) => expedienteSelectTodo(() => armar(c.from(tabla).select('*')));
+  const idsPerfil = new Set();
+  const foto = url => expedienteFotoUrls(url, calidad, c);
+  const fotosDistintas = new Set();
+  const contarFoto = f => { if(f.path) fotosDistintas.add(f.path); };
+
+  // Libro de obra: registros del rango, fotos y rubros por lotes.
+  if(activas.has('libro_obra')){
+    progreso('Cargando libro de obra…');
+    let registros = await todo('libro_obra', q => {
+      q = q.eq('proyecto_id', proyectoId);
+      if(filtros.libroDesde) q = q.gte('fecha', filtros.libroDesde);
+      if(filtros.libroHasta) q = q.lte('fecha', filtros.libroHasta);
+      return q.order('fecha').order('numero_registro');
+    });
+    const ids = registros.map(r => r.id);
+    progreso(`Cargando fotos del libro (${registros.length} registros)…`);
+    const fotos = await expedienteEnLotes(ids, lote => c.from('libro_obra_fotos').select('*').in('registro_id', lote).order('registro_id').order('orden'));
+    const rubrosLibro = await expedienteEnLotes(ids, lote => c.from('libro_obra_rubros').select('*').in('registro_id', lote));
+    const rubrosMap = {};
+    (datos.rubros || []).forEach(r => { rubrosMap[r.id] = r; });
+    registros.forEach(r => { idsPerfil.add(r.created_by); idsPerfil.add(r.aprobado_por); });
+    datos.libro = registros.map(r => ({
+      ...r,
+      fotos: fotos.filter(f => f.registro_id === r.id).map(f => { const u = foto(f.url); contarFoto(u); return { ...f, ...u }; }),
+      rubros: rubrosLibro.filter(x => x.registro_id === r.id).map(x => ({ ...x, rubros: rubrosMap[x.rubro_id] ? { codigo: rubrosMap[x.rubro_id].codigo, descripcion: rubrosMap[x.rubro_id].descripcion, unidad: rubrosMap[x.rubro_id].unidad, precio_unitario: rubrosMap[x.rubro_id].precio_unitario } : null }))
+    }));
+  }
+
+  // Observaciones con respuestas, fotos y plano.
+  if(activas.has('observaciones')){
+    progreso('Cargando observaciones…');
+    let obs = await todo('observaciones', q => {
+      q = q.eq('proyecto_id', proyectoId);
+      if(filtros.observaciones === 'resueltas') q = q.eq('estado', 'resuelta');
+      return q.order('numero').order('created_at');
+    });
+    const ids = obs.map(o => o.id);
+    const [resps, fotos, planos] = await Promise.all([
+      expedienteEnLotes(ids, lote => c.from('observacion_respuestas').select('*').in('observacion_id', lote).order('created_at')),
+      expedienteEnLotes(ids, lote => c.from('observacion_fotos').select('*').in('observacion_id', lote).order('created_at')),
+      todo('planos', q => q.eq('proyecto_id', proyectoId))
+    ]);
+    const planoNombre = {};
+    planos.forEach(p => { planoNombre[p.id] = p.nombre; });
+    obs.forEach(o => idsPerfil.add(o.creado_por));
+    resps.forEach(r => idsPerfil.add(r.autor_id));
+    datos.observaciones = obs.map(o => ({
+      ...o,
+      plano_nombre: o.plano_id ? (planoNombre[o.plano_id] || 'Plano') : null,
+      fotos: fotos.filter(f => f.observacion_id === o.id).map(f => { const u = foto(f.url); contarFoto(u); return { ...f, ...u }; }),
+      respuestas: resps.filter(r => r.observacion_id === o.id).map(r => {
+        const esImagen = /\.(jpe?g|png|webp|jfif)(\?|$)/i.test(String(r.archivo_nombre || r.archivo_url || ''));
+        const u = esImagen && r.archivo_url ? foto(r.archivo_url) : null;
+        if(u) contarFoto(u);
+        return { ...r, adjunto: r.archivo_url ? (esImagen ? { tipo: 'foto', ...u } : { tipo: 'archivo', nombre: r.archivo_nombre || 'archivo', url: r.archivo_url }) : null };
+      })
+    }));
+  }
+
+  // Ensayos: especificaciones, tipos y resultados enriquecidos.
+  if(activas.has('ensayos')){
+    progreso('Cargando ensayos…');
+    const [ens, especs, tipos] = await Promise.all([
+      todo('ensayos', q => q.eq('proyecto_id', proyectoId).order('numero')),
+      todo('ensayo_especificaciones', q => q.eq('proyecto_id', proyectoId).order('created_at')),
+      todo('ensayo_tipos', q => q.order('nombre'))
+    ]);
+    ens.forEach(e => idsPerfil.add(e.creado_por));
+    datos.ensayos = { especificaciones: especs.map(esp => ({ ...esp, tipo: tipos.find(t => t.id === esp.tipo_id) || null })), lista: enriquecerEnsayos(ens, especs, tipos) };
+  }
+
+  // Formatos de calidad: listado con referencia (no el formato completo).
+  if(activas.has('formatos_calidad')){
+    progreso('Cargando formatos de calidad…');
+    const [asig, resp] = await Promise.all([
+      todo('formatos_calidad_asignaciones', q => q.eq('proyecto_id', proyectoId)),
+      todo('formatos_calidad_respuestas', q => q.eq('proyecto_id', proyectoId).order('created_at'))
+    ]);
+    const idsPl = [...new Set([...asig.map(a => a.plantilla_id), ...resp.map(r => r.plantilla_id)].filter(Boolean))];
+    const plantillas = idsPl.length ? await expedienteEnLotes(idsPl, lote => c.from('formatos_calidad_plantillas').select('*').in('id', lote)) : [];
+    const fotos = resp.length ? await expedienteEnLotes(resp.map(r => r.id), lote => c.from('formatos_calidad_fotos').select('*').in('respuesta_id', lote)) : [];
+    resp.forEach(r => { idsPerfil.add(r.residente_id); idsPerfil.add(r.corregido_por); });
+    const nombrePl = {}; plantillas.forEach(p => { nombrePl[p.id] = p.nombre; });
+    datos.formatos = {
+      plantillas: asig.map(a => ({ ...a, nombre: nombrePl[a.plantilla_id] || 'Formato' })),
+      respuestas: resp.map(r => ({ ...r, plantilla_nombre: nombrePl[r.plantilla_id] || 'Formato', fotos: fotos.filter(f => f.respuesta_id === r.id).length }))
+    };
+  }
+
+  // SST: tablas con datos; exámenes solo agregados (sin nombres ni resultados).
+  if(activas.has('sst')){
+    progreso('Cargando SST…');
+    const porProy = tabla => todo(tabla, q => q.eq('proyecto_id', proyectoId));
+    const [config, riesgos, eppMatriz, eppEntregas, caps, checklist, examMatriz, examRegs, incidentes, ptes] = await Promise.all([
+      expedienteUna(c.from('sst_config').select('*').eq('proyecto_id', proyectoId).maybeSingle()),
+      porProy('sst_matriz_riesgos'), porProy('sst_epp_matriz'), porProy('sst_epp_entregas'), porProy('sst_capacitaciones'),
+      porProy('sst_checklist_respuestas'), porProy('sst_examenes_matriz'),
+      todo('sst_examenes_registros', q => q.eq('proyecto_id', proyectoId).select('tipo,fecha_examen,fecha_proximo')),
+      porProy('sst_incidentes'), porProy('sst_pte')
+    ]);
+    const asistentes = caps.length ? await expedienteEnLotes(caps.map(x => x.id), lote => c.from('sst_capacitacion_asistentes').select('*').in('capacitacion_id', lote).order('created_at')) : [];
+    datos.sst = {
+      config: config || null, riesgos, eppMatriz,
+      eppEntregas: eppEntregas.map(x => ({ ...x, foto: x.foto_url ? (() => { const u = foto(x.foto_url); contarFoto(u); return u; })() : null })),
+      capacitaciones: caps.map(x => ({ ...x, asistentes: asistentes.filter(a => a.capacitacion_id === x.id) })),
+      checklist, examMatriz,
+      // Solo lo agregable: tipo y fechas; nunca nombre, cédula, aptitud ni observaciones (datos de salud).
+      examRegistros: examRegs.map(x => ({ tipo: x.tipo, fecha_examen: x.fecha_examen, fecha_proximo: x.fecha_proximo })),
+      incidentes: incidentes.map(x => ({ ...x, foto: x.foto_url ? (() => { const u = foto(x.foto_url); contarFoto(u); return u; })() : null })),
+      ptes
+    };
+  }
+
+  // Subcontratistas.
+  if(activas.has('subcontratistas')){
+    progreso('Cargando subcontratos…');
+    const subcontratos = await todo('subcontratos', q => q.eq('proyecto_id', proyectoId).order('created_at'));
+    const idsSc = [...new Set(subcontratos.map(s => s.subcontratista_id).filter(Boolean))];
+    const [scs, scRubros] = await Promise.all([
+      idsSc.length ? expedienteEnLotes(idsSc, lote => c.from('subcontratistas').select('*').in('id', lote)) : [],
+      subcontratos.length ? expedienteEnLotes(subcontratos.map(s => s.id), lote => c.from('subcontrato_rubros').select('*').in('subcontrato_id', lote)) : []
+    ]);
+    const rubrosMap = {}; (datos.rubros || []).forEach(r => { rubrosMap[r.id] = r; });
+    datos.subcontratos = subcontratos.map(s => ({
+      ...s, subcontratista: scs.find(x => x.id === s.subcontratista_id) || null,
+      rubros: scRubros.filter(x => x.subcontrato_id === s.id).map(x => rubrosMap[x.rubro_id]).filter(Boolean).map(r => ({ codigo: r.codigo, descripcion: r.descripcion }))
+    }));
+  }
+
+  // Cronograma: líneas base y filas de la activa. Los indicadores y la imagen de la
+  // Curva S los añade la app (datos.cronograma.indicadores / imagen) tras esta carga.
+  if(activas.has('cronograma')){
+    progreso('Cargando cronograma…');
+    const lbs = await todo('lineas_base', q => q.eq('proyecto_id', proyectoId).order('numero'));
+    const activa = lbs.find(l => l.activa) || null;
+    const filas = await todo('cronograma_rubros', q => activa ? q.eq('proyecto_id', proyectoId).eq('linea_base_id', activa.id) : q.eq('proyecto_id', proyectoId));
+    lbs.forEach(l => idsPerfil.add(l.creado_por));
+    datos.cronograma = Object.assign(datos.cronograma || {}, { lineasBase: lbs, activa, filas });
+  }
+
+  // Nombres de usuarios que faltaban.
+  const faltan = [...idsPerfil].filter(id => id && !(datos.perfiles || {})[id]);
+  if(faltan.length){
+    const perfiles = await expedienteEnLotes(faltan, lote => c.from('perfiles').select('id,nombre,apellido').in('id', lote));
+    datos.perfiles = datos.perfiles || {};
+    perfiles.forEach(p => { datos.perfiles[p.id] = `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Usuario'; });
+  }
+  datos.imagenesOrigen = fotosDistintas.size;
+  return datos;
+}
+
+// ── Fotos en el documento ───────────────────────────────────────────────────
+// Dos por fila; cada figura y su pie no se parten. Pie: «Foto n/N · fecha · ref»
+// y la descripción si la hay. Las no disponibles (HEIC) salen como recuadro
+// desde el principio; las que fallen al cargar las reemplaza el script inline.
+function expFotosHTML(fotos, ref, fecha){
+  const lista = fotos || [];
+  if(!lista.length) return '';
+  const N = lista.length;
+  return `<div class="fotos">${lista.map((f, i) => {
+    const pie = `Foto ${i + 1}/${N} · ${expFmtFecha(fecha)} · ${expEsc(ref)}${f.descripcion ? ' · ' + expEsc(f.descripcion) : ''}`;
+    if(f.noDisponible || !f.urlRender){
+      return `<figure class="foto no-disponible"><div class="foto-caja">Foto no disponible (${expEsc(f.noDisponible || 'sin imagen')})<br><small>${expEsc(f.path || f.url || '')}</small></div><figcaption>${pie}</figcaption></figure>`;
+    }
+    return `<figure class="foto"><img src="${expEsc(f.urlRender)}" data-ruta="${expEsc(f.path || '')}" alt="${expEsc(ref)}" loading="eager"><figcaption>${pie}</figcaption></figure>`;
+  }).join('')}</div>`;
+}
+
+// Script inline del documento (autocontenido): cuenta las imágenes, muestra
+// «Fotos cargadas n/N», espera decode() (o load/error), reemplaza las fallidas por
+// «Foto no disponible · ruta», habilita «Imprimir / Guardar PDF» al terminar (o
+// «Imprimir de todos modos» a los 60 s) y marca documentElement.dataset.listo = '1'
+// para que Puppeteer (fase 3) sepa cuándo imprimir. Sin fotos, listo de inmediato.
+function expedienteScriptCarga(){
+  return `(function(){
+  var imgs = Array.prototype.slice.call(document.querySelectorAll('figure.foto img'));
+  var total = imgs.length, hechas = 0, fallidas = 0, terminado = false;
+  var estado = document.getElementById('fotosEstado');
+  var boton = document.getElementById('btnImprimir');
+  function pintar(){ if(estado) estado.textContent = total ? ('Fotos cargadas ' + hechas + '/' + total + (fallidas ? ' · ' + fallidas + ' no disponible(s)' : '')) : 'Sin fotos'; }
+  function terminar(forzado){
+    if(terminado) return; terminado = true;
+    if(boton){ boton.disabled = false; boton.textContent = forzado ? '🖨️ Imprimir de todos modos' : '🖨️ Imprimir / Guardar PDF'; }
+    pintar();
+    document.documentElement.dataset.listo = '1';
+  }
+  function fallo(img){
+    fallidas++;
+    var fig = img.closest('figure');
+    if(fig && !fig.classList.contains('no-disponible')){
+      var ruta = img.getAttribute('data-ruta') || img.getAttribute('src') || '';
+      var caja = document.createElement('div'); caja.className = 'foto-caja';
+      caja.textContent = 'Foto no disponible';
+      var small = document.createElement('small'); small.textContent = ruta;
+      caja.appendChild(document.createElement('br')); caja.appendChild(small);
+      fig.classList.add('no-disponible'); fig.replaceChild(caja, img);
+    }
+  }
+  function una(img){
+    var listo = false;
+    function fin(ok){ if(listo) return; listo = true; if(!ok) fallo(img); hechas++; pintar(); if(hechas >= total) terminar(false); }
+    if(img.complete && img.naturalWidth > 0){ fin(true); return; }
+    if(img.complete && img.naturalWidth === 0 && !img.decode){ fin(false); return; }
+    img.addEventListener('load', function(){ fin(true); });
+    img.addEventListener('error', function(){ fin(false); });
+    if(img.decode){ img.decode().then(function(){ fin(true); }, function(){ /* lo resuelve load/error */ }); }
+  }
+  if(boton){ boton.disabled = total > 0; }
+  pintar();
+  if(!total){ terminar(false); return; }
+  imgs.forEach(una);
+  setTimeout(function(){ terminar(true); }, 60000);
+})();`;
+}
+
+// Etiqueta de mes «Febrero 2026» a partir de «2026-02».
+function expMesLabel(ym){
+  const [y, m] = String(ym).slice(0, 7).split('-');
+  const mes = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('es-EC', { month: 'long' });
+  return mes.charAt(0).toUpperCase() + mes.slice(1) + ' ' + y;
+}
+
+// Secciones de la fase 2. Reciben el mismo contexto que las de la fase 1.
+function expedienteSeccionesFase2(datos, seleccion, meta, h){
+  const { e, f, titulo, sub, vacio, numero } = h;
+  const proy = datos.proyecto || {};
+  const nombre = id => (datos.perfiles || {})[id] || '—';
+  const S = {};
+
+  // Cronograma: líneas base, rubros con fechas y peso, Curva S e indicadores.
+  S.cronograma = () => {
+    const cr = datos.cronograma || {};
+    const lbs = cr.lineasBase || [];
+    const filas = cr.filas || [];
+    const rubros = datos.rubros || [];
+    const porRubro = {}; filas.forEach(x => { porRubro[x.rubro_id] = x; });
+    const sumaMonto = rubros.reduce((s, r) => s + (Number(r.monto_contrato) || 0), 0);
+    const ind = cr.indicadores || null;
+    const lbHtml = lbs.length ? `<table class="tabla"><thead><tr><th>N°</th><th>Motivo</th><th>Referencia</th><th>Fecha</th><th>Creada por</th><th>Estado</th></tr></thead><tbody>${
+      lbs.map(l => `<tr><td>LB-${l.numero}</td><td>${e(l.motivo || '—')}</td><td>${e(l.referencia || '—')}</td><td>${expFmtFecha(l.created_at)}</td><td>${e(nombre(l.creado_por))}</td><td>${l.activa ? '<b>Activa</b>' : 'Histórica'}</td></tr>`).join('')
+    }</tbody></table>` : vacio('Sin líneas base registradas');
+    const conFechas = rubros.filter(r => porRubro[r.id] || r.fecha_inicio || r.fecha_fin);
+    const tabla = conFechas.length ? `<table class="tabla"><thead><tr><th>Código</th><th>Descripción</th><th>Inicio</th><th>Fin</th><th class="num">Peso (%)</th><th class="num">Avance (%)</th></tr></thead><tbody>${
+      conFechas.map(r => { const c = porRubro[r.id] || {}; const peso = sumaMonto > 0 ? (Number(r.monto_contrato) || 0) / sumaMonto * 100 : 0; const av = r.estado === 'terminado' ? 100 : (Number(r.monto_contrato) > 0 ? Math.min((Number(r.total_produccion) || 0) / Number(r.monto_contrato) * 100, 100) : 0);
+        return `<tr><td>${e(r.codigo || '—')}</td><td>${e(r.descripcion)}</td><td>${expFmtFecha(c.fecha_inicio || r.fecha_inicio)}</td><td>${expFmtFecha(c.fecha_fin || r.fecha_fin)}</td><td class="num">${expFmtNum(peso, 2)}</td><td class="num">${expFmtNum(av, 1)}</td></tr>`; }).join('')
+    }</tbody></table><p class="nota">Peso ponderado por costo (monto vigente del rubro / Σ rubros), igual que en la Curva S de la app.${cr.activa ? ` Fechas según LB-${cr.activa.numero}.` : ''}</p>` : vacio('Sin cronograma registrado');
+    const curva = cr.imagen ? `<div class="curva"><img src="${cr.imagen}" alt="Curva S"></div>${cr.notaLineaBase ? `<p class="nota">📐 ${e(cr.notaLineaBase)}</p>` : ''}` : vacio('Sin Curva S: el proyecto no tiene cronograma con fechas');
+    const indHtml = ind ? `<table class="tabla kv"><tbody>
+      <tr><th>Avance real</th><td>${expFmtPct(ind.avanceRealTotal)}</td></tr>
+      <tr><th>SPI (BCWP / BCWS)</th><td>${ind.SPI == null ? '—' : expFmtNum(ind.SPI, 2)}${ind.BCWP != null ? ` · BCWP ${expFmtNum(ind.BCWP, 2)} % · BCWS ${expFmtNum(ind.BCWS, 2)} %` : ''}</td></tr>
+      <tr><th>Producción total</th><td>${f(ind.totalProduccion)}</td></tr>
+      <tr><th>Rubros atrasados</th><td>${expFmtNum(ind.atrasados, 0)}</td></tr>
+      ${ind.proyeccion ? `<tr><th>Fin planificado / estimado</th><td>${expFmtFecha(ind.proyeccion.fechaPlanificada)} / ${expFmtFecha(ind.proyeccion.fechaEstimada)} (${ind.proyeccion.diasAtraso <= 0 ? expFmtNum(Math.abs(ind.proyeccion.diasAtraso), 0) + ' días adelantado' : expFmtNum(ind.proyeccion.diasAtraso, 0) + ' días de atraso'})</td></tr>` : ''}
+    </tbody></table><p class="nota">Indicadores EVM a la fecha de generación (${expFmtFecha(meta.hoy || meta.generadoEn)}).</p>` : '';
+    return `<section class="sec" id="sec-cronograma">${titulo('cronograma', 'Cronograma y Curva S')}
+      ${sub('cronograma', 1, 'Líneas base')}${lbHtml}
+      ${sub('cronograma', 2, 'Rubros programados')}${tabla}
+      ${sub('cronograma', 3, 'Curva S e indicadores')}${curva}${indHtml}
+    </section>`;
+  };
+
+  // Libro de obra: todos los registros del rango, por mes, con sello y todas sus fotos.
+  S.libro_obra = () => {
+    const regs = datos.libro || [];
+    const filtros = seleccion?.filtros || {};
+    const rango = filtros.libroDesde || filtros.libroHasta ? ` (del ${expFmtFecha(filtros.libroDesde) } al ${expFmtFecha(filtros.libroHasta)})` : '';
+    if(!regs.length) return `<section class="sec" id="sec-libro_obra">${titulo('libro_obra', 'Libro de obra')}${vacio('Sin registros del libro de obra' + rango)}</section>`;
+    const meses = [...new Set(regs.map(r => String(r.fecha).slice(0, 7)))].sort();
+    const totalFotos = regs.reduce((s, r) => s + (r.fotos || []).length, 0);
+    const resumen = `<table class="tabla"><thead><tr><th>Mes</th><th class="num">Registros</th><th class="num">Fotos</th><th class="num">Aprobados</th><th class="num">Pendientes</th><th class="num">Observados</th></tr></thead><tbody>${
+      meses.map(m => { const rs = regs.filter(r => String(r.fecha).startsWith(m)); const n = est => rs.filter(r => r.estado_aprobacion === est).length;
+        return `<tr><td>${e(expMesLabel(m))}</td><td class="num">${rs.length}</td><td class="num">${rs.reduce((s, r) => s + (r.fotos || []).length, 0)}</td><td class="num">${n('aprobado')}</td><td class="num">${n('pendiente')}</td><td class="num">${n('observado')}</td></tr>`; }).join('')
+    }</tbody><tfoot><tr><th>Total</th><th class="num">${regs.length}</th><th class="num">${totalFotos}</th><th colspan="3"></th></tr></tfoot></table>`;
+    const bloques = meses.map((m, k) => {
+      const rs = regs.filter(r => String(r.fecha).startsWith(m));
+      return `<section class="sub libro-doc" id="libro-${m}">${sub('libro_obra', k + 1, `${expMesLabel(m)} — ${rs.length} registro(s)`)}${
+        rs.map(r => `<div class="registro">${renderRegistroLibroHTML(r, { nombresAprobadores: datos.perfiles || {}, rubros: r.rubros, fotos: [], inc: { actividades: true, equipos: true, materiales: true, rubros: true, novedades: true, fotos: false } })}${
+          r.estado_aprobacion === 'observado' && r.observacion_aprobacion ? `<p class="aviso">Observación de fiscalización: ${e(r.observacion_aprobacion)}</p>` : ''
+        }${expFotosHTML(r.fotos, `Registro N° ${r.numero_registro ?? '—'}`, r.fecha)}</div>`).join('')
+      }</section>`;
+    }).join('');
+    return `<section class="sec" id="sec-libro_obra">${titulo('libro_obra', 'Libro de obra')}<p class="nota">${regs.length} registro(s)${rango}, ${totalFotos} foto(s). Cada registro lleva su estado de aprobación y sello.</p>${resumen}</section>${bloques}`;
+  };
+
+  // Observaciones: cada una con fotos y respuestas en orden.
+  S.observaciones = () => {
+    const obs = datos.observaciones || [];
+    const filtros = seleccion?.filtros || {};
+    const ESTADO = { abierta: 'Abierta', en_proceso: 'En proceso', resuelta: 'Resuelta' };
+    if(!obs.length) return `<section class="sec" id="sec-observaciones">${titulo('observaciones', 'Observaciones de fiscalización')}${vacio(filtros.observaciones === 'resueltas' ? 'Sin observaciones resueltas' : 'Sin observaciones registradas')}</section>`;
+    const resumen = `<table class="tabla"><thead><tr><th>N°</th><th>Título</th><th>Fecha</th><th>Estado</th><th class="num">Fotos</th><th class="num">Respuestas</th></tr></thead><tbody>${
+      obs.map(o => `<tr><td>${o.numero ?? '—'}</td><td>${e(o.titulo)}</td><td>${expFmtFecha(o.created_at)}</td><td>${ESTADO[o.estado] || e(o.estado)}</td><td class="num">${(o.fotos || []).length}</td><td class="num">${(o.respuestas || []).length}</td></tr>`).join('')
+    }</tbody></table>`;
+    const docs = obs.map((o, k) => `<section class="sub" id="obs-${o.id}">${sub('observaciones', k + 1, `Observación N° ${o.numero ?? '—'} — ${o.titulo}`)}
+      <table class="tabla kv"><tbody>
+        <tr><th>Fecha</th><td>${expFmtFechaHora(o.created_at)}</td></tr>
+        <tr><th>Autor</th><td>${e(nombre(o.creado_por))}</td></tr>
+        <tr><th>Estado</th><td>${ESTADO[o.estado] || e(o.estado)}</td></tr>
+        <tr><th>Ubicación</th><td>${o.plano_nombre && o.pin_x != null ? `Plano ${e(o.plano_nombre)}, pág. ${Math.max(1, Math.round(Number(o.pin_pagina)) || 1)}` : 'Sin ubicación en plano'}</td></tr>
+        ${o.descripcion ? `<tr><th>Descripción</th><td>${expParrafo(o.descripcion)}</td></tr>` : ''}
+      </tbody></table>
+      ${expFotosHTML(o.fotos, `Observación N° ${o.numero ?? '—'}`, o.created_at)}
+      ${(o.respuestas || []).length ? `<h3 class="sub-sub">Respuestas</h3>${o.respuestas.map(r => `<div class="respuesta"><div class="respuesta-meta">${e(nombre(r.autor_id))} · ${expFmtFechaHora(r.created_at)}</div>${r.texto ? `<div>${expParrafo(r.texto)}</div>` : ''}${
+        r.adjunto ? (r.adjunto.tipo === 'foto' ? expFotosHTML([r.adjunto], `Observación N° ${o.numero ?? '—'} · respuesta`, r.created_at) : `<div class="nota">📎 ${e(r.adjunto.nombre)}</div>`) : ''
+      }</div>`).join('')}` : '<p class="nota">Sin respuestas.</p>'}
+    </section>`).join('');
+    return `<section class="sec" id="sec-observaciones">${titulo('observaciones', 'Observaciones de fiscalización')}${resumen}</section>${docs}`;
+  };
+
+  // Ensayos: especificaciones, resultados con veredicto, re-ensayos y certificados.
+  S.ensayos = () => {
+    const en = datos.ensayos || { especificaciones: [], lista: [] };
+    const especs = en.especificaciones || [];
+    const lista = en.lista || [];
+    const numero = {}; lista.forEach(x => { numero[x.id] = x.numero; });
+    const esp = especs.length ? `<table class="tabla"><thead><tr><th>Ensayo</th><th>Norma</th><th>Etiqueta</th><th>Criterio</th><th class="num">Mín.</th><th class="num">Máx.</th></tr></thead><tbody>${
+      especs.map(x => `<tr><td>${e(x.tipo?.nombre || '—')}</td><td>${e(x.tipo?.norma || '—')}</td><td>${e(x.etiqueta || '—')}</td><td>${e({ mayor_igual: '≥ mínimo', menor_igual: '≤ máximo', rango: 'rango' }[x.tipo?.criterio] || x.tipo?.criterio || '—')}</td><td class="num">${x.valor_min == null ? '—' : expFmtNum(x.valor_min, 2)}</td><td class="num">${x.valor_max == null ? '—' : expFmtNum(x.valor_max, 2)}</td></tr>`).join('')
+    }</tbody></table>` : vacio('Sin especificaciones registradas');
+    const cumplen = lista.filter(x => x.cumple).length;
+    const tabla = lista.length ? `<div class="libro-doc">${renderEnsayosTablaHTML(lista)}</div>` : vacio('Sin ensayos registrados');
+    const extras = lista.filter(x => x.reensayo_de || x.archivo_url);
+    const detalle = extras.length ? `<table class="tabla"><thead><tr><th>N°</th><th>Re-ensayo de</th><th>Informe / certificado</th></tr></thead><tbody>${
+      extras.map(x => `<tr><td>E-${String(x.numero).padStart(3, '0')}</td><td>${x.reensayo_de ? `E-${String(numero[x.reensayo_de] ?? '?').padStart(3, '0')}` : '—'}</td><td>${x.archivo_url ? `Archivo en la plataforma: ${e(String(x.archivo_url).split('/').pop().split('?')[0])}` : '—'}</td></tr>`).join('')
+    }</tbody></table>` : '';
+    return `<section class="sec" id="sec-ensayos">${titulo('ensayos', 'Ensayos de laboratorio')}
+      ${sub('ensayos', 1, 'Especificaciones del proyecto')}${esp}
+      ${sub('ensayos', 2, 'Resultados')}${lista.length ? `<p class="nota">${lista.length} ensayo(s) · ${cumplen} cumplen · ${lista.length - cumplen} no cumplen (${lista.filter(x => !x.cumple && !x.resuelto).length} sin resolver).</p>` : ''}${tabla}${detalle}
+    </section>`;
+  };
+
+  // Formatos de calidad: listado con referencia a la plataforma.
+  S.formatos_calidad = () => {
+    const fo = datos.formatos || { plantillas: [], respuestas: [] };
+    const ESTADO = { borrador: 'Borrador', enviado: 'Enviado', corregido: 'Corregido' };
+    const plantillas = (fo.plantillas || []).length ? `<ul class="lista">${fo.plantillas.map(p => `<li>${e(p.nombre)} (llena: ${e(p.rol_llenado || 'residente')})</li>`).join('')}</ul>` : vacio('Sin formatos asignados');
+    const resp = (fo.respuestas || []).length ? `<table class="tabla"><thead><tr><th>Formato</th><th>Residente</th><th>Fecha</th><th>Estado</th><th class="num">Fotos</th><th>Referencia</th></tr></thead><tbody>${
+      fo.respuestas.map(r => `<tr><td>${e(r.plantilla_nombre)}</td><td>${e(nombre(r.residente_id))}</td><td>${expFmtFecha(r.created_at)}</td><td>${ESTADO[r.estado] || e(r.estado)}</td><td class="num">${r.fotos}</td><td>Formatos de calidad → ${e(r.plantilla_nombre)} (${expFmtFecha(r.created_at)})</td></tr>`).join('')
+    }</tbody></table><p class="nota">El formato completo (con su perfil estratigráfico y fotos) se consulta e imprime desde la plataforma.</p>` : vacio('Sin formatos llenados');
+    return `<section class="sec" id="sec-formatos_calidad">${titulo('formatos_calidad', 'Formatos de calidad')}${sub('formatos_calidad', 1, 'Formatos asignados')}${plantillas}${sub('formatos_calidad', 2, 'Registros llenados')}${resp}</section>`;
+  };
+
+  // SST: configuración, riesgos, EPP, capacitaciones, PTE, checklist, exámenes agregados, incidentes.
+  S.sst = () => {
+    const s = datos.sst || {};
+    const kv = pares => `<table class="tabla kv"><tbody>${pares.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+    const c = s.config;
+    const config = c ? kv([
+      ['Gestión', c.tipo_gestion === 'fiscalizacion' ? 'Por fiscalización' : 'Propia del contratista'],
+      ['Trabajadores', `${expFmtNum(c.num_trabajadores, 0)} (${expFmtNum(c.num_hombres, 0)} hombres, ${expFmtNum(c.num_mujeres, 0)} mujeres)`],
+      ['Grupos de atención prioritaria', Array.isArray(c.grupos_atencion_prioritaria) && c.grupos_atencion_prioritaria.length ? e(c.grupos_atencion_prioritaria.join(', ')) : 'Ninguno declarado'],
+      ['Responsable SST', `${e({ monitor: 'Monitor', tecnico: 'Técnico', servicio_externo: 'Servicio externo' }[c.responsable_sst_tipo] || c.responsable_sst_tipo || '—')}${c.responsable_sst_nombre ? ' · ' + e(c.responsable_sst_nombre) : ''}`],
+      ['Médico ocupacional', e(c.medico_ocupacional_nombre || '—')],
+      ['Representación', e({ participacion_directa: 'Participación directa', delegado: 'Delegado', comite: 'Comité' }[c.representacion_tipo] || c.representacion_tipo || '—')],
+      ['Registrado en el SUT', c.registrado_sut ? 'Sí' : 'No']
+    ]) : vacio('Sin configuración SST registrada');
+    const riesgos = (s.riesgos || []).length ? `<table class="tabla"><thead><tr><th>Puesto</th><th class="num">Expuestos</th><th>Tipo</th><th>Peligro</th><th>Prob.</th><th>Consec.</th><th>Nivel</th><th>Control</th><th>Residual</th></tr></thead><tbody>${
+      s.riesgos.map(r => `<tr><td>${e(r.puesto)}</td><td class="num">${expFmtNum(r.num_expuestos, 0)}</td><td>${e(r.tipo_riesgo || '—')}</td><td>${e(r.peligro)}</td><td>${e(r.probabilidad || '—')}</td><td>${e(r.consecuencia || '—')}</td><td>${e(r.nivel_riesgo || '—')}</td><td>${e(r.medidas_control || '—')}</td><td>${e(r.riesgo_residual || '—')}</td></tr>`).join('')
+    }</tbody></table>` : vacio('Sin matriz de riesgos');
+    const eppM = (s.eppMatriz || []).length ? `<table class="tabla"><thead><tr><th>Puesto</th><th>Riesgo</th><th>EPP requerido</th><th>Especificación</th><th>Reposición</th></tr></thead><tbody>${
+      s.eppMatriz.map(r => `<tr><td>${e(r.puesto)}</td><td>${e(r.riesgo_asociado || '—')}</td><td>${e(r.epp_requerido)}</td><td>${e(r.especificacion_tecnica || '—')}</td><td>${e(r.frecuencia_reposicion || '—')}</td></tr>`).join('')
+    }</tbody></table>` : vacio('Sin matriz de EPP');
+    const eppE = (s.eppEntregas || []).length ? `<table class="tabla"><thead><tr><th>Trabajador</th><th>Puesto</th><th>Fecha</th><th>EPP entregado</th><th>Confirmado</th></tr></thead><tbody>${
+      s.eppEntregas.map(r => `<tr><td>${e(r.trabajador_nombre)}</td><td>${e(r.puesto || '—')}</td><td>${expFmtFecha(r.fecha_entrega)}</td><td>${e(r.detalle_epp)}</td><td>${r.confirmado_trabajador ? 'Sí' : 'No'}</td></tr>`).join('')
+    }</tbody></table>${s.eppEntregas.filter(r => r.foto).map(r => expFotosHTML([r.foto], `Entrega de EPP · ${r.trabajador_nombre}`, r.fecha_entrega)).join('')}` : vacio('Sin entregas de EPP registradas');
+    const caps = (s.capacitaciones || []).length ? s.capacitaciones.map(cp => `<table class="tabla kv"><tbody><tr><th>Tema</th><td>${e(cp.tema)}</td></tr><tr><th>Tipo</th><td>${e(SST_TIPO_CAPACITACION[cp.tipo] || cp.tipo)}</td></tr><tr><th>Fecha · duración</th><td>${expFmtFecha(cp.fecha)}${cp.duracion_horas ? ` · ${expFmtNum(cp.duracion_horas, 1)} h` : ''}</td></tr><tr><th>Responsable</th><td>${e(cp.responsable || '—')}</td></tr><tr><th>Asistentes</th><td>${(cp.asistentes || []).length ? `<ul class="lista">${cp.asistentes.map(a => `<li>${e(a.nombre)}${a.puesto ? ' · ' + e(a.puesto) : ''}${a.asistio === false ? ' (no asistió)' : ''}</li>`).join('')}</ul>` : 'Sin asistentes registrados'}</td></tr></tbody></table>`).join('') : vacio('Sin capacitaciones registradas');
+    const ptes = (s.ptes || []).length ? `<table class="tabla"><thead><tr><th>N°</th><th>Tipo</th><th>Fecha</th><th>Ubicación</th><th>Técnico</th><th>Estado</th></tr></thead><tbody>${
+      s.ptes.map(p => `<tr><td>PTE-${String(p.numero).padStart(3, '0')}</td><td>${e((PTE_TIPOS[p.tipo] || p.tipo).replace(/^[^\s]+\s/, ''))}</td><td>${expFmtFecha(p.fecha)}</td><td>${e(p.ubicacion || '—')}</td><td>${e(p.tecnico_nombre || '—')}</td><td>${e({ abierto: 'Abierto', cerrado: 'Cerrado', anulado: 'Anulado' }[p.estado] || p.estado)}</td></tr>`).join('')
+    }</tbody></table>` : vacio('Sin permisos de trabajo especial');
+    // Checklist resumido por bloque y modo.
+    const modos = [...new Set((s.checklist || []).map(x => x.modo))];
+    const checklist = modos.length ? modos.map(modo => {
+      const resp = s.checklist.filter(x => x.modo === modo);
+      const fecha = resp.map(x => x.fecha).filter(Boolean).sort().pop();
+      return `<h3 class="sub-sub">${modo === 'auditoria' ? 'Auditoría' : 'Autoevaluación'}${fecha ? ` (última respuesta ${expFmtFecha(fecha)})` : ''}</h3><table class="tabla"><thead><tr><th>Bloque</th><th class="num">Ítems</th><th class="num">Cumple</th><th class="num">No cumple</th><th class="num">No aplica</th><th class="num">Sin responder</th></tr></thead><tbody>${
+        (typeof ANEXO1_CHECKLIST !== 'undefined' ? ANEXO1_CHECKLIST : []).map(b => { const codigos = b.items.map(i => i[0]); const r = resp.filter(x => codigos.includes(x.item_codigo)); const n = v => r.filter(x => x.respuesta === v).length;
+          return `<tr><td>${e(b.id)}. ${e(b.nombre)}</td><td class="num">${codigos.length}</td><td class="num">${n('cumple')}</td><td class="num">${n('no_cumple')}</td><td class="num">${n('no_aplica')}</td><td class="num">${codigos.length - r.length}</td></tr>`; }).join('')
+      }</tbody></table>`;
+    }).join('') : vacio('Sin checklist respondido');
+    // Exámenes: solo agregados por tipo (sin nombres ni resultados).
+    const TIPO_EX = { preempleo: 'Preempleo', periodico: 'Periódico', reintegro: 'Reintegro', retiro: 'Retiro' };
+    const hoy = String(meta.hoy || meta.generadoEn || '').slice(0, 10);
+    const tiposEx = [...new Set((s.examRegistros || []).map(x => x.tipo))];
+    const examenes = tiposEx.length ? `<table class="tabla"><thead><tr><th>Tipo de examen</th><th class="num">Realizados</th><th class="num">Vigentes</th><th class="num">Vencidos</th></tr></thead><tbody>${
+      tiposEx.map(t => { const r = s.examRegistros.filter(x => x.tipo === t); const vig = r.filter(x => x.fecha_proximo && x.fecha_proximo >= hoy).length; const ven = r.filter(x => x.fecha_proximo && x.fecha_proximo < hoy).length;
+        return `<tr><td>${e(TIPO_EX[t] || t)}</td><td class="num">${r.length}</td><td class="num">${vig}</td><td class="num">${ven}</td></tr>`; }).join('')
+    }</tbody></table><p class="nota">Solo cifras agregadas: los resultados y nombres son datos de salud y se consultan en la plataforma.</p>` : vacio('Sin exámenes ocupacionales registrados');
+    const examM = (s.examMatriz || []).length ? `<table class="tabla"><thead><tr><th>Puesto</th><th>Riesgo</th><th>Examen</th><th class="num">Frecuencia (meses)</th></tr></thead><tbody>${s.examMatriz.map(x => `<tr><td>${e(x.puesto)}</td><td>${e(x.riesgo_asociado || '—')}</td><td>${e(x.tipo_examen)}</td><td class="num">${x.frecuencia_meses == null ? '—' : expFmtNum(x.frecuencia_meses, 0)}</td></tr>`).join('')}</tbody></table>` : '';
+    const incidentes = (s.incidentes || []).length ? `<table class="tabla"><thead><tr><th>Tipo</th><th>Fecha</th><th>Lugar</th><th>Descripción</th><th>Gravedad</th><th>Estado</th><th>IESS</th></tr></thead><tbody>${
+      s.incidentes.map(x => `<tr><td>${e(SST_TIPO_INCIDENTE[x.tipo] || x.tipo)}</td><td>${expFmtFechaHora(x.fecha_hora)}</td><td>${e(x.lugar || '—')}</td><td>${e(x.descripcion || '—')}</td><td>${e(x.gravedad || '—')}</td><td>${e(x.estado || '—')}</td><td>${x.reportado_iess ? 'Reportado' : 'No reportado'}</td></tr>`).join('')
+    }</tbody></table>${s.incidentes.filter(x => x.foto).map(x => expFotosHTML([x.foto], `Incidente · ${x.lugar || ''}`, x.fecha_hora)).join('')}` : vacio('Sin incidentes ni accidentes registrados');
+    return `<section class="sec" id="sec-sst">${titulo('sst', 'Seguridad y salud en el trabajo')}
+      ${sub('sst', 1, 'Configuración')}${config}
+      ${sub('sst', 2, 'Matriz de riesgos')}${riesgos}
+      ${sub('sst', 3, 'Equipos de protección personal')}${eppM}${eppE}
+      ${sub('sst', 4, 'Capacitaciones')}${caps}
+      ${sub('sst', 5, 'Permisos de trabajo especial')}${ptes}
+      ${sub('sst', 6, 'Lista de verificación (resumen por bloque)')}${checklist}
+      ${sub('sst', 7, 'Exámenes ocupacionales (agregado)')}${examM}${examenes}
+      ${sub('sst', 8, 'Incidentes y accidentes')}${incidentes}
+    </section>`;
+  };
+
+  // Subcontratistas.
+  S.subcontratistas = () => {
+    const sc = datos.subcontratos || [];
+    const sumaRubros = (datos.rubros || []).reduce((s, r) => s + (Number(r.monto_contrato) || 0), 0);
+    const ESTADO = { activo: 'Activo', finalizado: 'Finalizado', suspendido: 'Suspendido' };
+    const tabla = sc.length ? `<table class="tabla"><thead><tr><th>Subcontratista</th><th>Especialidad</th><th>Representante</th><th class="num">Monto</th><th class="num">% del contrato</th><th>Inicio</th><th>Fin</th><th>Estado</th><th>Rubros</th></tr></thead><tbody>${
+      sc.map(s => `<tr><td>${e(s.subcontratista?.nombre || '—')}</td><td>${e(s.subcontratista?.especialidad || '—')}</td><td>${e(s.subcontratista?.representante || '—')}</td><td class="num">${f(s.monto)}</td><td class="num">${sumaRubros > 0 ? expFmtPct((Number(s.monto) || 0) / sumaRubros * 100) : '—'}</td><td>${expFmtFecha(s.fecha_inicio)}</td><td>${expFmtFecha(s.fecha_fin)}</td><td>${ESTADO[s.estado] || e(s.estado)}</td><td>${(s.rubros || []).length ? e(s.rubros.map(r => r.codigo).join(', ')) : '—'}</td></tr>`).join('')
+    }</tbody><tfoot><tr><th colspan="3">Total subcontratado</th><th class="num">${f(sc.reduce((a, s) => a + (Number(s.monto) || 0), 0))}</th><th class="num">${sumaRubros > 0 ? expFmtPct(sc.reduce((a, s) => a + (Number(s.monto) || 0), 0) / sumaRubros * 100) : '—'}</th><th colspan="4"></th></tr></tfoot></table>` : vacio('Sin subcontratos registrados');
+    return `<section class="sec" id="sec-subcontratistas">${titulo('subcontratistas', 'Subcontratistas')}${tabla}</section>`;
+  };
+
+  return S;
+}
+
+// CSS de la fase 2: fotos, registros del libro (mismas clases que el reporte), observaciones y Curva S.
+function expedienteCSSFase2(){
+  return `
+/* Fotos: dos por fila, figura y pie sin partir */
+.fotos { display: flex; flex-wrap: wrap; gap: 6px 2%; margin: 8px 0 12px; }
+.fotos figure.foto { width: 49%; margin: 0; break-inside: avoid; page-break-inside: avoid; }
+.fotos figure.foto img { width: 100%; height: auto; max-height: 120mm; object-fit: contain; border: 1px solid #e6e9ef; border-radius: 4px; background: #f5f6f8; display: block; }
+.fotos figcaption { font-size: 8pt; color: #676879; margin-top: 2px; line-height: 1.3; }
+.foto-caja { border: 1px dashed #c5c7d4; border-radius: 4px; background: #f5f6f8; color: #676879; font-size: 9pt; padding: 18px 10px; text-align: center; min-height: 40mm; display: flex; flex-direction: column; justify-content: center; word-break: break-all; }
+.foto-caja small { font-size: 7.5pt; color: #9fa2b2; }
+.ui-barra .fotos-estado { color: #cfe3ff; font-size: 8.5pt; }
+.ui-barra button:disabled { background: #5a6378; cursor: wait; }
+/* Registros del libro: mismas clases que el reporte PDF del libro de obra */
+.libro-doc .registro { margin-bottom: 14px; }
+.libro-doc .registro-block { border: 1px solid #e6e9ef; border-radius: 6px; margin-bottom: 6px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+.libro-doc .registro-header { background: #1a1a2e; color: #fff; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; }
+.libro-doc .registro-header .reg-num { font-size: 10pt; font-weight: 700; color: #fff; }
+.libro-doc .registro-meta { background: #f0f7ff; padding: 5px 12px; display: flex; gap: 16px; font-size: 8.5pt; color: #323338; border-bottom: 1px solid #e6e9ef; }
+.libro-doc .registro-body { padding: 8px 12px; }
+.libro-doc .campo { margin-bottom: 7px; }
+.libro-doc .campo .lbl { font-size: 7.5pt; font-weight: 700; color: #0073ea; text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 2px; }
+.libro-doc .campo .val { font-size: 9pt; line-height: 1.5; color: #323338; white-space: pre-wrap; }
+.libro-doc .novedad-box { background: #fff8e1; border-left: 3px solid #ffc107; padding: 5px 8px; border-radius: 0 4px 4px 0; font-size: 9pt; color: #5d4037; white-space: pre-wrap; }
+.libro-doc .campo table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-top: 4px; }
+.libro-doc .campo th { background: #1a1a2e; color: #fff; padding: 4px 6px; text-align: left; font-size: 7pt; text-transform: uppercase; }
+.libro-doc .campo td { padding: 4px 6px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+.libro-doc .td-qty { font-weight: 700; color: #0073ea; text-align: right; }
+.libro-doc h2 { font-size: 12pt; color: #0073ea; margin-top: 16px; }
+.libro-doc table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+.libro-doc thead { display: table-header-group; }
+.libro-doc th { background: #1a1a2e; color: #fff; padding: 4px 6px; text-align: left; font-size: 7.5pt; text-transform: uppercase; }
+.libro-doc td { padding: 4px 6px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+/* Observaciones */
+.respuesta { background: #f5f6f8; border-radius: 8px; padding: 8px 12px; margin: 6px 0; break-inside: avoid; page-break-inside: avoid; }
+.respuesta-meta { font-size: 8.5pt; color: #676879; margin-bottom: 3px; }
+/* Curva S */
+.curva img { width: 100%; max-width: 180mm; height: auto; display: block; margin: 6px auto; border: 1px solid #e6e9ef; }
+`;
 }

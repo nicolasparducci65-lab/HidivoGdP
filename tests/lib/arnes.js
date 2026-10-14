@@ -132,7 +132,13 @@ function crearSb(fixture, opciones = {}){
     from: builder,
     llamadas,
     auth: { getUser: async () => ({ data: { user: { id: opciones.usuarioId || null } } }) },
-    storage: { from(){ return { getPublicUrl: p => ({ data: { publicUrl: 'https://storage.test/' + p } }) }; } }
+    // Storage simulado: getPublicUrl con y sin transformación (misma forma de URL que Supabase)
+    storage: { from(bucket){ return {
+      getPublicUrl: (p, opts) => ({ data: { publicUrl: opts && opts.transform
+        ? 'https://storage.test/storage/v1/render/image/public/' + bucket + '/' + encodeURI(p) + '?width=' + opts.transform.width + '&quality=' + opts.transform.quality
+        : 'https://storage.test/storage/v1/object/public/' + bucket + '/' + encodeURI(p) } }),
+      upload: async () => ({ error: null })
+    }; } }
   };
 }
 

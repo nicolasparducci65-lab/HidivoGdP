@@ -14,7 +14,7 @@ assert(ini > 0 && fin > ini, 'modalExpediente debe estar antes de modalOC');
 const MODAL_HTML = html.slice(ini, fin);
 const FUNCIONES = ['permisoExpediente', 'puedeGenerarExpediente', 'puedeVerExpedientes', 'esDispositivoMovil', 'bloqueExpedienteHTML', 'cargarExpedientesGenerados', 'renderExpedientesLista',
   'reutilizarSeleccionExpediente', 'abrirModalExpediente', 'renderModalExpediente', 'aplicarPresetExpediente', 'expedienteCambioManual',
-  'leerSeleccionExpediente', 'actualizarEstimacionExpediente', 'obtenerLogoDataUri', 'generarExpediente', 'cerrarModal', 'hoyEcuador'];
+  'leerSeleccionExpediente', 'actualizarEstimacionExpediente', 'obtenerLogoDataUri', 'generarExpediente', 'prepararCronogramaExpediente', 'cerrarModal', 'hoyEcuador'];
 // Una sola evaluación: las const de constantes.js solo son visibles dentro del mismo eval.
 const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')].join('\n');
 
@@ -36,6 +36,8 @@ function crearPagina(fixture, { rol = 'admin', ancho = 1366, extra = '' } = {}){
   w.currentUser = { id: 'b0000000-0000-4000-8000-000000000001' };
   w.currentPerfil = { id: 'b0000000-0000-4000-8000-000000000001', nombre: 'Prueba', apellido: 'Admin', rol };
   w.proyectos = fixture.proyectos;
+  // Curva S simulada: el cargador real necesita la pantalla; aquí basta con que no reviente
+  w.cronogramaData = []; w.curvaSModo = 'semanas'; w.cargarCurvaS = async () => {}; w.calcularIndicadoresPuro = () => null; w.generarImagenGraficoCurvaS = async () => null;
   w.eval(extra ? CODIGO + String.fromCharCode(10) + extra : CODIGO);
   w._blobs = blobs; w._ventanas = ventanas;
   return w;
@@ -106,10 +108,10 @@ const esperar = async (fn, n = 50) => { for(let i = 0; i < n; i++){ if(fn()) ret
     const d = w.document;
     assert(d.querySelector('input[name="expPreset"][value="completo"]').checked, 'preset completo marcado');
     assert(d.getElementById('chk-exp-portada').disabled && d.getElementById('chk-exp-portada').checked, 'portada fija');
-    assert(d.getElementById('chk-exp-libro_obra').disabled && d.getElementById('chk-exp-chat').disabled, 'fases 2 y 3 deshabilitadas');
-    assert((d.body.textContent.match(/próximamente/g) || []).length === 10, '10 secciones próximamente');
+    assert(!d.getElementById('chk-exp-libro_obra').disabled && d.getElementById('chk-exp-libro_obra').checked && d.getElementById('chk-exp-chat').disabled, 'fase 2 activa; fase 3 deshabilitada');
+    assert((d.body.textContent.match(/próximamente/g) || []).length === 3, '3 secciones próximamente (fase 3)');
     assert(d.getElementById('cnt-exp-presupuesto').textContent === '(11)' && d.getElementById('cnt-exp-ordenes_cambio').textContent === '(2)' && d.getElementById('cnt-exp-actas').textContent === '(2 de 2)', 'conteos');
-    assert(d.getElementById('expedienteEstimacion').textContent === '8 secciones · ≈ 17 páginas (estimación)', 'estimación: ' + d.getElementById('expedienteEstimacion').textContent);
+    assert(d.getElementById('expedienteEstimacion').textContent === '15 secciones · ≈ 17 páginas (estimación)', 'estimación: ' + d.getElementById('expedienteEstimacion').textContent);
     assert(d.body.textContent.includes('Portada e índice se incluyen siempre') && !d.body.textContent.includes('marca de agua'), 'proyecto liquidado: sin aviso de parcial');
     // preset contratante: sin chat y sin OCs no aprobadas
     w.aplicarPresetExpediente('contratante');
@@ -120,7 +122,7 @@ const esperar = async (fn, n = 50) => { for(let i = 0; i < n; i++){ if(fn()) ret
     d.getElementById('chk-exp-planillas').checked = false; w.expedienteCambioManual();
     sel = w.leerSeleccionExpediente();
     assert(sel.preset === null && !sel.secciones.includes('planillas') && !d.querySelector('input[name="expPreset"]:checked'), 'personalizado');
-    assert(d.getElementById('expedienteEstimacion').textContent.includes('7 secciones · ≈ 10 páginas'), 'estimación sin planillas: ' + d.getElementById('expedienteEstimacion').textContent);
+    assert(d.getElementById('expedienteEstimacion').textContent.includes('14 secciones · ≈ 10 páginas'), 'estimación sin planillas: ' + d.getElementById('expedienteEstimacion').textContent);
     d.getElementById('expSubtitulo').value = 'Cierre'; w.expedienteCambioManual(true);
     assert(w.leerSeleccionExpediente().subtitulo === 'Cierre', 'subtítulo');
   });

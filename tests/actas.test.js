@@ -157,8 +157,9 @@ const MALICIOSO = [
     fx.actas_recepcion[0].contenido_actualizado_en = '2026-10-14T15:05:00Z';
     const datos = await c.expedienteCargarDatos(fx.proyectos[0].id, {}, crearSb(fx));
     const html = c.expedienteGenerarHTML(datos, { secciones: ['actas'], filtros: {} }, { version: 1, generadoEn: '2026-10-14T15:05:00Z', hoy: '2026-10-14' });
-    assert(html.includes('Acta según texto guardado el 14/10/2026, 10:05') && html.includes('Texto negociado') && html.includes('firmas guardadas') && !html.includes('<script'), 'acta provisional: texto guardado saneado');
     const prov = html.slice(html.indexOf('id="acta-provisional"'), html.indexOf('id="acta-definitiva"'));
+    // El documento lleva su propio <script> inline (carga de fotos): el saneado se comprueba en la sección del acta.
+    assert(prov.includes('Acta según texto guardado el 14/10/2026, 10:05') && prov.includes('Texto negociado') && prov.includes('firmas guardadas') && !prov.includes('<script') && !prov.includes('alert('), 'acta provisional: texto guardado saneado');
     assert(!prov.includes('se reúnen las partes') && (prov.match(/class="firmas"/g) || []).length === 1, 'sin plantilla ni firmas duplicadas');
     const def = html.slice(html.indexOf('id="acta-definitiva"'));
     assert(def.includes('se reúnen las partes') && def.includes('Texto generado a partir de los datos registrados') && def.includes('El acta firmada está adjunta'), 'acta definitiva: plantilla con nota');
