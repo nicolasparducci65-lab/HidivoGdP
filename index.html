@@ -11309,7 +11309,7 @@ async function cargarCierreProyecto(puedeEditar){
 
   const filaActa = (tipo, acta, habilitada) => {
     if(acta) return `<div style="display:flex;justify-content:space-between;align-items:center;background:#e6f4ee;border-radius:8px;padding:10px 14px;margin-top:8px;flex-wrap:wrap;gap:6px">
-      <span style="font-size:13px">✅ <b>Acta de recepción ${tipo}</b> — ${acta.fecha}${acta.archivo_url?` · <a href="${acta.archivo_url}" target="_blank">📎 firmada</a>`:''}</span>
+      <span style="font-size:13px">✅ <b>Acta de recepción ${tipo}</b> — ${acta.fecha}${acta.archivo_url?` · <a href="${acta.archivo_url}" target="_blank">📎 firmada</a>`:''}${acta.contenido_html?' · <span title="Texto del acta guardado desde la ventana de impresión" style="color:#676879">✏️ texto guardado</span>':''}</span>
       <button class="btn" style="padding:3px 10px;font-size:12px" onclick="imprimirActa('${acta.id}')">🖨️ PDF</button>
     </div>`;
     if(!habilitada || !puedeEditar) return '';
@@ -11429,7 +11429,15 @@ async function imprimirActa(actaId){
     sb.from('proyectos').select('*').eq('id', currentProyecto).single()
   ]);
   if(!a) return;
-  abrirVentanaDocCierre(`ACTA DE RECEPCIÓN ${a.tipo.toUpperCase()}`, proy, actaCuerpoHTML(a, proy), firmasCierre(proy));
+  // Con texto guardado (contenido_html) la ventana carga ese texto en vez de la
+  // plantilla, siempre saneado; los botones «Guardar acta» y «Restablecer
+  // plantilla» los inyecta abrirVentanaDocCierre.
+  abrirVentanaDocCierre(`ACTA DE RECEPCIÓN ${a.tipo.toUpperCase()}`, proy, actaCuerpoHTML(a, proy), firmasCierre(proy), {
+    actaId: a.id,
+    editableHtml: a.contenido_html ? sanitizarHtmlActa(a.contenido_html) : null,
+    guardadoEn: a.contenido_html ? a.contenido_actualizado_en : null,
+    puedeGuardar: ['admin','fiscalizador'].includes(currentPerfil?.rol) && !window._proyectoCerrado
+  });
 }
 
 async function imprimirLiquidacion(){
@@ -11443,11 +11451,76 @@ async function imprimirLiquidacion(){
 
 // Abre la ventana de impresión de un documento de cierre (acta o liquidación).
 // El HTML lo arma docCierreHTML (expediente.js); este borrador sí es editable.
-function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas){
+// opciones (solo actas): { actaId, editableHtml, guardadoEn, puedeGuardar }. Con
+// actaId se inyecta por DOM, después del write, una barra flotante con «Guardar
+// acta» y, si hay texto guardado, «Restablecer plantilla»; la barra no se imprime
+// y queda fuera del envoltorio #docCierreEditable, que es lo que se guarda.
+function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas, opciones){
   const fechaTexto = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
   const ventana = window.open('', '_blank');
-  ventana.document.write(docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto));
+  ventana.document.write(docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, opciones?.editableHtml ?? null));
   ventana.document.close();
+  if(opciones?.actaId && opciones.puedeGuardar) inyectarBarraActa(ventana, opciones);
+  return ventana;
+}
+
+function inyectarBarraActa(ventana, opciones){
+  const d = ventana.document;
+  const estilo = d.createElement('style');
+  estilo.textContent = '.acta-barra{position:fixed;top:12px;right:12px;display:flex;align-items:center;gap:8px;z-index:20;font-family:Arial,sans-serif}'
+    + '.acta-barra button{border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;background:#0073ea;color:#fff}'
+    + '.acta-barra button.secundario{background:#f5f6f8;color:#323338;border:1px solid #c5c7d4}'
+    + '.acta-barra .aviso{font-size:12px;color:#00854d;background:#e6f4ee;border-radius:8px;padding:6px 10px}'
+    + '@media print{.acta-barra{display:none}}';
+  d.head.appendChild(estilo);
+  const barra = d.createElement('div');
+  barra.className = 'acta-barra';
+  barra.setAttribute('contenteditable', 'false');
+  const aviso = d.createElement('span');
+  aviso.className = 'aviso'; aviso.id = 'actaAviso';
+  if(opciones.guardadoEn){ aviso.textContent = 'Texto guardado el ' + expFmtFechaHora(opciones.guardadoEn); barra.appendChild(aviso); }
+  const btnGuardar = d.createElement('button');
+  btnGuardar.textContent = '💾 Guardar acta';
+  btnGuardar.onclick = () => guardarActaDesdeVentana(opciones.actaId, ventana);
+  barra.appendChild(btnGuardar);
+  if(opciones.editableHtml != null){
+    const btnReset = d.createElement('button');
+    btnReset.className = 'secundario';
+    btnReset.textContent = '↺ Restablecer plantilla';
+    btnReset.onclick = () => restablecerPlantillaActa(opciones.actaId, ventana);
+    barra.appendChild(btnReset);
+  }
+  if(!opciones.guardadoEn) barra.appendChild(aviso);
+  d.body.appendChild(barra);
+}
+
+// Guarda el HTML editado (cuerpo y firmas) del acta abierta en `ventana`.
+async function guardarActaDesdeVentana(actaId, ventana){
+  const cont = ventana?.document?.getElementById('docCierreEditable');
+  if(!cont){ toast('No se encontró el contenido del acta','error'); return; }
+  const limpio = sanitizarHtmlActa(cont.innerHTML);
+  const ahora = new Date().toISOString();
+  const { error } = await sb.from('actas_recepcion').update({ contenido_html: limpio, contenido_actualizado_en: ahora }).eq('id', actaId);
+  const aviso = ventana.document.getElementById('actaAviso');
+  if(error){
+    if(aviso){ aviso.textContent = 'No se pudo guardar: ' + error.message; aviso.style.color = '#e2445c'; aviso.style.background = '#fdecef'; }
+    toast('No se pudo guardar el acta: ' + error.message, 'error');
+    return;
+  }
+  if(aviso){ aviso.textContent = 'Acta guardada ✓ ' + expFmtFechaHora(ahora); aviso.style.color = '#00854d'; aviso.style.background = '#e6f4ee'; }
+  toast('Acta guardada ✓ El expediente usará este texto','success');
+  cargarCierreProyecto(['admin','fiscalizador'].includes(currentPerfil?.rol));
+}
+
+// Borra el texto guardado y vuelve a abrir el acta con la plantilla.
+async function restablecerPlantillaActa(actaId, ventana){
+  if(!confirm('Se borrará el texto guardado del acta y se volverá a la plantilla con los datos registrados.\n\n¿Continuar?')) return;
+  const { error } = await sb.from('actas_recepcion').update({ contenido_html: null, contenido_actualizado_en: null }).eq('id', actaId);
+  if(error){ toast('No se pudo restablecer: ' + error.message, 'error'); return; }
+  toast('Plantilla restablecida ✓','success');
+  try{ ventana?.close(); }catch(_){ /* la ventana ya no existe */ }
+  cargarCierreProyecto(['admin','fiscalizador'].includes(currentPerfil?.rol));
+  imprimirActa(actaId);
 }
 
 // ── EXPEDIENTE DE OBRA (Cierre de proyecto): modal, lista y generación ──

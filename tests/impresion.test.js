@@ -8,6 +8,12 @@
 //
 // Fixtures: sintetico.json (se commitea) y, si existe, parqueadero.real.json
 // (datos reales, ignorado por git; su snapshot también).
+//
+// Historial de cambios deliberados en los snapshots:
+//   · c9aaa73: la URL del logo pasó de cdn.gamma.app a vendor/logo-hidivo.png.
+//   · Fase 2, commit 1: acta y liquidación envuelven cuerpo y firmas en
+//     <div id="docCierreEditable"> (lo que «Guardar acta» persiste); es la única
+//     diferencia con los snapshots anteriores. Las OC no cambian.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -42,7 +48,7 @@ function comparar(nombreSnap, html){
 
 async function correr(etiqueta, fixture){
   const proyectoId = fixture.proyectos[0].id;
-  const ctx = () => crearContexto({ codigo: codigoBase, globals: { sb: crearSb(fixture), currentProyecto: proyectoId } });
+  const ctx = () => crearContexto({ codigo: codigoBase, globals: { sb: crearSb(fixture), currentProyecto: proyectoId, currentPerfil: null } });
 
   for(const oc of fixture.ordenes_cambio){
     await prueba(`${etiqueta}: imprimirOC OC-${oc.numero} (${oc.estado})`, async () => {

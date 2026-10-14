@@ -24,6 +24,32 @@ function fmtUSD(v){
 function expEsc(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+// Sanitizador mínimo del HTML editado de un acta (se aplica al guardar y al
+// renderizar). Sin DOM, por expresiones regulares: quita script, iframe, object,
+// embed, style, link, meta y base (con su contenido), los atributos on*, las URLs
+// javascript:/vbscript:/data:text/html en href/src/action/formaction/xlink:href,
+// srcdoc y los style= con expression() o javascript:. El resto del marcado
+// (p, b, div, table, br, img con URL normal) se conserva tal cual.
+function sanitizarHtmlActa(html){
+  let s = String(html ?? '');
+  s = s.replace(/<\s*(script|iframe|object|embed|style|link|meta|base)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+  s = s.replace(/<\s*(script|iframe|object|embed|style|link|meta|base)\b[^>]*\/?>/gi, '');
+  s = s.replace(/<\s*\/\s*(script|iframe|object|embed|style|link|meta|base)\s*>/gi, '');
+  s = s.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  s = s.replace(/\s+(href|src|action|formaction|xlink:href|srcdoc)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, attr, val) => {
+    // Se decodifican entidades numéricas y &tab;/&newline;/&colon; antes de mirar el
+    // esquema: el navegador las decodifica en el atributo (j&#97;vascript: es javascript:).
+    const v = val.replace(/^["']|["']$/g, '')
+      .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/&#(\d+);?/g, (_, d) => String.fromCharCode(Number(d)))
+      .replace(/&(tab|newline);/gi, '').replace(/&colon;/gi, ':')
+      .replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+    if(attr.toLowerCase() === 'srcdoc' || /^(javascript|vbscript|data:text\/html)/.test(v)) return '';
+    return m;
+  });
+  s = s.replace(/\s+style\s*=\s*("[^"]*"|'[^']*')/gi, (m, val) => /expression\s*\(|javascript:|url\s*\(\s*["']?\s*javascript/i.test(val) ? '' : m);
+  return s;
+}
 
 // ── 1b) Cálculos canónicos compartidos (antes en index.html) ─────────────────
 // La app y el expediente usan exactamente las mismas funciones; se movieron
@@ -232,8 +258,13 @@ function liquidacionCuerpoHTML(liq, proy){
 // firmas: [[rol, nombre], ...]; fechaTexto: fecha de generación formateada.
 // Lleva <body contenteditable>: es el borrador editable de la impresión suelta.
 // El expediente NO lo usa; incrusta solo los cuerpos (actaCuerpoHTML, etc.).
-function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto){
+// Cuerpo y firmas van dentro de <div id="docCierreEditable">: es lo que «Guardar
+// acta» persiste. Si llega editableHtml (texto guardado de un acta, ya saneado),
+// sustituye a cuerpo y firmas dentro de ese mismo envoltorio.
+function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, editableHtml){
   const e = expEsc;
+  const editable = editableHtml != null ? editableHtml : `${cuerpoHtml}
+    <div class="firmas">${firmas.map(fi=>`<div class="fb"><div class="lf"></div><div style="font-size:12px;font-weight:700">${e(fi[0])}</div><div style="font-size:11px;color:#676879">${e(fi[1])}</div></div>`).join('')}</div>`;
   return `<html><head><title>${e(titulo)} — ${e(proy?.nombre||'')}</title>
     <style>body{font-family:Arial,sans-serif;color:#323338;padding:28px;max-width:800px;margin:0 auto}
     .enc{display:flex;align-items:center;gap:16px;border-bottom:3px solid #0073ea;padding-bottom:12px;margin-bottom:18px}
@@ -246,8 +277,7 @@ function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto){
     <div class="enc"><img src="${LOGO_URL}"/>
       <div><h1>${e(titulo)}</h1><div style="font-size:11px;color:#676879">${e(proy?.nombre||'')} — ${fechaTexto}</div></div></div>
     <div class="nota-edicion">✏️ Este borrador es editable: haz clic sobre cualquier texto para ajustarlo antes de imprimir (Ctrl+P). Esta nota no sale en el PDF.</div>
-    ${cuerpoHtml}
-    <div class="firmas">${firmas.map(fi=>`<div class="fb"><div class="lf"></div><div style="font-size:12px;font-weight:700">${e(fi[0])}</div><div style="font-size:11px;color:#676879">${e(fi[1])}</div></div>`).join('')}</div>
+    <div id="docCierreEditable">${editable}</div>
     </body></html>`;
 }
 
@@ -722,7 +752,10 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       const a = (datos.actas || []).find(x => x.tipo === tipo);
       return `<section class="sub doc-cierre" id="acta-${tipo}">
         ${sub('actas', k + 1, `Acta de recepción ${tipo}`)}
-        ${a ? `<div class="doc-cierre-cuerpo">${actaCuerpoHTML(a, proy)}</div>${bloqueFirmas}${a.archivo_url ? '<p class="nota">El acta firmada está adjunta en la plataforma.</p>' : ''}<p class="nota">Texto generado a partir de los datos registrados (fecha, lugar, asistentes y observaciones).</p>` : vacio('No emitida a la fecha de generación')}
+        ${a ? (a.contenido_html
+          ? `<p class="nota"><b>Acta según texto guardado el ${expFmtFechaHora(a.contenido_actualizado_en)}</b> (editado en la ventana de impresión; incluye las firmas tal como se guardaron).</p><div class="doc-cierre-cuerpo acta-guardada">${sanitizarHtmlActa(a.contenido_html)}</div>`
+          : `<div class="doc-cierre-cuerpo">${actaCuerpoHTML(a, proy)}</div>${bloqueFirmas}<p class="nota">Texto generado a partir de los datos registrados (fecha, lugar, asistentes y observaciones).</p>`)
+          + (a.archivo_url ? '<p class="nota">El acta firmada está adjunta en la plataforma.</p>' : '') : vacio('No emitida a la fecha de generación')}
       </section>`;
     });
     return `<section class="sec" id="sec-actas">${titulo('actas', 'Actas de recepción')}</section>${partes.join('')}`;
