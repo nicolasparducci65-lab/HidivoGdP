@@ -328,10 +328,13 @@ function expClaveLegible(k){
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 // Nombre de archivo y título de la pestaña: Expediente_{slug}_v{N}_{fecha}.
-// slug: sin tildes, espacios y símbolos a guiones, máximo 40 caracteres.
+// slug: sin tildes, espacios y símbolos a guiones, máximo 40 caracteres cortados en palabra entera.
 function expedienteNombreArchivo(proyecto, version, fechaISO){
-  const slug = String(proyecto?.nombre || 'proyecto').normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '') || 'proyecto';
+  let slug = String(proyecto?.nombre || 'proyecto').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  // Máximo 40 caracteres, cortando en límite de palabra (último guion) y no a mitad de una.
+  if(slug.length > 40){ const corte = slug.lastIndexOf('-', 40); slug = (corte > 0 ? slug.slice(0, corte) : slug.slice(0, 40)).replace(/-+$/g, ''); }
+  slug = slug || 'proyecto';
   return `Expediente_${slug}_v${version || 1}_${String(fechaISO || '').slice(0, 10)}`;
 }
 

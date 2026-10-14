@@ -208,8 +208,10 @@ const tieneSec = (html, clave) => html.includes(`id="sec-${clave}"`);
 
   await prueba('nombre de archivo: slug sin tildes ni símbolos, máximo 40 caracteres', () => {
     const c = ctx();
-    const n = c.expedienteNombreArchivo({ nombre: 'VÍA DE ACCESO A SONGA (Alternativa Base Granular Estabilizada con Cemento)' }, 2, '2026-10-14T15:00:00Z');
-    assert(n === 'Expediente_VIA-DE-ACCESO-A-SONGA-Alternativa-Base-G_v2_2026-10-14', n);
+    const n = c.expedienteNombreArchivo({ nombre: 'VÍA DE ACCESO A LA LOMA (Alternativa Base Granular Estabilizada con Cal)' }, 2, '2026-10-14T15:00:00Z');
+    assert(n === 'Expediente_VIA-DE-ACCESO-A-LA-LOMA-Alternativa-Base_v2_2026-10-14', n);
+    assert(c.expedienteNombreArchivo({ nombre: 'Construcción de parqueadero adoquinado tipo barza al lado de planta' }, 1, '2026-10-14') === 'Expediente_Construccion-de-parqueadero-adoquinado_v1_2026-10-14', 'corta en palabra entera');
+    assert(c.expedienteNombreArchivo({ nombre: 'Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ' }, 1, '2026-10-14') === 'Expediente_Abcdefghijklmnopqrstuvwxyz0123456789ABCD_v1_2026-10-14', 'sin guiones: corte duro a 40');
     assert(c.expedienteNombreArchivo({ nombre: 'Puente peatonal Las Palmas' }, 3, '2026-10-14') === 'Expediente_Puente-peatonal-Las-Palmas_v3_2026-10-14', 'simple');
     assert(c.expedienteNombreArchivo({ nombre: '¿?' }, 1, '2026-10-14') === 'Expediente_proyecto_v1_2026-10-14', 'sin caracteres válidos');
   });
