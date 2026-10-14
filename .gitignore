@@ -1,0 +1,5 @@
+# Arnés de pruebas: dependencias y datos reales (el repo es público)
+tests/node_modules/
+tests/fixtures/*.real.json
+tests/snapshots/*.real.html
+tests/.tmp/

@@ -1,0 +1,11 @@
+{
+  "name": "hidivogdp-tests",
+  "private": true,
+  "description": "Arnés de pruebas de HidivoGdP: ejecuta funciones reales de index.html, constantes.js y expediente.js en Node (vm + jsdom) contra fixtures.",
+  "scripts": {
+    "test": "node check-index.js && node impresion.test.js && node expediente.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

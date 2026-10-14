@@ -1,0 +1,122 @@
+{
+ "_nota": "Proyecto INVENTADO para pruebas. Ningún dato corresponde a un contrato real. Cubre: rubros contractuales y de OC, OC aprobada y en borrador, 2 planillas con reajuste/amortización/retención/multa, 2 garantías (una vencida), 3 términos de reajuste que suman 1,000, actas provisional y definitiva, liquidación.",
+ "proyectos": [
+  {
+   "id": "a0000000-0000-4000-8000-000000000001",
+   "empresa_id": null,
+   "nombre": "Puente peatonal Las Palmas",
+   "descripcion": "Construcción de un puente peatonal de 24 m sobre el estero Las Palmas, con rampas de acceso y luminarias.",
+   "contratante": "GAD Municipal de Río Verde (ficticio)",
+   "contratista": "Constructora Ejemplo Cía. Ltda. (ficticia)",
+   "fiscalizador": "HIDIVO S.A.S.",
+   "monto_contrato": 124218.00,
+   "fecha_inicio": "2026-02-02",
+   "fecha_fin_planificada": "2026-06-30",
+   "fecha_fin_real": "2026-07-10",
+   "estado": "finalizado",
+   "ubicacion": "Río Verde, Esmeraldas",
+   "latitud": null,
+   "longitud": null,
+   "created_by": "b0000000-0000-4000-8000-000000000001",
+   "created_at": "2026-01-10T14:00:00+00:00",
+   "updated_at": "2026-08-20T16:00:00+00:00",
+   "modulos": {"curvaS": true, "planillas": true},
+   "estado_cierre": "liquidado",
+   "contrato_datos": {
+    "anticipo": {"porcentaje": 30, "notas": "30% a la firma del contrato contra entrega de la garantía de buen uso."},
+    "extraido_at": "2026-01-16T10:00:00.000Z",
+    "fiscalizador": "HIDIVO",
+    "datos_adicionales": {
+     "plazo": "150 días calendario desde la entrega del anticipo",
+     "multas": "1 por mil del monto del contrato por cada día de retraso, hasta el 5 %",
+     "clausulas": "Precios unitarios con reajuste por fórmula polinómica. Recepción definitiva a los 6 meses de la provisional."
+    },
+    "datos_no_mapeados": {
+     "fecha_suscripcion_contrato": "2026-01-15",
+     "representante_legal_contratante": "Alcalde (ficticio)",
+     "representante_legal_contratista": "Gerente (ficticio)",
+     "lista_ejemplo": ["primer punto", "segundo punto"]
+    }
+   }
+  }
+ ],
+ "contrato_anticipo": [
+  {"id": "c0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "monto": 37265.40, "fecha_entrega": "2026-01-25", "modo_amortizacion": "proporcional", "retencion_pct": 5, "notas": null, "created_at": "2026-01-20T12:00:00+00:00", "iva_pct": 15}
+ ],
+ "garantias": [
+  {"id": "d0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "fiel_cumplimiento", "aseguradora": "Seguros Ejemplo S.A.", "numero": "FC-2026-0001", "monto": 6210.90, "vigencia_desde": "2026-01-20", "vigencia_hasta": "2027-01-20", "archivo_url": null, "estado": "vigente", "notas": null, "created_at": "2026-01-20T12:00:00+00:00"},
+  {"id": "d0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "buen_uso_anticipo", "aseguradora": "Seguros Ejemplo S.A.", "numero": "BUA-2026-0001", "monto": 37265.40, "vigencia_desde": "2026-01-20", "vigencia_hasta": "2026-08-20", "archivo_url": null, "estado": "vigente", "notas": "Se devuelve al amortizar el anticipo", "created_at": "2026-01-20T12:00:00+00:00"}
+ ],
+ "reajuste_terminos": [
+  {"id": "e0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "A", "descripcion": "Mano de obra", "coeficiente": 0.40, "indice_base": 1.000, "orden": 1, "created_at": "2026-01-20T12:00:00+00:00"},
+  {"id": "e0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "B", "descripcion": "Cemento y acero", "coeficiente": 0.35, "indice_base": 1.000, "orden": 2, "created_at": "2026-01-20T12:00:00+00:00"},
+  {"id": "e0000000-0000-4000-8000-000000000003", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "simbolo": "C", "descripcion": "Otros componentes", "coeficiente": 0.25, "indice_base": 1.000, "orden": 3, "created_at": "2026-01-20T12:00:00+00:00"}
+ ],
+ "rubros": [
+  {"id": "f0000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "1", "descripcion": "Replanteo y nivelación", "unidad": "m2", "cantidad_contrato": 320, "precio_unitario": 1.25, "monto_contrato": 400.00, "cantidad_ejecutada": 320, "total_produccion": 400.00, "estado": "terminado", "orden": 1, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 320, "precio_contractual": 1.25},
+  {"id": "f0000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "2", "descripcion": "Excavación manual", "unidad": "m3", "cantidad_contrato": 180, "precio_unitario": 12.50, "monto_contrato": 2250.00, "cantidad_ejecutada": 180, "total_produccion": 2250.00, "estado": "terminado", "orden": 2, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 180, "precio_contractual": 12.50},
+  {"id": "f0000000-0000-4000-8000-000000000003", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "3", "descripcion": "Hormigón f'c=240 kg/cm2 en pilas", "unidad": "m3", "cantidad_contrato": 60, "precio_unitario": 210.00, "monto_contrato": 12600.00, "cantidad_ejecutada": 60, "total_produccion": 12600.00, "estado": "terminado", "orden": 3, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 50, "precio_contractual": 210.00},
+  {"id": "f0000000-0000-4000-8000-000000000004", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "4", "descripcion": "Acero de refuerzo fy=4200 kg/cm2", "unidad": "kg", "cantidad_contrato": 9500, "precio_unitario": 2.10, "monto_contrato": 19950.00, "cantidad_ejecutada": 9500, "total_produccion": 19950.00, "estado": "terminado", "orden": 4, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 9500, "precio_contractual": 2.10},
+  {"id": "f0000000-0000-4000-8000-000000000005", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "5", "descripcion": "Estructura metálica A-36 <incluye montaje>", "unidad": "kg", "cantidad_contrato": 12000, "precio_unitario": 4.75, "monto_contrato": 57000.00, "cantidad_ejecutada": 12000, "total_produccion": 57000.00, "estado": "terminado", "orden": 5, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 12400, "precio_contractual": 4.75},
+  {"id": "f0000000-0000-4000-8000-000000000006", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "6", "descripcion": "Tablero de hormigón e=15 cm", "unidad": "m2", "cantidad_contrato": 120, "precio_unitario": 95.00, "monto_contrato": 11400.00, "cantidad_ejecutada": 120, "total_produccion": 11400.00, "estado": "terminado", "orden": 6, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 120, "precio_contractual": 95.00},
+  {"id": "f0000000-0000-4000-8000-000000000007", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "7", "descripcion": "Rampas de acceso", "unidad": "m2", "cantidad_contrato": 90, "precio_unitario": 68.00, "monto_contrato": 6120.00, "cantidad_ejecutada": 90, "total_produccion": 6120.00, "estado": "terminado", "orden": 7, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 90, "precio_contractual": 68.00},
+  {"id": "f0000000-0000-4000-8000-000000000008", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "8", "descripcion": "Barandas metálicas h=1,10 m", "unidad": "m", "cantidad_contrato": 96, "precio_unitario": 72.50, "monto_contrato": 6960.00, "cantidad_ejecutada": 96, "total_produccion": 6960.00, "estado": "terminado", "orden": 8, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 96, "precio_contractual": 72.50},
+  {"id": "f0000000-0000-4000-8000-000000000009", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "9", "descripcion": "Luminarias LED 60 W", "unidad": "u", "cantidad_contrato": 12, "precio_unitario": 310.00, "monto_contrato": 3720.00, "cantidad_ejecutada": 12, "total_produccion": 3720.00, "estado": "terminado", "orden": 9, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 12, "precio_contractual": 310.00},
+  {"id": "f0000000-0000-4000-8000-000000000010", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "10", "descripcion": "Pintura anticorrosiva", "unidad": "m2", "cantidad_contrato": 410, "precio_unitario": 9.80, "monto_contrato": 4018.00, "cantidad_ejecutada": 410, "total_produccion": 4018.00, "estado": "terminado", "orden": 10, "es_orden_cambio": false, "orden_cambio_codigo": null, "orden_cambio_id": null, "cantidad_contractual": 410, "precio_contractual": 9.80},
+  {"id": "f0000000-0000-4000-8000-000000000011", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "codigo": "OC-01-01", "descripcion": "Pasamanos de acero inoxidable", "unidad": "m", "cantidad_contrato": 48, "precio_unitario": 85.00, "monto_contrato": 4080.00, "cantidad_ejecutada": 48, "total_produccion": 4080.00, "estado": "terminado", "orden": 11, "es_orden_cambio": true, "orden_cambio_codigo": "OC-01", "orden_cambio_id": "10000000-0000-4000-8000-000000000001", "cantidad_contractual": null, "precio_contractual": null}
+ ],
+ "ordenes_cambio": [
+  {"id": "10000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 1, "titulo": "Ajuste de pilas y pasamanos", "justificacion": "El estudio de suelos definitivo exige 10 m3 adicionales de hormigón en pilas.\nSe reduce acero estructural y se añade pasamanos de acero inoxidable por pedido del contratante.", "estado": "aprobada", "oficio_referencia": "OF-GAD-2026-118", "fecha_aprobacion": "2026-04-10", "archivo_url": null, "monto_total": 4280.00, "motivo_rechazo": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "aprobado_por": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-04-02T15:00:00+00:00"},
+  {"id": "10000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 2, "titulo": "Cambio de luminarias", "justificacion": "Dos luminarias adicionales en los accesos.", "estado": "borrador", "oficio_referencia": null, "fecha_aprobacion": null, "archivo_url": null, "monto_total": 620.00, "motivo_rechazo": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "aprobado_por": null, "created_at": "2026-06-20T15:00:00+00:00"}
+ ],
+ "orden_cambio_items": [
+  {"id": "20000000-0000-4000-8000-000000000001", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "nuevo", "rubro_id": null, "codigo": "OC-01-01", "descripcion": "Pasamanos de acero inoxidable", "unidad": "m", "precio_unitario": 85.00, "cantidad": 48, "monto": 4080.00, "created_at": "2026-04-02T15:00:01+00:00"},
+  {"id": "20000000-0000-4000-8000-000000000002", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000003", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 210.00, "cantidad": 10, "monto": 2100.00, "created_at": "2026-04-02T15:00:02+00:00"},
+  {"id": "20000000-0000-4000-8000-000000000003", "orden_id": "10000000-0000-4000-8000-000000000001", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000005", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 4.75, "cantidad": -400, "monto": -1900.00, "created_at": "2026-04-02T15:00:03+00:00"},
+  {"id": "20000000-0000-4000-8000-000000000004", "orden_id": "10000000-0000-4000-8000-000000000002", "tipo": "modificacion", "rubro_id": "f0000000-0000-4000-8000-000000000009", "codigo": null, "descripcion": null, "unidad": null, "precio_unitario": 310.00, "cantidad": 2, "monto": 620.00, "created_at": "2026-06-20T15:00:01+00:00"}
+ ],
+ "planillas_pago": [
+  {"id": "30000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 1, "fecha_inicio": "2026-02-02", "fecha_fin": "2026-03-31", "estado": "aprobada", "total_monto": 48030.00, "observaciones": "Primera planilla de avance.", "creado_por": "b0000000-0000-4000-8000-000000000003", "revisado_por": null, "aprobado_por": "b0000000-0000-4000-8000-000000000002", "fecha_aprobacion": "2026-04-08", "fecha_pago": null, "created_at": "2026-04-01T12:00:00+00:00", "updated_at": "2026-04-08T12:00:00+00:00", "amortizacion_anticipo": 14409.00, "retencion_garantia": 2401.50, "total_liquido": 32444.27, "reajuste_indices": {"A": 1.02, "B": 1.05, "C": 1.00}, "reajuste_factor": 1.0255, "reajuste_monto": 1224.77, "multa_monto": 0, "multa_concepto": null},
+  {"id": "30000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "numero": 2, "fecha_inicio": "2026-04-01", "fecha_fin": "2026-07-10", "estado": "pagada", "total_monto": 80468.00, "observaciones": null, "creado_por": "b0000000-0000-4000-8000-000000000003", "revisado_por": null, "aprobado_por": "b0000000-0000-4000-8000-000000000002", "fecha_aprobacion": "2026-07-20", "fecha_pago": "2026-08-05", "created_at": "2026-07-12T12:00:00+00:00", "updated_at": "2026-08-05T12:00:00+00:00", "amortizacion_anticipo": 22856.40, "retencion_garantia": 4023.40, "total_liquido": 55944.81, "reajuste_indices": {"A": 1.03, "B": 1.06, "C": 1.01}, "reajuste_factor": 1.0355, "reajuste_monto": 2856.61, "multa_monto": 500.00, "multa_concepto": "Retraso de 5 días en la entrega final"}
+ ],
+ "planilla_rubros": [
+  {"id": "40000000-0000-4000-8000-000000000001", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000001", "cantidad_anterior": 0, "cantidad_periodo": 320, "cantidad_acumulada": 320, "precio_unitario": 1.25, "monto_periodo": 400.00},
+  {"id": "40000000-0000-4000-8000-000000000002", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000002", "cantidad_anterior": 0, "cantidad_periodo": 180, "cantidad_acumulada": 180, "precio_unitario": 12.50, "monto_periodo": 2250.00},
+  {"id": "40000000-0000-4000-8000-000000000003", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000003", "cantidad_anterior": 0, "cantidad_periodo": 8, "cantidad_acumulada": 8, "precio_unitario": 210.00, "monto_periodo": 1680.00},
+  {"id": "40000000-0000-4000-8000-000000000004", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000004", "cantidad_anterior": 0, "cantidad_periodo": 9500, "cantidad_acumulada": 9500, "precio_unitario": 2.10, "monto_periodo": 19950.00},
+  {"id": "40000000-0000-4000-8000-000000000005", "planilla_id": "30000000-0000-4000-8000-000000000001", "rubro_id": "f0000000-0000-4000-8000-000000000005", "cantidad_anterior": 0, "cantidad_periodo": 5000, "cantidad_acumulada": 5000, "precio_unitario": 4.75, "monto_periodo": 23750.00},
+  {"id": "40000000-0000-4000-8000-000000000006", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000003", "cantidad_anterior": 8, "cantidad_periodo": 52, "cantidad_acumulada": 60, "precio_unitario": 210.00, "monto_periodo": 10920.00},
+  {"id": "40000000-0000-4000-8000-000000000007", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000005", "cantidad_anterior": 5000, "cantidad_periodo": 7000, "cantidad_acumulada": 12000, "precio_unitario": 4.75, "monto_periodo": 33250.00},
+  {"id": "40000000-0000-4000-8000-000000000008", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000006", "cantidad_anterior": 0, "cantidad_periodo": 120, "cantidad_acumulada": 120, "precio_unitario": 95.00, "monto_periodo": 11400.00},
+  {"id": "40000000-0000-4000-8000-000000000009", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000007", "cantidad_anterior": 0, "cantidad_periodo": 90, "cantidad_acumulada": 90, "precio_unitario": 68.00, "monto_periodo": 6120.00},
+  {"id": "40000000-0000-4000-8000-000000000010", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000008", "cantidad_anterior": 0, "cantidad_periodo": 96, "cantidad_acumulada": 96, "precio_unitario": 72.50, "monto_periodo": 6960.00},
+  {"id": "40000000-0000-4000-8000-000000000011", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000009", "cantidad_anterior": 0, "cantidad_periodo": 12, "cantidad_acumulada": 12, "precio_unitario": 310.00, "monto_periodo": 3720.00},
+  {"id": "40000000-0000-4000-8000-000000000012", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000010", "cantidad_anterior": 0, "cantidad_periodo": 410, "cantidad_acumulada": 410, "precio_unitario": 9.80, "monto_periodo": 4018.00},
+  {"id": "40000000-0000-4000-8000-000000000013", "planilla_id": "30000000-0000-4000-8000-000000000002", "rubro_id": "f0000000-0000-4000-8000-000000000011", "cantidad_anterior": 0, "cantidad_periodo": 48, "cantidad_acumulada": 48, "precio_unitario": 85.00, "monto_periodo": 4080.00}
+ ],
+ "planilla_historial": [
+  {"id": "50000000-0000-4000-8000-000000000001", "planilla_id": "30000000-0000-4000-8000-000000000001", "accion": "Planilla enviada a revisión", "comentario": null, "autor_id": "b0000000-0000-4000-8000-000000000003", "created_at": "2026-04-01T12:05:00+00:00"},
+  {"id": "50000000-0000-4000-8000-000000000002", "planilla_id": "30000000-0000-4000-8000-000000000001", "accion": "Planilla aprobada por fiscalizador", "comentario": "Cantidades verificadas en obra.", "autor_id": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-04-08T12:00:00+00:00"},
+  {"id": "50000000-0000-4000-8000-000000000003", "planilla_id": "30000000-0000-4000-8000-000000000002", "accion": "Planilla aprobada por fiscalizador", "comentario": null, "autor_id": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-07-20T12:00:00+00:00"},
+  {"id": "50000000-0000-4000-8000-000000000004", "planilla_id": "30000000-0000-4000-8000-000000000002", "accion": "Planilla marcada como pagada", "comentario": "Transferencia 2026-08-05", "autor_id": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-08-05T12:00:00+00:00"}
+ ],
+ "actas_recepcion": [
+  {"id": "60000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "provisional", "fecha": "2026-07-15", "lugar": "Río Verde", "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista\nArq. Modelo — Contratante", "observaciones": "Retoque de pintura en barandas del tramo norte.", "archivo_url": null, "creado_por": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-07-15T20:00:00+00:00"},
+  {"id": "60000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "tipo": "definitiva", "fecha": "2026-08-18", "lugar": "Río Verde", "asistentes": "Ing. Prueba Fiscalizador — Fiscalización\nSr. Ejemplo — Contratista", "observaciones": null, "archivo_url": "https://storage.test/actas/definitiva.pdf", "creado_por": "b0000000-0000-4000-8000-000000000002", "created_at": "2026-08-18T20:00:00+00:00"}
+ ],
+ "liquidaciones": [
+  {"id": "70000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "fecha": "2026-08-20",
+   "datos": {"monto_contrato_original": 124218.00, "monto_ocs_aprobadas": 4280.00, "monto_contrato_vigente": 128498.00, "total_ejecutado": 128498.00, "total_planillado": 128498.00, "total_reajustes": 4081.38, "anticipo_entregado": 37265.40, "anticipo_amortizado": 37265.40, "retenciones_acumuladas": 6424.90, "multas": 500.00, "liquido_pagado": 88389.08, "anticipo_por_amortizar": 0, "saldo_final": 6424.90},
+   "observaciones": null, "archivo_url": null, "creado_por": "b0000000-0000-4000-8000-000000000001", "created_at": "2026-08-20T16:00:00+00:00"}
+ ],
+ "proyecto_miembros": [
+  {"id": "80000000-0000-4000-8000-000000000001", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "perfil_id": null, "rol": "fiscalizador", "usuario_id": "b0000000-0000-4000-8000-000000000002"},
+  {"id": "80000000-0000-4000-8000-000000000002", "proyecto_id": "a0000000-0000-4000-8000-000000000001", "perfil_id": null, "rol": "residente", "usuario_id": "b0000000-0000-4000-8000-000000000003"}
+ ],
+ "perfiles": [
+  {"id": "b0000000-0000-4000-8000-000000000001", "nombre": "Prueba", "apellido": "Admin", "rol": "admin"},
+  {"id": "b0000000-0000-4000-8000-000000000002", "nombre": "Prueba", "apellido": "Fiscalizador", "rol": "fiscalizador"},
+  {"id": "b0000000-0000-4000-8000-000000000003", "nombre": "Prueba", "apellido": "Residente", "rol": "residente"}
+ ],
+ "expedientes_generados": []
+}

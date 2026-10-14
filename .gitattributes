@@ -1,0 +1,2 @@
+# Los snapshots de impresión se comparan byte a byte: git no debe tocar sus finales de línea
+tests/snapshots/*.html -text
