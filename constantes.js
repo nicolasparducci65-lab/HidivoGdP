@@ -1,7 +1,13 @@
 // Constantes de datos de HIDIVO - extraidas de index.html sin cambios de contenido.
 // Este archivo debe cargarse ANTES del script principal de index.html.
 
-const LOGO_URL = 'https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png';
+// Logo HIDIVO vendorizado (vendor/logo-hidivo.png): la app ya no depende de cdn.gamma.app.
+// URL absoluta porque los documentos de impresión se abren en una ventana about:blank,
+// donde una ruta relativa no resuelve. Fuera del navegador (pruebas, Puppeteer) apunta
+// al dominio público.
+const LOGO_URL = (typeof document !== 'undefined' && document.baseURI)
+  ? new URL('vendor/logo-hidivo.png', document.baseURI).href
+  : 'https://hidivo.com/vendor/logo-hidivo.png';
 const PLANTILLA_RUBROS_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co/storage/v1/object/public/hidivo-archivos/plantillas/plantilla_rubros_hidivo.xlsx';
 
 const ESTADOS_OC = {
@@ -302,3 +308,39 @@ const PERMISOS = {
   ]
 };
 
+// ── EXPEDIENTE DE OBRA ──
+// Catálogo de secciones del expediente, en el orden del documento. fase: 1 =
+// disponible; 2 y 3 = el modal las muestra deshabilitadas como «próximamente»
+// para que el catálogo ya refleje la estructura final. fija: siempre incluida.
+const EXPEDIENTE_SECCIONES = [
+  { clave:'portada',             etiqueta:'Portada y ficha del proyecto',                      fase:1, orden:1,  fija:true },
+  { clave:'indice',              etiqueta:'Índice',                                             fase:1, orden:2,  fija:true },
+  { clave:'contrato',            etiqueta:'Contrato (datos, anticipo, garantías, fórmula polinómica)', fase:1, orden:3 },
+  { clave:'presupuesto',         etiqueta:'Presupuesto (rubros)',                               fase:1, orden:4 },
+  { clave:'ordenes_cambio',      etiqueta:'Órdenes de cambio',                                  fase:1, orden:5 },
+  { clave:'cronograma',          etiqueta:'Cronograma, líneas base y Curva S',                  fase:2, orden:6 },
+  { clave:'libro_obra',          etiqueta:'Libro de obra',                                      fase:2, orden:7 },
+  { clave:'planillas',           etiqueta:'Planillas de pago',                                  fase:1, orden:8 },
+  { clave:'ensayos',             etiqueta:'Ensayos de laboratorio',                             fase:2, orden:9 },
+  { clave:'formatos_calidad',    etiqueta:'Formatos de calidad',                                fase:2, orden:10 },
+  { clave:'observaciones',       etiqueta:'Observaciones de fiscalización',                     fase:2, orden:11 },
+  { clave:'sst',                 etiqueta:'Seguridad y salud en el trabajo',                    fase:2, orden:12 },
+  { clave:'subcontratistas',     etiqueta:'Subcontratistas',                                    fase:2, orden:13 },
+  { clave:'comunicados',         etiqueta:'Comunicados',                                        fase:3, orden:14 },
+  { clave:'chat',                etiqueta:'Chat del proyecto (anexo, solo canales)',            fase:3, orden:15 },
+  { clave:'archivos_planos_360', etiqueta:'Índice de archivos, planos y recorridos 360',        fase:3, orden:16 },
+  { clave:'actas',               etiqueta:'Actas de recepción',                                 fase:1, orden:17 },
+  { clave:'liquidacion',         etiqueta:'Liquidación',                                        fase:1, orden:18 }
+];
+
+// Presets por audiencia: secciones marcadas y filtros por defecto. Que un preset
+// liste secciones de fases futuras no importa: el generador ignora las que no
+// estén implementadas. El usuario puede ajustar a mano después de elegir uno.
+const EXPEDIENTE_PRESETS = {
+  completo:    { etiqueta:'Completo (interno)',      secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave),
+                 filtros:{ incluirOCsNoAprobadas:true,  detallePlanillas:true } },
+  contratante: { etiqueta:'Entrega al contratante', secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave).filter(c=>c!=='chat'),
+                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true } },
+  contratista: { etiqueta:'Entrega al contratista', secciones: EXPEDIENTE_SECCIONES.map(s=>s.clave).filter(c=>c!=='chat'),
+                 filtros:{ incluirOCsNoAprobadas:false, detallePlanillas:true } }
+};

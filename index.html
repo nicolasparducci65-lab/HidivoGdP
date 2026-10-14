@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="HIDIVO"/>
-<link rel="apple-touch-icon" href="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png"/>
+<link rel="apple-touch-icon" href="vendor/logo-hidivo.png"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="application-name" content="HIDIVO"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -24,7 +24,7 @@
 <div id="authScreen" class="auth-screen">
   <div class="auth-card">
     <div class="auth-logo">
-      <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HIDIVO" onerror="this.style.display='none'"/>
+      <img src="vendor/logo-hidivo.png" alt="HIDIVO" onerror="this.style.display='none'"/>
     </div>
     <div class="auth-title">Bienvenido a HIDIVO</div>
     <div class="auth-sub">Plataforma de gestión de obras civiles</div>
@@ -113,7 +113,7 @@
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sidebar-logo">
-      <img src="https://cdn.gamma.app/7qw1kgi7655gw0b/741d4537f4c946fe9e75c05b6b91378e/original/logo-Hidivo.png" alt="HIDIVO" onerror="this.style.display='none'" style="height:28px;filter:brightness(0) invert(1);opacity:.9"/>
+      <img src="vendor/logo-hidivo.png" alt="HIDIVO" onerror="this.style.display='none'" style="height:28px;filter:brightness(0) invert(1);opacity:.9"/>
       <div class="sidebar-logo-text">Gestión de obras civiles</div>
     </div>
     <div class="nav-section">
@@ -3454,28 +3454,8 @@ async function cargarDashboard(){
   await renderDashboard();
 }
 
-// ── MONTO DE CONTRATO PARA PRESENTACIÓN ──
-// Hay dos fuentes legítimas: proyectos.monto_contrato (el contractual, escrito
-// por la ficha o la extracción IA del PDF) y Σ rubros.monto_contrato (el vigente,
-// que incluye órdenes de cambio). Para MOSTRAR el monto (tabla del Dashboard,
-// Proyectos, tarjeta "Suma contratos", PDFs) la regla es: registro; si está
-// vacío, Σ rubros; si ambos existen y difieren más de la tolerancia, indicador
-// con los dos valores. Todo CÁLCULO (avance, EVM/SPI, cartera, liquidación,
-// amortización, totales de Rubros) sigue usando Σ rubros: son magnitudes
-// ponderadas por ejecución y deben cuadrar con los rubros.
-const MONTO_CONTRATO_TOLERANCIA = 1.00;
-
-function montoContratoProyecto(p, sumaRubros){
-  const contractual = Number(p?.monto_contrato) || 0;
-  const vigente = Number(sumaRubros) || 0;
-  const valor = contractual > 0 ? contractual : vigente;
-  const difiere = contractual > 0 && vigente > 0 && Math.abs(contractual - vigente) > MONTO_CONTRATO_TOLERANCIA;
-  return {
-    valor, contractual, vigente, difiere,
-    delta: vigente - contractual,
-    fuente: contractual > 0 ? 'registro' : (vigente > 0 ? 'rubros' : null)
-  };
-}
+// montoContratoProyecto y MONTO_CONTRATO_TOLERANCIA viven en expediente.js: los
+// usa también el expediente de obra (misma regla de presentación en pantalla y PDF).
 
 // Celda/tarjeta: el valor mostrado y, si difiere, "Contrato: X · Vigente: Y · Δ".
 function montoContratoHtml(m){
@@ -11123,38 +11103,10 @@ async function notificarFiscalizadorViaDM(titulo, detalle){
 
 // ── CONTRATO: ANTICIPO Y GARANTÍAS ──
 
-function semaforoGarantia(g){
-  if(g.estado !== 'vigente') return { color:'#676879', bg:'#f5f6f8', label:{renovada:'Renovada',devuelta:'Devuelta',ejecutada:'Ejecutada'}[g.estado]||g.estado };
-  if(!g.vigencia_hasta) return { color:'#676879', bg:'#f5f6f8', label:'Por definir' };
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const hasta = new Date(g.vigencia_hasta + 'T00:00:00');
-  const dias = Math.round((hasta - hoy) / 86400000);
-  if(dias < 0)  return { color:'#e2445c', bg:'#fdecef', label:`Vencida hace ${-dias} día(s)` };
-  if(dias <= 5) return { color:'#b8860b', bg:'#fdf6e3', label:`Vence en ${dias} día(s)` };
-  return { color:'#00854d', bg:'#e6f4ee', label:`Vigente · ${dias} días` };
-}
+// semaforoGarantia vive en expediente.js (el expediente lo evalúa a una fecha fija).
 
-// ── NÚCLEO DE PLANILLAS ──
-// Universo canónico de toda cifra de dinero comprometido del contrato: solo las
-// planillas aprobadas o pagadas. Antes cada consumidor filtraba por su cuenta
-// (tarjetas de Contrato con estado!=='rechazada', liquidación y cartera con
-// aprobada/pagada, y el reporte PDF sin filtro), así que el mismo proyecto
-// mostraba tres cifras distintas de retención acumulada. Una sola fuente.
-const PLANILLAS_COMPROMETIDAS = ['aprobada','pagada'];
-
-function agregarPlanillas(plans){
-  const pv = (plans||[]).filter(p=>PLANILLAS_COMPROMETIDAS.includes(p.estado));
-  const suma = f => pv.reduce((s,p)=>s+(f(p)||0), 0);
-  return {
-    n: pv.length,
-    planillado: suma(p=>p.total_monto),
-    reajustes:  suma(p=>p.reajuste_monto),
-    amortizado: suma(p=>p.amortizacion_anticipo),
-    retenido:   suma(p=>p.retencion_garantia),
-    multas:     suma(p=>p.multa_monto),
-    liquido:    suma(p=>p.total_liquido ?? p.total_monto)
-  };
-}
+// PLANILLAS_COMPROMETIDAS y agregarPlanillas viven en expediente.js: el expediente
+// de obra suma las planillas con el mismo universo canónico que la app.
 
 // Retención y líquido de una planilla con un % dado. Fuente única de la fórmula.
 function retencionDePlanilla(p, pct){

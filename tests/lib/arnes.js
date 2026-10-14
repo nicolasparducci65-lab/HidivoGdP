@@ -145,6 +145,8 @@ function crearContexto({ codigo = [], globals = {}, fecha = FECHA_FIJA } = {}){
     vm.runInContext(typeof src === 'string' ? src : leer(src.ruta), ctx, { filename: src.nombre || 'inline.js' });
   }
   ctx._ventanas = ventanas; ctx._toasts = toasts;
+  // Las `const`/`let` de nivel superior no son propiedades del contexto: se leen con _eval.
+  ctx._eval = expr => vm.runInContext(expr, ctx);
   return ctx;
 }
 
