@@ -278,9 +278,10 @@ const PERMISOS = {
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:'ver' },
       nota:'I-3: visible para todos salvo Técnico SST, incluso sin rol en el proyecto; solo lectura de facto sin aviso.' },
     { id:'expediente', nombre:'Expediente de obra', ambito:'proyecto', requiereModulo:null,
-      // Primera fila consumida por código: puedeGenerarExpediente() lee esta celda.
-      roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
-      nota:'Vive en Cierre de proyecto (dentro de Contrato). Generar y ver la lista: admin y fiscalizador; en móvil solo la lista. Esta fila la lee el código (puedeGenerarExpediente); las demás siguen siendo documentación. RLS: tabla expedientes_generados.' },
+      // Primera fila consumida por código: puedeGenerarExpediente() / puedeVerExpedientes() leen esta celda.
+      // 'gestionar' = generar y ver la lista; 'ver' = solo la lista; null = nada. Solo admin (decisión del 14-oct-2026).
+      roles:{ admin:'gestionar', fiscalizador:null, residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Vive en Cierre de proyecto (dentro de Contrato). Solo admin (global o del proyecto) ve la lista y genera; en móvil solo la lista. Esta fila la lee el código (puedeGenerarExpediente / puedeVerExpedientes); las demás siguen siendo documentación. RLS: tabla expedientes_generados (20261014_expedientes_solo_admin).' },
     { id:'ensayos', nombre:'Ensayos', ambito:'proyecto', requiereModulo:null,
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:'ver', visualizador:'ver', cliente:null },
       nota:'Oculto para Técnico SST y Cliente. Eliminar solo admin. Los no-miembros ya no ven datos (RLS Ola 1).' },

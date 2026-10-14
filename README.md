@@ -181,8 +181,9 @@ fotogrametría.
 ## Expediente de obra (`expediente.js`, fase 1)
 
 PDF que reúne todo lo registrado de un proyecto. Vive en **Contrato → Cierre de proyecto**
-(botón «Generar expediente» y lista «Expedientes generados»), solo para admin y fiscalizador
-(`puedeGenerarExpediente()`, que lee la fila `expediente` de `PERMISOS`). Se genera en el
+(botón «Generar expediente» y lista «Expedientes generados»), solo para admin, global o del
+proyecto (`puedeGenerarExpediente()` y `puedeVerExpedientes()` leen la fila `expediente` de
+`PERMISOS`; en la base, las políticas de `20261014_expedientes_solo_admin.sql`). Se genera en el
 navegador de escritorio: vista previa en pestaña nueva y «Guardar como PDF»; en móvil el botón
 queda deshabilitado. `bloquearSiCerrado` no lo afecta: el expediente final se genera después de
 liquidar. Mientras el proyecto no esté liquidado, el documento lleva la marca de agua

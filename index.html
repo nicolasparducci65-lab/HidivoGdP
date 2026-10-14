@@ -11456,11 +11456,14 @@ function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas){
 // selección, estimación, registro en expedientes_generados y lista.
 
 // Gate por rol. Es la primera celda de PERMISOS que lee el código (las demás
-// siguen siendo documentación): admin y fiscalizador del proyecto.
-function puedeGenerarExpediente(){
+// siguen siendo documentación). Hoy solo admin (global o del proyecto):
+// 'gestionar' = generar y ver la lista; 'ver' = solo la lista; null = nada.
+function permisoExpediente(){
   const fila = PERMISOS.secciones.find(s=>s.id==='expediente');
-  return !!fila && fila.roles[currentPerfil?.rol] === 'gestionar';
+  return fila ? (fila.roles[currentPerfil?.rol] || null) : null;
 }
+function puedeGenerarExpediente(){ return permisoExpediente() === 'gestionar'; }
+function puedeVerExpedientes(){ return ['gestionar','ver'].includes(permisoExpediente()); }
 
 // Pantalla angosta o puntero táctil: el expediente se genera desde computador
 // (vista previa en pestaña nueva y "Guardar como PDF" del navegador de escritorio).
@@ -11468,10 +11471,11 @@ function esDispositivoMovil(){
   return window.innerWidth <= 768 || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 }
 
-// Bloque del expediente dentro de la tarjeta de Cierre. Solo lo ven quienes
-// pueden generarlo; en móvil el botón queda deshabilitado pero la lista se ve.
+// Bloque del expediente dentro de la tarjeta de Cierre. Solo lo ve quien tiene
+// permiso; el botón, quien puede generar. En móvil el botón queda deshabilitado
+// pero la lista se ve.
 function bloqueExpedienteHTML(){
-  if(!puedeGenerarExpediente()) return '';
+  if(!puedeVerExpedientes()) return '';
   const movil = esDispositivoMovil();
   return `<div id="expedienteBloque" style="margin-top:18px;border-top:1px solid #e6e9ef;padding-top:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
@@ -11479,7 +11483,7 @@ function bloqueExpedienteHTML(){
         <div style="font-size:14px;font-weight:700">📚 Expediente de obra</div>
         <div style="font-size:12px;color:#676879">PDF con todo lo registrado del proyecto: contrato, presupuesto, órdenes de cambio, planillas, actas y liquidación.</div>
       </div>
-      <button class="btn primary" id="btnGenerarExpediente" onclick="abrirModalExpediente()" ${movil?'disabled':''}>${movil?'El expediente se genera desde computador':'📄 Generar expediente'}</button>
+      ${puedeGenerarExpediente() ? `<button class="btn primary" id="btnGenerarExpediente" onclick="abrirModalExpediente()" ${movil?'disabled':''}>${movil?'El expediente se genera desde computador':'📄 Generar expediente'}</button>` : ''}
     </div>
     <div id="expedientesLista" style="font-size:12px;color:#676879">Cargando expedientes generados…</div>
   </div>`;
@@ -11487,7 +11491,7 @@ function bloqueExpedienteHTML(){
 
 async function cargarExpedientesGenerados(){
   const cont = document.getElementById('expedientesLista');
-  if(!cont || !currentProyecto) return;
+  if(!cont || !currentProyecto || !puedeVerExpedientes()) return;
   const { data, error } = await sb.from('expedientes_generados')
     .select('*, perfil:perfiles(nombre,apellido)').eq('proyecto_id', currentProyecto).order('version', {ascending:false});
   if(error){ cont.innerHTML = `<span style="color:#e2445c">No se pudo cargar la lista: ${escAttr(error.message)}</span>`; return; }

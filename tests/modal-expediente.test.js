@@ -12,13 +12,13 @@ const ini = html.indexOf('<div class="modal-overlay" id="modalExpediente">');
 const fin = html.indexOf('<div class="modal-overlay" id="modalOC">');
 assert(ini > 0 && fin > ini, 'modalExpediente debe estar antes de modalOC');
 const MODAL_HTML = html.slice(ini, fin);
-const FUNCIONES = ['puedeGenerarExpediente', 'esDispositivoMovil', 'bloqueExpedienteHTML', 'cargarExpedientesGenerados', 'renderExpedientesLista',
+const FUNCIONES = ['permisoExpediente', 'puedeGenerarExpediente', 'puedeVerExpedientes', 'esDispositivoMovil', 'bloqueExpedienteHTML', 'cargarExpedientesGenerados', 'renderExpedientesLista',
   'reutilizarSeleccionExpediente', 'abrirModalExpediente', 'renderModalExpediente', 'aplicarPresetExpediente', 'expedienteCambioManual',
   'leerSeleccionExpediente', 'actualizarEstimacionExpediente', 'obtenerLogoDataUri', 'generarExpediente', 'escAttr', 'cerrarModal', 'hoyEcuador'];
 // Una sola evaluación: las const de constantes.js solo son visibles dentro del mismo eval.
 const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), FUNCIONES.map(f => extraerFuncion(src, f)).join('\n')].join('\n');
 
-function crearPagina(fixture, { rol = 'fiscalizador', ancho = 1366, extra = '' } = {}){
+function crearPagina(fixture, { rol = 'admin', ancho = 1366, extra = '' } = {}){
   const dom = new JSDOM(`<!doctype html><html><body><div id="toast"></div><div id="cardCierre"></div>${MODAL_HTML}</body></html>`,
     { url: 'https://hidivo.test/HidivoGdP/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
@@ -33,8 +33,8 @@ function crearPagina(fixture, { rol = 'fiscalizador', ancho = 1366, extra = '' }
   w.toast = (msg, tipo) => w.toasts.push({ msg, tipo });
   w.sb = crearSb(fixture, { alInsertar: (tabla, fila) => { if(tabla === 'expedientes_generados'){ fila.version = fixture.expedientes_generados.length; fila.generado_en = '2026-10-14T15:05:00Z'; } } });
   w.currentProyecto = fixture.proyectos[0].id;
-  w.currentUser = { id: 'b0000000-0000-4000-8000-000000000002' };
-  w.currentPerfil = { id: 'b0000000-0000-4000-8000-000000000002', nombre: 'Prueba', apellido: 'Fiscalizador', rol };
+  w.currentUser = { id: 'b0000000-0000-4000-8000-000000000001' };
+  w.currentPerfil = { id: 'b0000000-0000-4000-8000-000000000001', nombre: 'Prueba', apellido: 'Admin', rol };
   w.proyectos = fixture.proyectos;
   w.eval(extra ? CODIGO + String.fromCharCode(10) + extra : CODIGO);
   w._blobs = blobs; w._ventanas = ventanas;
@@ -50,14 +50,18 @@ const esperar = async (fn, n = 50) => { for(let i = 0; i < n; i++){ if(fn()) ret
   const base = cargarFixture('sintetico.json');
   const clonar = o => JSON.parse(JSON.stringify(o));
 
-  await prueba('gate: solo admin y fiscalizador (lee la fila expediente de PERMISOS)', () => {
-    for(const [rol, ok] of [['admin', true], ['fiscalizador', true], ['residente', false], ['visualizador', false], ['cliente', false], ['tecnico_sst', false], ['bodeguero', false], [null, false]]){
+  await prueba('gate: solo admin (lee la fila expediente de PERMISOS); «ver» daría la lista sin botón', () => {
+    for(const [rol, ok] of [['admin', true], ['fiscalizador', false], ['residente', false], ['visualizador', false], ['cliente', false], ['tecnico_sst', false], ['bodeguero', false], [null, false]]){
       const w = crearPagina(clonar(base), { rol });
-      assert(w.puedeGenerarExpediente() === ok, 'rol ' + rol);
+      assert(w.puedeGenerarExpediente() === ok && w.puedeVerExpedientes() === ok, 'rol ' + rol);
       assert((w.bloqueExpedienteHTML() !== '') === ok, 'bloque para ' + rol);
     }
-    const w = crearPagina(clonar(base), { rol: 'fiscalizador', extra: "PERMISOS.secciones.find(s => s.id === 'expediente').roles.fiscalizador = null;" });
-    assert(w.puedeGenerarExpediente() === false, 'la celda de PERMISOS manda');
+    const w = crearPagina(clonar(base), { rol: 'admin', extra: "PERMISOS.secciones.find(s => s.id === 'expediente').roles.admin = null;" });
+    assert(w.puedeGenerarExpediente() === false && w.bloqueExpedienteHTML() === '', 'la celda de PERMISOS manda');
+    const v = crearPagina(clonar(base), { rol: 'fiscalizador', extra: "PERMISOS.secciones.find(s => s.id === 'expediente').roles.fiscalizador = 'ver';" });
+    assert(!v.puedeGenerarExpediente() && v.puedeVerExpedientes(), 'ver: sin generar');
+    const bloque = v.bloqueExpedienteHTML();
+    assert(bloque.includes('id="expedientesLista"') && !bloque.includes('btnGenerarExpediente'), 'ver: lista sin botón');
   });
 
   await prueba('en móvil el botón queda deshabilitado con su texto y la lista se ve', async () => {
@@ -134,7 +138,7 @@ const esperar = async (fn, n = 50) => { for(let i = 0; i < n; i++){ if(fn()) ret
     assert(Array.isArray(fila.secciones) && fila.secciones.includes('liquidacion') && fila.filtros.incluirOCsNoAprobadas === true && fila.estado_proyecto === 'liquidado' && fila.paginas_estimadas === 17 && fila.subtitulo === 'Project close-out dossier', 'campos de la fila');
     assert(w._ventanas.length === 1 && w._ventanas[0].url.startsWith('blob:'), 'pestaña con el Blob');
     const html = await leerBlob(w, w._blobs[0]);
-    assert(html.includes('<title>Expediente_Puente-peatonal-Las-Palmas_v1_') && html.includes('Expediente v1 · generado el') && html.includes('por Prueba Fiscalizador (fiscalizador)'), 'documento con la versión de la base');
+    assert(html.includes('<title>Expediente_Puente-peatonal-Las-Palmas_v1_') && html.includes('Expediente v1 · generado el') && html.includes('por Prueba Admin (admin)'), 'documento con la versión de la base');
     assert(html.includes('data:image/png;base64,'), 'logo incrustado desde vendor/');
     assert(w._logoDataUri && w._logoDataUri.startsWith('data:image/png;base64,'), 'logo cacheado');
     assert(!w.document.getElementById('modalExpediente').classList.contains('show'), 'cierra el modal');
