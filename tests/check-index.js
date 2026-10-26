@@ -19,7 +19,7 @@ function check(nombre, codigo){
 
 const html = leer(RUTA_INDEX);
 check('index.html (script principal)', scriptPrincipal(html));
-for(const f of ['constantes.js', 'expediente.js', 'service-worker.js', 'js/recorridos360.js']){
+for(const f of ['constantes.js', 'expediente.js', 'perfil-pilote.js', 'service-worker.js', 'js/recorridos360.js']){
   const ruta = path.join(RAIZ, f);
   if(fs.existsSync(ruta)) check(f, leer(ruta));
 }
