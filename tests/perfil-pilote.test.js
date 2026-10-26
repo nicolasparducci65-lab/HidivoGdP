@@ -53,7 +53,7 @@ const valorDe = (doc, concepto) => { const tds = celdas(doc); const i = tds.find
     const claves = $$(doc, '.pp-cota').map(e => e.getAttribute('data-clave')).sort().join(',');
     assert(claves === 'CC,CFE,CH,CH+1,CIA,CPF,CSA,CT,NF', 'cotas: ' + claves);
     const etq = $(doc, '#pp-armadura-etq').textContent;
-    assert(/12 Ø 25 mm · L = 15,75 m/.test(etq) && /espiral Ø 10 @ 15 cm/.test(etq), 'etiqueta de armadura: ' + etq);
+    assert(/12 Ø 25 mm · L = 15,75 m/.test(etq) && /estribos Ø 10 @ 15 cm/.test(etq), 'etiqueta de armadura: ' + etq);
   });
 
   await prueba('completa: CFE alineada con el estrato que atraviesa y NF cruza ambos paneles', () => {

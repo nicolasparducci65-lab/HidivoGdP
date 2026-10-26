@@ -177,11 +177,14 @@ function perfilPiloteDatos(campos, valores){
   // CIA: columna explícita «Cota inferior» si existe; si no, CSA − longitud de la jaula.
   d.CIA = ppCeldaNum(valores, tCotas, /inferior/) ?? ppCeldaNum(valores, tArm, /cota inferior/)
     ?? (d.CSA != null && d.longArm != null ? d.CSA - d.longArm : null);
-  d.arm.n = ppCeldaNum(valores, tArm, /barras/);
-  d.arm.diam = ppCeldaNum(valores, tArm, /long.*\(mm\)/);
+  // Armadura: columnas de la plantilla V2 («Varillas longitudinales (n)», «Diámetro
+  // de varillas», «Diámetro de estribos», «Paso de estribos (cm)») o genéricas
+  // («Barras long. (n)», «Ø long. (mm)», «Transversal», «Ø transv. (mm)», «Paso»).
+  d.arm.n = ppCeldaNum(valores, tArm, /^(barras|varillas)/);
+  d.arm.diam = ppCeldaNum(valores, tArm, /long.*\(mm\)|diametro de varillas/);
   const tt = ppCelda(valores, tArm, /^transversal$/);
-  d.arm.transvTipo = tt != null ? String(tt).trim() : null;
-  d.arm.transvDiam = ppCeldaNum(valores, tArm, /transv.*\(mm\)/);
+  d.arm.transvTipo = tt != null ? String(tt).trim() : (ppIdxCol(tArm, /estribo/) >= 0 ? "estribos" : null);
+  d.arm.transvDiam = ppCeldaNum(valores, tArm, /transv.*\(mm\)|diametro de estribos|estribo.*\(mm\)/);
   d.arm.transvPaso = ppCeldaNum(valores, tArm, /paso/);
   d.volTeoricoAnotado = ppCeldaNum(valores, tConcreto, /volumen teorico/);
   d.volReal = ppCeldaNum(valores, tConcreto, /volumen real/) ?? ppSuma(valores, tControl, /concreto parcial/);

@@ -1,5 +1,5 @@
 {
- "_nota": "Plantilla FR-001-PIL-V2 (formatos_calidad_plantillas, solo estructura) tal como está en la base el 2026-10-26 (campos_actual) y tras la migración 20261026 (campos_migrado), con respuestas sintéticas para el perfil del pilote.",
+ "_nota": "Plantilla FR-001-PIL-V2 (formatos_calidad_plantillas, solo estructura) tal como está en la base el 2026-10-26 por la tarde, ya con las columnas de armadura añadidas desde el editor (campos_actual) y tras la migración 20261026 (campos_migrado), con respuestas sintéticas para el perfil del pilote.",
  "plantilla_id": "b0a581db-04b3-4178-935d-66bdaa2626d9",
  "campos_actual": [
   {
@@ -208,40 +208,6 @@
   {
    "columnas": [
     {
-     "nombre": "Resistencia f'c (MPa)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Longitud Real de Hormigonado (m)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Volumen teórico (m³)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Volumen Real (m³)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Expansión (%)",
-     "opciones": null,
-     "tipo": "numero"
-    }
-   ],
-   "etiqueta": "Concreto",
-   "id": "c_c57f688d86dl",
-   "opciones": null,
-   "requerido": true,
-   "tipo": "tabla_repetible"
-  },
-  {
-   "columnas": [
-    {
      "nombre": "Peso (kg)",
      "opciones": null,
      "tipo": "numero"
@@ -255,6 +221,26 @@
      "nombre": "ID jaula / planilla",
      "opciones": null,
      "tipo": "texto"
+    },
+    {
+     "nombre": "Diametro Armadura",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Varillas longitudinales (n)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Diámetro de varillas",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Diámetro de estribos",
+     "opciones": null,
+     "tipo": "numero"
     }
    ],
    "etiqueta": "Armadura de Refuerzo",
@@ -290,6 +276,40 @@
    "id": "c_c57f6a9c1f5p",
    "opciones": null,
    "requerido": false,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Resistencia f'c (MPa)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Real de Hormigonado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen teórico (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen Real (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Expansión (%)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Concreto",
+   "id": "c_c57f688d86dl",
+   "opciones": null,
+   "requerido": true,
    "tipo": "tabla_repetible"
   },
   {
@@ -672,40 +692,6 @@
   {
    "columnas": [
     {
-     "nombre": "Resistencia f'c (MPa)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Longitud Real de Hormigonado (m)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Volumen teórico (m³)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Volumen Real (m³)",
-     "opciones": null,
-     "tipo": "numero"
-    },
-    {
-     "nombre": "Expansión (%)",
-     "opciones": null,
-     "tipo": "numero"
-    }
-   ],
-   "etiqueta": "Concreto",
-   "id": "c_c57f688d86dl",
-   "opciones": null,
-   "requerido": true,
-   "tipo": "tabla_repetible"
-  },
-  {
-   "columnas": [
-    {
      "nombre": "Peso (kg)",
      "opciones": null,
      "tipo": "numero"
@@ -721,30 +707,27 @@
      "tipo": "texto"
     },
     {
-     "nombre": "Barras long. (n)",
+     "nombre": "Diametro Armadura",
      "opciones": null,
      "tipo": "numero"
     },
     {
-     "nombre": "Ø long. (mm)",
+     "nombre": "Varillas longitudinales (n)",
      "opciones": null,
      "tipo": "numero"
     },
     {
-     "nombre": "Transversal",
-     "opciones": [
-      "Espiral",
-      "Estribos"
-     ],
-     "tipo": "seleccion"
-    },
-    {
-     "nombre": "Ø transv. (mm)",
+     "nombre": "Diámetro de varillas",
      "opciones": null,
      "tipo": "numero"
     },
     {
-     "nombre": "Paso transv. (cm)",
+     "nombre": "Diámetro de estribos",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Paso de estribos (cm)",
      "opciones": null,
      "tipo": "numero"
     }
@@ -782,6 +765,40 @@
    "id": "c_c57f6a9c1f5p",
    "opciones": null,
    "requerido": false,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Resistencia f'c (MPa)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Real de Hormigonado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen teórico (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen Real (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Expansión (%)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Concreto",
+   "id": "c_c57f688d86dl",
+   "opciones": null,
+   "requerido": true,
    "tipo": "tabla_repetible"
   },
   {
@@ -997,9 +1014,9 @@
      "1593",
      "15.75",
      "J-3",
+     "900",
      "12",
      "25",
-     "Espiral",
      "10",
      "15"
     ]
@@ -1138,9 +1155,9 @@
      "1593",
      "15.75",
      "J-3",
+     "900",
      "12",
      "25",
-     "Espiral",
      "10",
      "15"
     ]
