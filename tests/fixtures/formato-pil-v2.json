@@ -1,0 +1,1494 @@
+{
+ "_nota": "Plantilla FR-001-PIL-V2 (formatos_calidad_plantillas, solo estructura) tal como está en la base el 2026-10-26 (campos_actual) y tras la migración 20261026 (campos_migrado), con respuestas sintéticas para el perfil del pilote.",
+ "plantilla_id": "b0a581db-04b3-4178-935d-66bdaa2626d9",
+ "campos_actual": [
+  {
+   "columnas": null,
+   "etiqueta": "Pilote No. según orden de ejecución",
+   "id": "c_c57f6a00jagw",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "numero"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fecha de inicio de excavación",
+   "id": "c_c57f6969b4m4",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "fecha"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Turno",
+   "id": "c_c57f6971j1jd",
+   "opciones": [
+    "Diurno",
+    "Nocturno"
+   ],
+   "requerido": true,
+   "tipo": "seleccion"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "ID Pilote según Plano",
+   "id": "c_c57f685a5ixt",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Diámetro (mm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Excavación (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Efectiva (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota de Camisa (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota de fondo (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota Superior del Refuerzo (m)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Información de Diseño",
+   "id": "c_c57f67cbrqx0",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Ejes",
+     "opciones": [
+      "Dentro de Especificación",
+      "Desplazado (ver Observaciones)"
+     ],
+     "tipo": "seleccion"
+    },
+    {
+     "nombre": "Desplazamiento eje X (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Desplazamiento eje Y (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Revisiones Previas",
+   "id": "c_c57f67e48f3h",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Hora de muestreo (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Contenido de Arena (%)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Densidad (g/cm³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Viscosidad Marsh (s)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "pH",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Condiciones del Polímero (antes de hormigonar)",
+   "id": "c_c57f6945cz3l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Longitud de Excavación (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Efectiva (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Altura de Descabezado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen de Excavación (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Información del Pilote",
+   "id": "c_c57f6727fmlf",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Terreno",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Camisa",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Superior Concreto",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Descabezado",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Superior Refuerzo",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Concreto al día siguiente",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Cotas (m, absolutas)",
+   "id": "c_c57f66c5q2g7",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Resistencia f'c (MPa)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Real de Hormigonado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen teórico (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen Real (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Expansión (%)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Concreto",
+   "id": "c_c57f688d86dl",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Peso (kg)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud total (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "ID jaula / planilla",
+     "opciones": null,
+     "tipo": "texto"
+    }
+   ],
+   "etiqueta": "Armadura de Refuerzo",
+   "id": "c_c57f6a02sr1l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Peso (kg)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Total (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "ID camisa",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Recuperable",
+     "opciones": null,
+     "tipo": "si_no"
+    }
+   ],
+   "etiqueta": "Camisa",
+   "id": "c_c57f6a9c1f5p",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Inicio Estrato (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Fin Estrato (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Tipo de Suelo",
+     "opciones": [
+      "Relleno",
+      "Turba",
+      "Arcilla",
+      "Limo",
+      "Limo Arcilloso",
+      "Arena",
+      "Arena Arcillosa",
+      "Arena Limosa",
+      "Arena con Grava",
+      "Grava",
+      "Grava Arenosa",
+      "Grava Limosa",
+      "Grava Arcillosa",
+      "Roca Meteorizada",
+      "Roca"
+     ],
+     "tipo": "seleccion"
+    }
+   ],
+   "etiqueta": "Perfil del Suelo",
+   "id": "c_c57f67fblf8l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Placa Mixer",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Guía de remisión",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora mezclado (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora entrada (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora salida (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Slump (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Muestra No.",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Concreto Parcial (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Concreto Acumulado (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Avance desde (cota m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Avance hasta (cota m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Sube (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Embebido tremie (m)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Control de Hormigonado (una fila por mixer)",
+   "id": "c_c57f68bakga8",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Foto",
+   "id": "c_c57f66eb2s2j",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "foto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Observaciones",
+   "id": "c_c57f67146nsl",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "texto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Firmas",
+   "id": "c_c57f69c2jif5",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "seccion"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fiscalizador (nombre)",
+   "id": "c_c57f68dcw6me",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fecha de revisión del fiscalizador",
+   "id": "c_c57f68d760x9",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "fecha"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Contratista (nombre y cargo)",
+   "id": "c_c57f6991e46v",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  }
+ ],
+ "campos_migrado": [
+  {
+   "columnas": null,
+   "etiqueta": "Pilote No. según orden de ejecución",
+   "id": "c_c57f6a00jagw",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "numero"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fecha de inicio de excavación",
+   "id": "c_c57f6969b4m4",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "fecha"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Turno",
+   "id": "c_c57f6971j1jd",
+   "opciones": [
+    "Diurno",
+    "Nocturno"
+   ],
+   "requerido": true,
+   "tipo": "seleccion"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "ID Pilote según Plano",
+   "id": "c_c57f685a5ixt",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Diámetro (mm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Excavación (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Efectiva (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota de Camisa (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota de fondo (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Cota Superior del Refuerzo (m)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Información de Diseño",
+   "id": "c_c57f67cbrqx0",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Ejes",
+     "opciones": [
+      "Dentro de Especificación",
+      "Desplazado (ver Observaciones)"
+     ],
+     "tipo": "seleccion"
+    },
+    {
+     "nombre": "Desplazamiento eje X (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Desplazamiento eje Y (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Revisiones Previas",
+   "id": "c_c57f67e48f3h",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Hora de muestreo (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Contenido de Arena (%)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Densidad (g/cm³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Viscosidad Marsh (s)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "pH",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Condiciones del Polímero (antes de hormigonar)",
+   "id": "c_c57f6945cz3l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Longitud de Excavación (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Efectiva (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Altura de Descabezado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen de Excavación (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Diámetro real (mm)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Información del Pilote",
+   "id": "c_c57f6727fmlf",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Terreno",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Camisa",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Superior Concreto",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Descabezado",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Superior Refuerzo",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Concreto al día siguiente",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Nivel freático",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Cotas (m, absolutas)",
+   "id": "c_c57f66c5q2g7",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Resistencia f'c (MPa)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Real de Hormigonado (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen teórico (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Volumen Real (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Expansión (%)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Concreto",
+   "id": "c_c57f688d86dl",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Peso (kg)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud total (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "ID jaula / planilla",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Barras long. (n)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Ø long. (mm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Transversal",
+     "opciones": [
+      "Espiral",
+      "Estribos"
+     ],
+     "tipo": "seleccion"
+    },
+    {
+     "nombre": "Ø transv. (mm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Paso transv. (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Armadura de Refuerzo",
+   "id": "c_c57f6a02sr1l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Peso (kg)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Longitud Total (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "ID camisa",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Recuperable",
+     "opciones": null,
+     "tipo": "si_no"
+    }
+   ],
+   "etiqueta": "Camisa",
+   "id": "c_c57f6a9c1f5p",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Inicio Estrato (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Fin Estrato (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Tipo de Suelo",
+     "opciones": [
+      "Relleno",
+      "Turba",
+      "Arcilla",
+      "Limo",
+      "Limo Arcilloso",
+      "Arena",
+      "Arena Arcillosa",
+      "Arena Limosa",
+      "Arena con Grava",
+      "Grava",
+      "Grava Arenosa",
+      "Grava Limosa",
+      "Grava Arcillosa",
+      "Roca Meteorizada",
+      "Roca"
+     ],
+     "tipo": "seleccion"
+    }
+   ],
+   "etiqueta": "Perfil del Suelo",
+   "id": "c_c57f67fblf8l",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": [
+    {
+     "nombre": "Placa Mixer",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Guía de remisión",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora mezclado (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora entrada (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Hora salida (HH:MM)",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Slump (cm)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Muestra No.",
+     "opciones": null,
+     "tipo": "texto"
+    },
+    {
+     "nombre": "Concreto Parcial (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Concreto Acumulado (m³)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Avance desde (cota m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Avance hasta (cota m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Sube (m)",
+     "opciones": null,
+     "tipo": "numero"
+    },
+    {
+     "nombre": "Embebido tremie (m)",
+     "opciones": null,
+     "tipo": "numero"
+    }
+   ],
+   "etiqueta": "Control de Hormigonado (una fila por mixer)",
+   "id": "c_c57f68bakga8",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "tabla_repetible"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Foto",
+   "id": "c_c57f66eb2s2j",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "foto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Observaciones",
+   "id": "c_c57f67146nsl",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "texto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Firmas",
+   "id": "c_c57f69c2jif5",
+   "opciones": null,
+   "requerido": false,
+   "tipo": "seccion"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fiscalizador (nombre)",
+   "id": "c_c57f68dcw6me",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Fecha de revisión del fiscalizador",
+   "id": "c_c57f68d760x9",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "fecha"
+  },
+  {
+   "columnas": null,
+   "etiqueta": "Contratista (nombre y cargo)",
+   "id": "c_c57f6991e46v",
+   "opciones": null,
+   "requerido": true,
+   "tipo": "texto"
+  }
+ ],
+ "respuestas": {
+  "completa": {
+   "c_c57f6a00jagw": "2",
+   "c_c57f6969b4m4": "2026-07-21",
+   "c_c57f6971j1jd": "Diurno",
+   "c_c57f685a5ixt": "P3",
+   "c_c57f67cbrqx0": [
+    [
+     "1000",
+     "16.54",
+     "15.74",
+     "9.67",
+     "-7.74",
+     "9.20"
+    ]
+   ],
+   "c_c57f6727fmlf": [
+    [
+     "16.73",
+     "15.93",
+     "0.8",
+     "12.42",
+     "1050"
+    ]
+   ],
+   "c_c57f66c5q2g7": [
+    [
+     "8.80",
+     "9.67",
+     "8.80",
+     "8.00",
+     "9.20",
+     "8.75",
+     "2.30"
+    ]
+   ],
+   "c_c57f688d86dl": [
+    [
+     "280",
+     "15.93",
+     "12.42",
+     "14.5",
+     "11"
+    ]
+   ],
+   "c_c57f6a02sr1l": [
+    [
+     "1593",
+     "15.75",
+     "J-3",
+     "12",
+     "25",
+     "Espiral",
+     "10",
+     "15"
+    ]
+   ],
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ],
+   "c_c57f68bakga8": [
+    [
+     "522",
+     "G-1",
+     "15:10",
+     "15:43",
+     "15:54",
+     "22",
+     "",
+     "6",
+     "6",
+     "-7.93",
+     "-2.1",
+     "5.83",
+     "2"
+    ],
+    [
+     "509",
+     "G-2",
+     "16:10",
+     "16:42",
+     "17:00",
+     "22",
+     "",
+     "6",
+     "12",
+     "-2.1",
+     "3.8",
+     "5.9",
+     "2"
+    ],
+    [
+     "530",
+     "G-3",
+     "16:50",
+     "17:14",
+     "17:28",
+     "22.5",
+     "",
+     "3",
+     "15",
+     "3.8",
+     "8.8",
+     "5",
+     "2"
+    ]
+   ]
+  },
+  "sin_volumen_real": {
+   "c_c57f6a00jagw": "2",
+   "c_c57f6969b4m4": "2026-07-21",
+   "c_c57f6971j1jd": "Diurno",
+   "c_c57f685a5ixt": "P3",
+   "c_c57f67cbrqx0": [
+    [
+     "1000",
+     "16.54",
+     "15.74",
+     "9.67",
+     "-7.74",
+     "9.20"
+    ]
+   ],
+   "c_c57f6727fmlf": [
+    [
+     "16.73",
+     "15.93",
+     "0.8",
+     "12.42",
+     "1050"
+    ]
+   ],
+   "c_c57f66c5q2g7": [
+    [
+     "8.80",
+     "9.67",
+     "8.80",
+     "8.00",
+     "9.20",
+     "8.75",
+     "2.30"
+    ]
+   ],
+   "c_c57f688d86dl": [
+    [
+     "280",
+     "15.93",
+     "12.42",
+     "",
+     ""
+    ]
+   ],
+   "c_c57f6a02sr1l": [
+    [
+     "1593",
+     "15.75",
+     "J-3",
+     "12",
+     "25",
+     "Espiral",
+     "10",
+     "15"
+    ]
+   ],
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ],
+   "c_c57f68bakga8": [
+    [
+     "522",
+     "G-1",
+     "15:10",
+     "15:43",
+     "15:54",
+     "22",
+     "",
+     "6",
+     "6",
+     "-7.93",
+     "-2.1",
+     "5.83",
+     "2"
+    ],
+    [
+     "509",
+     "G-2",
+     "16:10",
+     "16:42",
+     "17:00",
+     "22",
+     "",
+     "6",
+     "12",
+     "-2.1",
+     "3.8",
+     "5.9",
+     "2"
+    ],
+    [
+     "530",
+     "G-3",
+     "16:50",
+     "17:14",
+     "17:28",
+     "22.5",
+     "",
+     "3",
+     "15",
+     "3.8",
+     "8.8",
+     "5",
+     "2"
+    ]
+   ]
+  },
+  "incompleta": {
+   "c_c57f685a5ixt": "P9",
+   "c_c57f67cbrqx0": [
+    [
+     "1000",
+     "16.54",
+     "",
+     "",
+     "-7.74",
+     ""
+    ]
+   ],
+   "c_c57f6727fmlf": [
+    [
+     "16.73"
+    ]
+   ],
+   "c_c57f66c5q2g7": [
+    [
+     "8.80"
+    ]
+   ],
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ]
+  },
+  "inconsistente": {
+   "c_c57f67cbrqx0": [
+    [
+     "1000",
+     "16.54",
+     "",
+     "",
+     "-7.74",
+     ""
+    ]
+   ],
+   "c_c57f6727fmlf": [
+    [
+     "16.73"
+    ]
+   ],
+   "c_c57f66c5q2g7": [
+    [
+     "8.80",
+     "",
+     "9.00",
+     "8.00",
+     "7.50",
+     "",
+     ""
+    ]
+   ],
+   "c_c57f6a02sr1l": [
+    [
+     "",
+     "20"
+    ]
+   ],
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ]
+  },
+  "hormigon_bajo": {
+   "c_c57f67cbrqx0": [
+    [
+     "1000"
+    ]
+   ],
+   "c_c57f6727fmlf": [
+    [
+     "16.73"
+    ]
+   ],
+   "c_c57f66c5q2g7": [
+    [
+     "8.80",
+     "",
+     "7.80",
+     "8.00",
+     "9.20",
+     "",
+     ""
+    ]
+   ],
+   "c_c57f6a02sr1l": [
+    [
+     "",
+     "15.75"
+    ]
+   ],
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ]
+  },
+  "antigua_solo_suelo": {
+   "c_c57f685a5ixt": "P1",
+   "c_c57f67fblf8l": [
+    [
+     "0",
+     "1.50",
+     "Arcilla"
+    ],
+    [
+     "1.5",
+     "3",
+     "Arena Limosa"
+    ],
+    [
+     "3.0",
+     "5",
+     "Arena Arcillosa"
+    ],
+    [
+     "5",
+     "8",
+     "Arcilla"
+    ],
+    [
+     "8",
+     "11",
+     "Arcilla"
+    ],
+    [
+     "11",
+     "15",
+     "Grava Limosa"
+    ],
+    [
+     "15",
+     "17",
+     "Grava Arcillosa"
+    ]
+   ]
+  },
+  "antigua_sin_suelo": {
+   "c_c57f67cbrqx0": [
+    [
+     "550",
+     "15",
+     "15"
+    ]
+   ],
+   "c_c57f688d86dl": [
+    [
+     "28",
+     "15",
+     "3.56",
+     "4.5"
+    ]
+   ],
+   "c_c57f6a02sr1l": [
+    [
+     "551.18",
+     "15"
+    ]
+   ]
+  }
+ }
+}
