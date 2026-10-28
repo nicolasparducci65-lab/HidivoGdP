@@ -64,7 +64,8 @@ function extraerConst(src, nombre){
 
 // ── Cliente Supabase simulado ───────────────────────────────────────────────
 // Soporta: from(t).select('cols' | '*, alias:tabla(cols)').eq().in().neq().order().limit()
-// .range().single().maybeSingle(), y `await` / Promise.all sobre el builder.
+// .range().single().maybeSingle(), insert(fila), update(fila) y delete() con filtros, y
+// `await` / Promise.all sobre el builder.
 // Las filas salen del fixture {tabla: [filas]}. Devuelve {data, error:null}.
 const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id', libro_obra: 'registro_id', observaciones: 'observacion_id' };
 
@@ -97,6 +98,7 @@ function crearSb(fixture, opciones = {}){
       maybeSingle(){ b._maybe = true; return b; },
       insert(fila){ b._insert = fila; return b; },
       update(fila){ b._update = fila; return b; },
+      delete(){ b._delete = true; return b; },
       _ejecutar(){
         llamadas.push({ tabla, select: b._select, filtros: b._filtros.length, rango: b._rango });
         if(b._insert){
@@ -109,6 +111,12 @@ function crearSb(fixture, opciones = {}){
           const filas = (fixture[tabla]||[]).filter(f => b._filtros.every(fn => fn(f)));
           filas.forEach(f => Object.assign(f, b._update));
           return { data: filas, error: null };
+        }
+        if(b._delete){
+          const quedan = (fixture[tabla]||[]).filter(f => !b._filtros.every(fn => fn(f)));
+          const borradas = (fixture[tabla]||[]).length - quedan.length;
+          fixture[tabla] = quedan;
+          return { data: null, error: null, count: borradas };
         }
         let filas = (fixture[tabla] || []).filter(f => b._filtros.every(fn => fn(f)));
         for(const [c, asc] of b._orden.slice().reverse()){

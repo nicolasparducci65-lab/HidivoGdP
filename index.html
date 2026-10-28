@@ -3773,7 +3773,7 @@ function limpiarEstadoProyecto(){
   // Libro de obra
   window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
   libroRubrosGuardados = {}; libroRubrosRef = {}; window._libroRubrosCatalogo = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
-  _libroAcumulados = null; _libroAcumuladosProyecto = null; _libroAcumuladosPromesa = null;
+  _libroAcumulados = null; _libroAcumuladosProyecto = null; _libroAcumuladosPromesa = null; _libroRegistroAbierto = null; _libroCargaEnCurso = null;
   // Órdenes de cambio
   _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null;
   // Formatos de calidad (editor de plantilla y llenado)
@@ -4518,9 +4518,36 @@ let libroRubrosRef = {};
 // o sincronizar), lo leen verDetalleLibro y el reporte PDF, y se vacía en limpiarEstadoProyecto.
 // _libroAcumuladosPromesa evita dos cargas simultáneas del mismo proyecto.
 let _libroAcumulados = null, _libroAcumuladosProyecto = null, _libroAcumuladosPromesa = null;
+// Registro tocado hace poco (aprobación, observación, reapertura, edición): cada acción lo fija justo
+// antes de su refresco (cargarLibroObra con `true`), que lo consume para centrar y resaltar su fila.
+// Abrir el detalle NO lo fija: cerrarlo sin cambios dejaría una marca que el siguiente refresco
+// (eliminar otra fila, sincronizar) centraría y resaltaría como si fuera la fila afectada. Se vacía al
+// abrir "Nuevo registro" y en limpiarEstadoProyecto.
+// _libroCargaEnCurso: posición capturada por el refresco en vuelo. Un segundo refresco solapado (p. ej.
+// la sincronización offline durante una aprobación) la reutiliza en vez de leer el scroll que el loader
+// ya recortó a 0; así el resultado no depende de qué consulta termine última.
+let _libroRegistroAbierto = null, _libroCargaEnCurso = null;
 
-async function cargarLibroObra(){
+// mantener: undefined = carga normal (menú, cambio de proyecto): loader y lista desde arriba;
+//           true      = refresco (guardar, editar, eliminar, aprobar, observar, reabrir, sincronizar):
+//                       conserva la posición de scroll y, si hay un registro tocado hace poco, centra su fila.
+async function cargarLibroObra(mantener){
   if(!currentProyecto) return;
+  // El loader deja el contenido corto y el contenedor de scroll (.content) pierde la posición: en un
+  // refresco se guarda antes y se restaura tras pintar. En una carga normal no hay posición propia que
+  // conservar: .content es el único contenedor de scroll de todas las secciones y navTo ya activó
+  // page-libro, así que su scrollTop sería el de la sección (o el proyecto) de donde se viene.
+  const contenedor = document.querySelector('.content');
+  let posicion = null;
+  if(mantener !== undefined){
+    // Con el loader de otro refresco aún pintado el scroll ya está recortado: se reutiliza su captura
+    const enVuelo = _libroCargaEnCurso && document.querySelector('#libroContent .page-loader');
+    const raizScroll = document.scrollingElement || document.documentElement;
+    posicion = enVuelo ? _libroCargaEnCurso : { scrollTop: contenedor ? contenedor.scrollTop : 0, scrollLeft: raizScroll ? raizScroll.scrollLeft : 0, registroId: null };
+    if(_libroRegistroAbierto) posicion.registroId = _libroRegistroAbierto;
+  }
+  _libroCargaEnCurso = posicion;
+  _libroRegistroAbierto = null; // la consume el refresco; la carga normal la descarta
   document.getElementById('libroContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando libro de obra...</div>';
   // El mapa de acumulados a la fecha se rehace en paralelo con el listado: toda alta, edición,
   // eliminación, aprobación o sincronización vuelve a pasar por aquí.
@@ -4528,8 +4555,33 @@ async function cargarLibroObra(){
   const promesaAcumulados = obtenerAcumuladosLibro(currentProyecto).catch(e=>{ console.warn('Libro: acumulados a la fecha no disponibles:', e?.message||e); return null; });
   const { data } = await sb.from('libro_obra').select('*').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false});
   renderLibroObra(data||[]);
+  if(posicion) restaurarPosicionLibro(contenedor, posicion.scrollTop, posicion.registroId, posicion.scrollLeft);
+  else if(contenedor) contenedor.scrollTop = 0; // carga normal: lista desde arriba, sin depender de que el loader recorte el scroll
+  if(_libroCargaEnCurso === posicion) _libroCargaEnCurso = null;
   cargarArchivos('libro');
   await promesaAcumulados;
+}
+
+// Devuelve el scroll a donde estaba antes del loader y, si hay un registro a enfocar, centra su fila
+// (tr[data-id]) y la resalta un momento (mismo patrón que la fila de Rubros al editar). El resaltado
+// va en las celdas y no en el <tr>: el fondo de `tr:hover td` (styles.css) se pinta encima del de la
+// fila y lo taparía mientras el puntero siga sobre ella, que es lo normal tras pulsar ✓/⚠ en la propia
+// fila. Debe correr justo después de renderLibroObra, antes de que cargarArchivos termine de rellenar
+// el panel de archivos.
+function restaurarPosicionLibro(contenedor, scrollPrevio, registroId, scrollXPrevio){
+  if(contenedor) contenedor.scrollTop = scrollPrevio;
+  const fila = registroId ? document.querySelector(`#libroContent tr[data-id="${registroId}"]`) : null;
+  if(fila){
+    if(typeof fila.scrollIntoView === 'function') fila.scrollIntoView({block:'center'});
+    const celdas = fila.querySelectorAll('td');
+    celdas.forEach(td=>{ td.style.transition = 'background .4s'; td.style.background = '#fff8e1'; });
+    setTimeout(()=>{ celdas.forEach(td=>{ td.style.background = ''; }); }, 1800);
+  }
+  // En móvil (y en escritorio angosto) la tabla de 10 columnas desplaza la PÁGINA en horizontal, no
+  // .content: el loader recorta ese scroll a 0 y scrollIntoView (inline 'nearest') no lo repone. Se
+  // devuelve después de centrar; sin desbordamiento horizontal la asignación se recorta a 0 y no hace nada.
+  const raizScroll = document.scrollingElement || document.documentElement;
+  if(raizScroll && scrollXPrevio != null) raizScroll.scrollLeft = scrollXPrevio;
 }
 
 // ── ÓRDENES DE CAMBIO ──
@@ -5980,7 +6032,7 @@ async function sincronizarRegistrosOffline(){
     proyectosLibroOk.forEach(pid => cargarRubrosConReferenciaLibro(pid).catch(()=>{}));
     toastConAdjuntos(`✓ ${ok} registro(s) de campo sincronizado(s)`, adjuntosFallidos);
     try{
-      if(currentPage==='libro') cargarLibroObra();
+      if(currentPage==='libro') cargarLibroObra(true);
       refrescarFiscalizacion(); // solo en la sección; en Planos repinta los pins (la observación offline promete "el pin aparecerá al sincronizar")
       if(currentPage==='solicitudes') cargarSolicitudes();
       // Recorridos 360 solo se refresca (parcialmente) si se subieron fotos 360: no se destruye el visor por un libro o una observación
@@ -6121,8 +6173,9 @@ async function aprobarRegistroLibro(id, numero, btn){
     invalidarCacheProyectos();
     cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // "por aprobar" de la caché sin señal
     toast(`Registro N° ${numero} aprobado ✓`,'success');
+    _libroRegistroAbierto = id; // la fila aprobada queda centrada y resaltada tras el re-render
     // Se espera el re-render: el guard cubre hasta que la fila pierde el botón ✓
-    await cargarLibroObra();
+    await cargarLibroObra(true);
     cargarNotificacionesGlobales();
   } finally {
     enCurso.delete(id);
@@ -6145,7 +6198,8 @@ async function observarRegistroLibro(id, numero){
   notificarPorEmail('libro', 'Registro observado — requiere corrección', comentario.trim(), numero);
   invalidarCacheProyectos();
   toast(`Registro N° ${numero} devuelto con observación`,'success');
-  cargarLibroObra();
+  _libroRegistroAbierto = id; // la fila observada queda centrada y resaltada tras el re-render
+  cargarLibroObra(true);
   cargarNotificacionesGlobales();
 }
 
@@ -6157,7 +6211,8 @@ async function reabrirRegistroLibro(id, numero){
   invalidarCacheProyectos();
   cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // "por aprobar" de la caché sin señal
   toast(`Registro N° ${numero} reabierto`,'success');
-  cargarLibroObra();
+  _libroRegistroAbierto = id; // la fila reabierta queda centrada y resaltada tras el re-render
+  cargarLibroObra(true);
 }
 
 function accionesAprobacionLibro(r){
@@ -6192,7 +6247,7 @@ function renderLibroObra(registros){
 
   document.getElementById('libroContent').innerHTML = header + `
     <table><thead><tr><th>#</th><th>Fecha</th><th>Clima</th><th>Temp.</th><th>Personal</th><th>Actividades</th><th>Novedades</th><th>Fotos</th><th>Aprobación</th><th></th></tr></thead><tbody>
-    ${registros.map(r=>`<tr>
+    ${registros.map(r=>`<tr data-id="${r.id}">
       <td style="font-weight:600;color:#0073ea;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${r.numero_registro||'—'}</td>
       <td style="font-weight:600;white-space:nowrap;cursor:pointer" onclick="verDetalleLibro('${r.id}')">${new Date(r.fecha+'T00:00:00').toLocaleDateString('es-EC',{day:'2-digit',month:'short',year:'numeric'})}</td>
       <td style="cursor:pointer" onclick="verDetalleLibro('${r.id}')">${climaIcon(r.clima)} ${r.clima||'—'}</td>
@@ -6345,6 +6400,7 @@ async function abrirModalLibro(){
   libroRubrosSeleccionados = [];
   libroRubrosGuardados = {};
   libroRubrosRef = {};
+  _libroRegistroAbierto = null; // crear uno nuevo no debe centrar el último abierto
   // Si se canceló una edición, el modal conservaba título, botón y _editandoRegistroId
   // de esa edición y "Guardar" habría sobrescrito aquel registro: volver a modo creación.
   restaurarModoCreacionLibro();
@@ -6913,7 +6969,7 @@ async function guardarRegistroLibro(){
   cerrarModal('modalLibro');
   btnGuardar.disabled=false;
   btnGuardar.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar registro';
-  cargarLibroObra();
+  cargarLibroObra(true); // solo restaura el scroll: abrirModalLibro vació la marca
 }
 
 // ── CURVA S ──
@@ -16059,7 +16115,8 @@ async function guardarEdicionRegistro(){
   restaurarModoCreacionLibro();
 
   cerrarModal('modalLibro');
-  cargarLibroObra();
+  _libroRegistroAbierto = id; // la fila editada queda centrada y resaltada
+  cargarLibroObra(true);
 }
 
 async function confirmarEliminarRegistro(id, num){
@@ -16099,7 +16156,7 @@ async function confirmarEliminarRegistro(id, num){
   cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // caché "al último sync" sin este registro
   toast('Registro eliminado y rubros actualizados','success');
   cerrarModal('modalDetalleLibro');
-  cargarLibroObra();
+  cargarLibroObra(true); // solo restaura el scroll: eliminar no fija la marca
 }
 function toast(msg, tipo='info'){
   const el=document.getElementById('toast');
