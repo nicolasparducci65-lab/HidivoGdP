@@ -83,6 +83,12 @@ function crearSb(fixture, opciones = {}){
       gt(c, v){ b._filtros.push(f => f[c] != null && f[c] > v); return b; },
       lt(c, v){ b._filtros.push(f => f[c] != null && f[c] < v); return b; },
       in(c, arr){ b._filtros.push(f => (arr||[]).includes(f[c])); return b; },
+      // 'col.is.null,col.neq.v,col.eq.v': basta con que se cumpla una condición (PostgREST or=)
+      or(expr){
+        const conds = String(expr).split(',').map(s => { const [c, op, ...resto] = s.split('.'); const v = resto.join('.');
+          return f => op === 'is' ? (v === 'null' ? f[c] == null : f[c] === (v === 'true')) : op === 'neq' ? f[c] !== v : f[c] === v; });
+        b._filtros.push(f => conds.some(fn => fn(f))); return b;
+      },
       is(c, v){ b._filtros.push(f => f[c] === v); return b; },
       order(c, o){ b._orden.push([c, !(o && o.ascending === false)]); return b; },
       limit(n){ b._rango = [0, n-1]; return b; },
@@ -109,10 +115,12 @@ function crearSb(fixture, opciones = {}){
           filas = filas.slice().sort((x, y) => (x[c] > y[c] ? 1 : x[c] < y[c] ? -1 : 0) * (asc ? 1 : -1));
         }
         if(b._rango) filas = filas.slice(b._rango[0], b._rango[1] + 1);
-        // Incrustaciones `alias:tabla(cols)`
-        // `alias:tabla(cols)` y `tabla!inner(cols)` (alias = tabla)
-        const embeds = [...String(b._select).matchAll(/(\w+):(\w+)\(([^)]*)\)/g)]
-          .concat([...String(b._select).matchAll(/(\w+)!inner\(([^)]*)\)/g)].map(m => [m[0], m[1], m[1], m[2]]));
+        // Incrustaciones `alias:tabla(cols)`, `tabla!inner(cols)` y `tabla(cols)` (alias = tabla)
+        const sel = String(b._select);
+        const sinAliasNiInner = sel.replace(/(\w+):(\w+)\([^)]*\)/g, '').replace(/(\w+)!inner\([^)]*\)/g, '');
+        const embeds = [...sel.matchAll(/(\w+):(\w+)\(([^)]*)\)/g)]
+          .concat([...sel.matchAll(/(\w+)!inner\(([^)]*)\)/g)].map(m => [m[0], m[1], m[1], m[2]]))
+          .concat([...sinAliasNiInner.matchAll(/(\w+)\(([^)]*)\)/g)].map(m => [m[0], m[1], m[1], m[2]]));
         if(embeds.length){
           filas = filas.map(f => {
             const copia = { ...f };

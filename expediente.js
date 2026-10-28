@@ -336,6 +336,21 @@ function renderRegistroLibroHTML(r, ctx){
   const inc = ctx.inc || {};
   const incActividades = !!inc.actividades, incEquipos = !!inc.equipos, incMateriales = !!inc.materiales;
   const incRubros = !!inc.rubros, incNovedades = !!inc.novedades, incFotos = !!inc.fotos;
+  // Acumulados a la fecha del registro (Map rubro_id → {acumulado, saldo}) cuando el llamador los
+  // pasa (reporte del libro: ctx.acumulados, puede ser null si no se pudieron cargar → «—»); el
+  // expediente no los pasa y conserva las 4 columnas. La cantidad se formatea como en pantalla
+  // (fmtCantidadRef de index.html) cuando está disponible. El saldo a la fecha se calcula con el
+  // contrato vigente de la fila (rubros.cantidad_contrato, recién leído) cuando viene; a.saldo
+  // del mapa es solo respaldo, porque puede llevar un contrato anterior a una OC aprobada.
+  const conAcum = ctx.acumulados !== undefined, acum = ctx.acumulados || null;
+  const fmtQ = typeof fmtCantidadRef === 'function' ? fmtCantidadRef : (v => v);
+  const saldoFecha = (a, rr) => {
+    if(!a) return null;
+    const c = rr.rubros?.cantidad_contrato;
+    if(c == null) return a.saldo;
+    const contrato = Number(c) || 0;
+    return contrato > 0 ? Math.round((contrato - (Number(a.acumulado) || 0)) * 1e4) / 1e4 : null;
+  };
   return `
   <div class="registro-block">
     <div class="registro-header">
@@ -354,8 +369,8 @@ function renderRegistroLibroHTML(r, ctx){
       ${incEquipos && r.equipos_maquinaria ? `<div class="campo"><span class="lbl">Equipos y maquinaria</span><div class="val">${r.equipos_maquinaria}</div></div>` : ''}
       ${incMateriales && r.materiales_utilizados ? `<div class="campo"><span class="lbl">Materiales utilizados</span><div class="val">${r.materiales_utilizados}</div></div>` : ''}
       ${incRubros && rubrosReg.length ? `<div class="campo"><span class="lbl">Rubros trabajados</span>
-        <table><thead><tr><th>Cód.</th><th>Descripción</th><th style="text-align:right">Cantidad</th><th>Unidad</th></tr></thead><tbody>
-        ${rubrosReg.map(rr=>`<tr><td>${rr.rubros?.codigo||'—'}</td><td>${rr.rubros?.descripcion||'—'}</td><td class="td-qty">${rr.cantidad_dia}</td><td>${rr.rubros?.unidad||'—'}</td></tr>`).join('')}
+        <table><thead><tr><th>Cód.</th><th>Descripción</th><th style="text-align:right">Cantidad</th><th>Unidad</th>${conAcum ? '<th style="text-align:right">Acum. a la fecha</th><th style="text-align:right">Saldo a la fecha</th>' : ''}</tr></thead><tbody>
+        ${rubrosReg.map(rr=>{ const a = acum ? acum.get(rr.rubro_id) : null, s = saldoFecha(a, rr); return `<tr><td>${rr.rubros?.codigo||'—'}</td><td>${rr.rubros?.descripcion||'—'}</td><td class="td-qty">${fmtQ(rr.cantidad_dia)}</td><td>${rr.rubros?.unidad||'—'}</td>${conAcum ? `<td class="td-qty">${a ? fmtQ(a.acumulado) : '—'}</td><td style="text-align:right">${s != null ? fmtQ(s) : '—'}</td>` : ''}</tr>`; }).join('')}
         </tbody></table></div>` : ''}
       ${incNovedades && r.novedades ? `<div class="campo"><span class="lbl">Novedades</span><div class="novedad-box">${r.novedades}</div></div>` : ''}
       ${incNovedades && r.resoluciones ? `<div class="campo"><span class="lbl">Resoluciones</span><div class="val">${r.resoluciones}</div></div>` : ''}

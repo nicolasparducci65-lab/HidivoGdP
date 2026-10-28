@@ -3353,11 +3353,14 @@ function invalidarCacheProyectos(){ cacheProyectos = null; }
 
 // Trae todas las filas paginando con .range(): PostgREST corta en max-rows
 // (1.000 por defecto) SIN avisar, y un admin ya supera esa cifra en rubros.
-async function traerPaginado(construir, tam=1000){
+// Ante un error de consulta (supabase-js no lanza: devuelve {error} también sin red) por
+// defecto se queda con lo leído hasta ahí; con estricto=true lanza ese error, para quien
+// vaya a cachear el resultado y no pueda tomar una lista parcial o vacía por válida.
+async function traerPaginado(construir, tam=1000, estricto=false){
   const filas = []; let desde = 0;
   for(;;){
     const { data, error } = await construir().range(desde, desde+tam-1);
-    if(error){ console.error('traerPaginado', error); break; }
+    if(error){ if(estricto) throw error; console.error('traerPaginado', error); break; }
     filas.push(...(data||[]));
     if(!data || data.length < tam) break;
     desde += tam;
@@ -3770,6 +3773,7 @@ function limpiarEstadoProyecto(){
   // Libro de obra
   window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
   libroRubrosGuardados = {}; libroRubrosRef = {}; window._libroRubrosCatalogo = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
+  _libroAcumulados = null; _libroAcumuladosProyecto = null; _libroAcumuladosPromesa = null;
   // Órdenes de cambio
   _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null;
   // Formatos de calidad (editor de plantilla y llenado)
@@ -4508,13 +4512,24 @@ let libroRubrosGuardados = {};
 // enCola, unidad, offline}). La arma armarReferenciasRubrosLibro y la pinta
 // pintarReferenciaRubroLibro; se vacía al abrir el modal, al guardar y al cambiar de proyecto.
 let libroRubrosRef = {};
+// Acumulados "a la fecha" del proyecto actual: Map<registro_id, Map<rubro_id, {acumulado, saldo,
+// contrato, enRegistro}>> que arma acumuladosLibroPorRegistro con UNA consulta por proyecto
+// (cargarFilasAcumuladosLibro). Lo rehace cargarLibroObra (tras guardar, editar, eliminar, aprobar
+// o sincronizar), lo leen verDetalleLibro y el reporte PDF, y se vacía en limpiarEstadoProyecto.
+// _libroAcumuladosPromesa evita dos cargas simultáneas del mismo proyecto.
+let _libroAcumulados = null, _libroAcumuladosProyecto = null, _libroAcumuladosPromesa = null;
 
 async function cargarLibroObra(){
   if(!currentProyecto) return;
   document.getElementById('libroContent').innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando libro de obra...</div>';
+  // El mapa de acumulados a la fecha se rehace en paralelo con el listado: toda alta, edición,
+  // eliminación, aprobación o sincronización vuelve a pasar por aquí.
+  _libroAcumulados = null; _libroAcumuladosPromesa = null;
+  const promesaAcumulados = obtenerAcumuladosLibro(currentProyecto).catch(e=>{ console.warn('Libro: acumulados a la fecha no disponibles:', e?.message||e); return null; });
   const { data } = await sb.from('libro_obra').select('*').eq('proyecto_id',currentProyecto).order('fecha',{ascending:false});
   renderLibroObra(data||[]);
   cargarArchivos('libro');
+  await promesaAcumulados;
 }
 
 // ── ÓRDENES DE CAMBIO ──
@@ -6275,7 +6290,16 @@ async function verDetalleLibro(id){
   const { data: r } = await sb.from('libro_obra').select('*').eq('id',id).single();
   const { data: fotos } = await sb.from('libro_obra_fotos').select('*').eq('registro_id',id).order('orden');
   const { data: rubros } = await sb.from('libro_obra_rubros').select('*, rubros(codigo,descripcion,unidad,cantidad_contrato,cantidad_ejecutada)').eq('registro_id',id);
-  const refsRubros = r ? await referenciasRegistroLibro(r, rubros) : [];
+  // Acumulados a la fecha (mapa del proyecto; una sola consulta si aún no está) y lo pendiente
+  // de aprobación del rubro en todos los registros no aprobados, este incluido si no lo está
+  // («Acum. hoy» también lo incluye). Ninguna de las dos consulta por rubro.
+  let acumRegistro = null, pendientes = {};
+  if(r){
+    try{ acumRegistro = (await obtenerAcumuladosLibro(r.proyecto_id)).get(id) || null; }
+    catch(e){ console.warn('Libro: acumulados a la fecha no disponibles:', e?.message||e); }
+    try{ pendientes = await pendientesPorRubroLibro(r.proyecto_id); }
+    catch(e){ console.warn('Libro: pendientes por rubro no disponibles:', e?.message||e); }
+  }
 
   const fotosHtml = fotos&&fotos.length ? fotos.map(f=>`
     <div style="position:relative">
@@ -6283,13 +6307,13 @@ async function verDetalleLibro(id){
       ${f.descripcion?`<div style="font-size:11px;color:#676879;margin-top:4px;text-align:center">${escAttr(f.descripcion)}</div>`:''}
     </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin fotos</div>';
 
-  const rubrosHtml = refsRubros.length ? refsRubros.map(({fila: rv, r: rr})=>`
+  const rubrosHtml = rubros&&rubros.length ? rubros.map(rv=>`
     <div style="padding:8px 0;border-bottom:1px solid #f5f6f8">
       <div style="display:flex;justify-content:space-between">
         <span style="font-size:13px">${escAttr(rv.rubros?.codigo||'')} — ${escAttr(rv.rubros?.descripcion||'')}</span>
         <span style="font-weight:600;color:#0073ea">${fmtCantidadRef(rv.cantidad_dia)} ${escAttr(rv.rubros?.unidad||'')}</span>
       </div>
-      ${htmlReferenciaRubroLibro(rr)}
+      ${htmlDetalleRubroLibro({ unidad: rv.rubros?.unidad||'', contrato: rv.rubros?.cantidad_contrato, cantidad: rv.cantidad_dia, ejecutada: rv.rubros?.cantidad_ejecutada, pendiente: pendientes[rv.rubro_id], aLaFecha: acumRegistro ? (acumRegistro.get(rv.rubro_id)||null) : null })}
     </div>`).join('') : '<div style="color:#676879;font-size:13px">Sin rubros registrados</div>';
 
   document.getElementById('detalleLibroBody').innerHTML = `
@@ -6490,14 +6514,130 @@ function pintarReferenciaRubroLibro(id){
   if(r.supera){ el.style.color = '#b8860b'; el.style.background = '#fdf6e3'; el.style.padding = '3px 8px'; el.style.borderRadius = '6px'; }
   else { el.style.color = '#676879'; el.style.background = ''; el.style.padding = ''; el.style.borderRadius = ''; }
 }
-// Misma referencia como HTML seguro (detalle del registro).
-function htmlReferenciaRubroLibro(r){
-  const estilo = r.supera ? 'color:#b8860b;background:#fdf6e3;padding:3px 8px;border-radius:6px' : 'color:#676879';
-  return `<div style="font-size:11px;line-height:1.5;margin-top:2px;${estilo}">${escAttr(lineaReferenciaRubroLibro(r))}</div>`;
+// Línea de "Rubros trabajados" del detalle de un registro (lógica de planilla por rubro, D4):
+//   Contrato · Anterior · Este registro · Acum. a la fecha (%) · Saldo a la fecha
+//   | Acum. hoy (x por aprobar) · Saldo hoy · ⚠ Supera el contrato en X
+// Anterior y Acum. a la fecha salen del mapa de acumulados (aLaFecha = {acumulado, enRegistro});
+// los dos saldos se calculan aquí con d.contrato (el vigente al abrir). Acum. hoy es
+// rubros.cantidad_ejecutada tal como la lleva la app. Sin contrato: sin porcentaje ni saldos.
+// Sin mapa (sin red al abrir): «—» en las partes históricas. Cada parte lleva title como
+// tooltip. Ámbar si el acumulado de hoy supera el contrato vigente.
+function htmlDetalleRubroLibro(d){
+  const u = d.unidad ? ' '+escAttr(d.unidad) : '';
+  const contrato = numeroRef(d.contrato), q = numeroRef(d.cantidad), hoy = numeroRef(d.ejecutada), pendiente = numeroRef(d.pendiente);
+  const sinContrato = !(contrato > 0);
+  const pct = v => sinContrato ? '' : ' ('+(v/contrato*100).toLocaleString('es-EC',{maximumFractionDigits:1})+' %)';
+  const parte = (titulo, texto) => `<span title="${escAttr(titulo)}">${texto}</span>`;
+  const a = d.aLaFecha || null;
+  const fecha = a ? numeroRef(a.acumulado) : null;
+  const anterior = a ? redondear4Libro(fecha - numeroRef(a.enRegistro ?? q)) : null;
+  const izq = [
+    parte(sinContrato ? 'El rubro no tiene cantidad contractual' : 'Cantidad contractual vigente del rubro (incluye las órdenes de cambio aprobadas)',
+      sinContrato ? 'Sin cantidad contractual' : `Contrato: ${fmtCantidadRef(contrato)}${u}`),
+    parte('Acumulado del rubro en los registros anteriores a este (orden: fecha, número, creación)', `Anterior: ${a ? fmtCantidadRef(anterior)+u : '—'}`),
+    parte('Cantidad registrada en este registro', `Este registro: ${fmtCantidadRef(q)}${u}`),
+    parte('Acumulado hasta este registro inclusive (orden: fecha, número, creación)', `Acum. a la fecha: ${a ? fmtCantidadRef(fecha)+u+pct(fecha) : '—'}`)
+  ];
+  // Saldo con el contrato que se muestra (d.contrato, releído al abrir), no con a.saldo: el mapa
+  // puede llevar un contrato anterior si otro usuario aprobó una OC después de cargarlo.
+  if(!sinContrato) izq.push(parte('Contrato vigente menos el acumulado a la fecha', `Saldo a la fecha: ${a ? fmtCantidadRef(redondear4Libro(contrato - fecha))+u : '—'}`));
+  const der = [
+    parte('Acumulado del rubro al día de hoy, con todos los registros, tal como lo lleva la app' + (pendiente > 0 ? '; entre paréntesis lo que está en registros aún no aprobados (este incluido si no lo está)' : ''),
+      `Acum. hoy: ${fmtCantidadRef(hoy)}${u}${pendiente > 0 ? ' ('+fmtCantidadRef(pendiente)+u+' por aprobar)' : ''}`)
+  ];
+  if(!sinContrato) der.push(parte('Contrato vigente menos el acumulado de hoy', `Saldo hoy: ${fmtCantidadRef(contrato - hoy)}${u}`));
+  const exceso = sinContrato ? 0 : Math.max(0, redondear4Libro(hoy - contrato));
+  if(exceso > 0) der.push(`⚠ Supera el contrato en ${fmtCantidadRef(exceso)}${u}`);
+  const estilo = exceso > 0 ? 'color:#b8860b;background:#fdf6e3;padding:3px 8px;border-radius:6px' : 'color:#676879';
+  return `<div style="font-size:11px;line-height:1.5;margin-top:2px;${estilo}">${izq.join(' · ')} &nbsp;|&nbsp; ${der.join(' · ')}</div>`;
+}
+
+// ── LIBRO DE OBRA: acumulados "a la fecha" por registro ──
+function redondear4Libro(v){
+  return Math.round((Number(v)||0)*1e4)/1e4;
+}
+// Orden de corte (D2): fecha del registro, numero_registro (sin número: último de su fecha),
+// created_at y por último id. a y b son {id, fecha, numero, created_at}.
+function compararRegistrosLibro(a, b){
+  const fa = a.fecha||'', fb = b.fecha||'';
+  if(fa !== fb) return fa < fb ? -1 : 1;                       // 'YYYY-MM-DD' ordena como texto
+  const na = a.numero==null ? Infinity : Number(a.numero), nb = b.numero==null ? Infinity : Number(b.numero);
+  if(na !== nb) return na < nb ? -1 : 1;
+  const ca = a.created_at||'', cb = b.created_at||'';
+  if(ca !== cb) return ca < cb ? -1 : 1;
+  return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
+}
+// Acumulado "a la fecha" de cada (registro, rubro): suma de cantidad_dia del rubro en todos los
+// registros anteriores y en el propio registro (D1), recorriendo los registros en el orden de
+// compararRegistrosLibro. Entran exactamente las filas que entran en cantidad_ejecutada: todas
+// las de libro_obra_rubros sin mirar estado_aprobacion; no existe anulación y un registro
+// eliminado ya no tiene filas (D3).
+// Un registro con fecha anterior pero número mayor (en Parqueadero el N°38 es del 16-jul y el
+// N°37 del 17-jul) entra ANTES en el recorrido, así que el N°37 muestra un acumulado que ya
+// incluye lo del N°38. Es el comportamiento deseado: el acumulado sigue la fecha del trabajo,
+// no el número administrativo.
+// filas: [{registro_id, rubro_id, cantidad_dia, libro_obra:{fecha, numero_registro, created_at},
+//         rubros:{cantidad_contrato}}] (lo que devuelve cargarFilasAcumuladosLibro).
+// Devuelve Map<registro_id, Map<rubro_id, {acumulado, saldo, contrato, enRegistro}>>: saldo =
+// contrato vigente − acumulado (null sin contrato); enRegistro = lo del rubro en ese registro.
+function acumuladosLibroPorRegistro(filas){
+  const registros = new Map(), filasPorRegistro = new Map();
+  for(const f of (filas||[])){
+    const lo = f.libro_obra||{};
+    if(!registros.has(f.registro_id)) registros.set(f.registro_id, { id: f.registro_id, fecha: lo.fecha||'', numero: lo.numero_registro, created_at: lo.created_at||'' });
+    if(!filasPorRegistro.has(f.registro_id)) filasPorRegistro.set(f.registro_id, []);
+    filasPorRegistro.get(f.registro_id).push(f);
+  }
+  const resultado = new Map(), corriente = new Map();
+  for(const reg of [...registros.values()].sort(compararRegistrosLibro)){
+    const porRubro = new Map();
+    for(const f of filasPorRegistro.get(reg.id)){
+      const q = numeroRef(f.cantidad_dia);
+      corriente.set(f.rubro_id, (corriente.get(f.rubro_id)||0) + q);
+      const previo = porRubro.get(f.rubro_id);
+      porRubro.set(f.rubro_id, { contrato: numeroRef(f.rubros?.cantidad_contrato), enRegistro: (previo ? previo.enRegistro : 0) + q, acumulado: 0, saldo: null });
+    }
+    for(const [rubroId, e] of porRubro){
+      e.acumulado = redondear4Libro(corriente.get(rubroId));
+      e.enRegistro = redondear4Libro(e.enRegistro);
+      e.saldo = e.contrato > 0 ? redondear4Libro(e.contrato - e.acumulado) : null;
+    }
+    resultado.set(reg.id, porRubro);
+  }
+  return resultado;
+}
+// Filas de rubros de TODOS los registros del proyecto con lo necesario para el orden de corte
+// y el contrato vigente: una consulta por proyecto, paginada de a 1.000 con orden determinista.
+// Estricta: si una página falla, rechaza (obtenerAcumuladosLibro no cachea nada y el siguiente
+// detalle o PDF reintenta); con filas parciales el mapa daría acumulados menores como ciertos.
+async function cargarFilasAcumuladosLibro(proyectoId){
+  return traerPaginado(()=> sb.from('libro_obra_rubros')
+    .select('id,registro_id,rubro_id,cantidad_dia, libro_obra!inner(fecha,numero_registro,created_at,proyecto_id), rubros!inner(cantidad_contrato)')
+    .eq('libro_obra.proyecto_id', proyectoId)
+    .order('registro_id').order('id'), 1000, true);
+}
+// Mapa de acumulados del proyecto: reutiliza el que ya está (o el que se está cargando); si no,
+// lo construye con una sola consulta. Nunca consulta por rubro ni por registro.
+function obtenerAcumuladosLibro(proyectoId){
+  if(_libroAcumulados && _libroAcumuladosProyecto === proyectoId) return Promise.resolve(_libroAcumulados);
+  if(_libroAcumuladosPromesa && _libroAcumuladosProyecto === proyectoId) return _libroAcumuladosPromesa;
+  _libroAcumulados = null;
+  _libroAcumuladosProyecto = proyectoId;
+  const promesa = cargarFilasAcumuladosLibro(proyectoId).then(filas=>{
+    const mapa = acumuladosLibroPorRegistro(filas);
+    if(_libroAcumuladosProyecto === proyectoId && _libroAcumuladosPromesa === promesa){ _libroAcumulados = mapa; _libroAcumuladosPromesa = null; }
+    return mapa;
+  }, e=>{
+    if(_libroAcumuladosProyecto === proyectoId && _libroAcumuladosPromesa === promesa) _libroAcumuladosPromesa = null;
+    throw e;
+  });
+  _libroAcumuladosPromesa = promesa;
+  return promesa;
 }
 
 // Suma por rubro de lo registrado en registros NO aprobados del proyecto (pendiente de
-// aprobación). excluirRegistroId: el registro que se edita o se mira no se cuenta a sí mismo.
+// aprobación). excluirRegistroId (opcional): el registro que se edita o se va a aprobar no se
+// cuenta a sí mismo porque su acumulado de referencia tampoco lo cuenta; el detalle no excluye.
 async function pendientesPorRubroLibro(proyectoId, excluirRegistroId){
   const { data: regs, error } = await sb.from('libro_obra').select('id')
     .eq('proyecto_id', proyectoId).or('estado_aprobacion.is.null,estado_aprobacion.neq.aprobado');
@@ -15309,8 +15449,10 @@ async function generarReportePDF(){
   const rubrosData = {};
   if(document.getElementById('rptRubros').checked){
     for(const r of registros){
+      // cantidad_contrato: el "Saldo a la fecha" de la tabla se calcula con el contrato vigente
+      // (renderRegistroLibroHTML), no con el que llevaba el mapa de acumulados al cargarse.
       const { data: rr } = await sb.from('libro_obra_rubros')
-        .select('cantidad_dia, rubro_id, rubros!inner(codigo, descripcion, unidad, precio_unitario)')
+        .select('cantidad_dia, rubro_id, rubros!inner(codigo, descripcion, unidad, precio_unitario, cantidad_contrato)')
         .eq('registro_id', r.id);
       rubrosData[r.id] = rr||[];
     }
@@ -15339,6 +15481,9 @@ async function generarReportePDF(){
   const incNovedades = document.getElementById('rptNovedades').checked;
   const incRubros = document.getElementById('rptRubros').checked;
   const incFotos = document.getElementById('rptFotos').checked;
+  // Acumulados "a la fecha" para la tabla de rubros de cada registro: mapa del proyecto completo
+  // (los registros anteriores al período también cuentan); una consulta si aún no está cargado.
+  const acumLibro = incRubros ? await obtenerAcumuladosLibro(currentProyecto).catch(e=>{ console.warn('Libro: acumulados a la fecha no disponibles:', e?.message||e); return null; }) : null;
 
   // Cargar rubros completos para cuadro de producción (siempre, independiente del checkbox)
   const rubrosDataCompleto = {};
@@ -15568,7 +15713,7 @@ ${incCurvaS && curvaSDatos ? `
 
 <div class="section">
   <div class="section-title">Registros del Período — ${registros.length} registro(s)</div>
-  ${registros.map(r => renderRegistroLibroHTML(r, { nombresAprobadores: window._nombresAprobadores, rubros: rubrosData[r.id], fotos: fotosData[r.id], inc: { actividades: incActividades, equipos: incEquipos, materiales: incMateriales, rubros: incRubros, novedades: incNovedades, fotos: incFotos } })).join('')}
+  ${registros.map(r => renderRegistroLibroHTML(r, { nombresAprobadores: window._nombresAprobadores, rubros: rubrosData[r.id], fotos: fotosData[r.id], acumulados: acumLibro ? (acumLibro.get(r.id)||null) : null, inc: { actividades: incActividades, equipos: incEquipos, materiales: incMateriales, rubros: incRubros, novedades: incNovedades, fotos: incFotos } })).join('')}
 </div>
 
 ${montoLibro.difiere ? `<div style="font-size:8px;color:#676879;margin:4px 0 6px">* Monto contractual del registro del proyecto. Vigente por rubros (con órdenes de cambio): $${Number(montoLibro.vigente).toLocaleString('es-EC',{minimumFractionDigits:2})} · Δ ${(montoLibro.delta>=0?'+':'−')+'$'+Number(Math.abs(montoLibro.delta)).toLocaleString('es-EC',{minimumFractionDigits:2})}.</div>` : ''}

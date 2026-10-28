@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
-const { RAIZ, leer, scriptPrincipal, extraerFuncion, fuenteSiExiste, crearSb, cargarFixture, prueba, resumen, assert } = require('./lib/arnes');
+const { RAIZ, leer, scriptPrincipal, extraerFuncion, extraerConst, fuenteSiExiste, crearSb, cargarFixture, prueba, resumen, assert } = require('./lib/arnes');
 
 const GRABAR = process.argv.includes('--grabar');
 const DIR_SNAP = path.join(__dirname, 'snapshots');
@@ -19,8 +19,10 @@ const src = scriptPrincipal(html);
 const corte = (desde, hasta) => { const i = html.indexOf(desde), j = html.indexOf(hasta, i); assert(i > 0 && j > i, 'bloque ' + desde); return html.slice(i, j); };
 const MODALES = corte('<div class="modal-overlay" id="modalReporte">', '<div class="modal-overlay" id="modalResumenIA"') + corte('<div class="modal-overlay" id="modalVistaReporte"', '<div class="modal-overlay" id="modalCronograma"');
 // Funciones del script principal (las que el refactor mueva a expediente.js se cargan desde allí).
-const FUNCIONES = ['generarReportePDF', 'traerPaginado', 'obtenerMontoContratoProyecto', 'puedeResumenIA', 'cerrarModal', 'formatoKSinSigno', 'climaIcon', 'escAttr'];
-const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), FUNCIONES.map(f => fuenteSiExiste(src, f)).join('\n')].join('\n');
+const FUNCIONES = ['generarReportePDF', 'traerPaginado', 'obtenerMontoContratoProyecto', 'puedeResumenIA', 'cerrarModal', 'formatoKSinSigno', 'climaIcon', 'escAttr',
+  // acumulados "a la fecha" de la tabla de rubros por registro
+  'numeroRef', 'fmtCantidadRef', 'redondear4Libro', 'compararRegistrosLibro', 'acumuladosLibroPorRegistro', 'cargarFilasAcumuladosLibro', 'obtenerAcumuladosLibro'];
+const CODIGO = [leer(path.join(RAIZ, 'constantes.js')), leer(path.join(RAIZ, 'expediente.js')), extraerConst(src, '_libroAcumulados'), FUNCIONES.map(f => fuenteSiExiste(src, f)).join('\n')].join('\n');
 const FIJA = new Date('2026-10-14T15:00:00Z').getTime();
 
 function crearPagina(fixture){
