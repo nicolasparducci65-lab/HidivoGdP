@@ -15035,6 +15035,27 @@ async function cambiarEstadoRubro(id, estado){
   cargarRubros(id);
 }
 
+// Recalcula UN rubro desde el libro de obra: suma todas sus filas de libro_obra_rubros (las
+// mismas que entran en el acumulado del libro, sin mirar estado_aprobacion; paginado por si un
+// rubro pasa de 1.000 filas), calcula el estado automático y actualiza rubros. `suspendido` se
+// respeta. Lanza si alguna consulta falla: quien llama decide cómo avisar. Devuelve {total, estado}.
+// La usan el botón «Recalcular» de la tabla (recalcularRubros) y el modal de trazabilidad.
+async function recalcularRubro(rubroId){
+  const filas = await traerPaginado(()=> sb.from('libro_obra_rubros').select('id,cantidad_dia').eq('rubro_id', rubroId).order('id'), 1000, true);
+  const total = filas.reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
+  const { data: rubroActual, error: errLectura } = await sb.from('rubros').select('cantidad_contrato,estado').eq('id', rubroId).single();
+  if(errLectura) throw errLectura;
+  let nuevoEstado = rubroActual?.estado || 'planificado';
+  if(rubroActual?.estado !== 'suspendido'){
+    if(total <= 0) nuevoEstado = 'planificado';
+    else if(rubroActual?.cantidad_contrato > 0 && total >= rubroActual.cantidad_contrato) nuevoEstado = 'terminado';
+    else nuevoEstado = 'trabajando';
+  }
+  const { error: errEscritura } = await sb.from('rubros').update({ cantidad_ejecutada: total, estado: nuevoEstado }).eq('id', rubroId);
+  if(errEscritura) throw errEscritura;
+  return { total, estado: nuevoEstado };
+}
+
 async function recalcularRubros(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   const btn = event.target.closest('button');
@@ -15044,26 +15065,15 @@ async function recalcularRubros(){
   const { data: rubros } = await sb.from('rubros').select('id').eq('proyecto_id', currentProyecto);
   if(!rubros||!rubros.length){ toast('No hay rubros en este proyecto','error'); if(btn){btn.disabled=false;btn.innerHTML='↻ Recalcular';} return; }
 
-  // Para cada rubro, sumar todas las cantidades del libro de obra
+  // Para cada rubro, la misma regla que el modal de trazabilidad (recalcularRubro). Antes un
+  // error de consulta pasaba en silencio y el rubro quedaba sin actualizar; ahora se avisa.
   let actualizados = 0;
-  for(const rubro of rubros){
-    const { data: sumas } = await sb.from('libro_obra_rubros')
-      .select('cantidad_dia')
-      .eq('rubro_id', rubro.id);
-    const total = (sumas||[]).reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
-    // Calcular estado automático
-    const { data: rubroActual } = await sb.from('rubros').select('cantidad_contrato,estado').eq('id',rubro.id).single();
-    let nuevoEstado = rubroActual?.estado || 'planificado';
-    if(rubroActual?.estado !== 'suspendido'){
-      if(total <= 0) nuevoEstado = 'planificado';
-      else if(rubroActual?.cantidad_contrato > 0 && total >= rubroActual.cantidad_contrato) nuevoEstado = 'terminado';
-      else nuevoEstado = 'trabajando';
-    }
-    await sb.from('rubros').update({ cantidad_ejecutada: total, estado: nuevoEstado }).eq('id', rubro.id);
-    actualizados++;
+  try{
+    for(const rubro of rubros){ await recalcularRubro(rubro.id); actualizados++; }
+    toast(`✅ ${actualizados} rubros recalculados`, 'success');
+  }catch(e){
+    toast(`Error al recalcular (${actualizados} de ${rubros.length} listos): ${e?.message||e}`, 'error');
   }
-
-  toast(`✅ ${actualizados} rubros recalculados`, 'success');
   cargarRubros(true);
 }
 
