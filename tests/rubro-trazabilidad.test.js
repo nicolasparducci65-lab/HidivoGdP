@@ -223,9 +223,10 @@ function ventana({ sb, rol = 'admin', cerrado = false } = {}){
     const cA = crearContexto({ codigo: [CODIGO + BLOQUEAR], globals: { sb: crearSb(fxA), currentPerfil: { rol: 'admin' } } });
     const res = {};
     for(const r of RUBROS) res[r.id] = await cA.recalcularRubro(r.id);
-    // La suma no se redondea (mismo comportamiento que tenía recalcularRubros): se compara a 4 decimales
-    const r4 = v => Math.round(v * 1e4) / 1e4;
-    assert(r4(res[R1].total) === 53.3 && res[R1].estado === 'trabajando', JSON.stringify(res[R1]));
+    assert(res[R1].total === 53.3 && res[R1].estado === 'trabajando', 'suma redondeada a 4 decimales, igualdad exacta: ' + JSON.stringify(res[R1]));
+    // Lo escrito en rubros.cantidad_ejecutada tampoco lleva residuo flotante (53.300000000000004)
+    const escrito = fxA.rubros.find(r => r.id === R1).cantidad_ejecutada;
+    assert(escrito === 53.3 && String(escrito) === '53.3', 'escrito sin residuo: ' + String(escrito));
     assert(res[R2].total === 0 && res[R2].estado === 'planificado', 'sin filas → 0 y planificado: ' + JSON.stringify(res[R2]));
     assert(res[R4].total === 10 && res[R4].estado === 'suspendido', 'suspendido se respeta: ' + JSON.stringify(res[R4]));
     assert(res[R5].total === 12 && res[R5].estado === 'terminado', 'supera el contrato → terminado: ' + JSON.stringify(res[R5]));
@@ -248,7 +249,7 @@ function ventana({ sb, rol = 'admin', cerrado = false } = {}){
     w.event = { target: { closest: () => null } };
     await w.recalcularRubroDesdeTrazabilidad(R1);
     const html = w.document.getElementById('trazRubroBody').innerHTML;
-    assert(r4(fx.rubros.find(r => r.id === R1).cantidad_ejecutada) === 53.3 && html.includes('✓ coincide') && !html.includes('Recalcular este rubro') && w.recargas === 1, 'tras recalcular: ' + texto(html).slice(0, 160));
+    assert(fx.rubros.find(r => r.id === R1).cantidad_ejecutada === 53.3 && html.includes('✓ coincide') && !html.includes('Recalcular este rubro') && w.recargas === 1, 'tras recalcular: ' + texto(html).slice(0, 160));
     // Residente: el botón no hace nada aunque se invoque
     const fx2 = copia(); fx2.rubros.find(r => r.id === R1).cantidad_ejecutada = 0.7;
     const w2 = ventana({ sb: crearSb(fx2), rol: 'residente' });

@@ -15058,11 +15058,13 @@ async function cambiarEstadoRubro(id, estado){
 // Recalcula UN rubro desde el libro de obra: suma todas sus filas de libro_obra_rubros (las
 // mismas que entran en el acumulado del libro, sin mirar estado_aprobacion; paginado por si un
 // rubro pasa de 1.000 filas), calcula el estado automático y actualiza rubros. `suspendido` se
-// respeta. Lanza si alguna consulta falla: quien llama decide cómo avisar. Devuelve {total, estado}.
+// respeta. El total se redondea a 4 decimales (redondear4Libro) antes de comparar con el contrato y de
+// escribirlo. Lanza si alguna consulta falla: quien llama decide cómo avisar. Devuelve {total, estado}.
 // La usan el botón «Recalcular» de la tabla (recalcularRubros) y el modal de trazabilidad.
 async function recalcularRubro(rubroId){
   const filas = await traerPaginado(()=> sb.from('libro_obra_rubros').select('id,cantidad_dia').eq('rubro_id', rubroId).order('id'), 1000, true);
-  const total = filas.reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
+  // Redondeada a 4 decimales (como los acumulados del libro): sin residuo flotante en cantidad_ejecutada
+  const total = redondear4Libro(filas.reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0));
   const { data: rubroActual, error: errLectura } = await sb.from('rubros').select('cantidad_contrato,estado').eq('id', rubroId).single();
   if(errLectura) throw errLectura;
   let nuevoEstado = rubroActual?.estado || 'planificado';
