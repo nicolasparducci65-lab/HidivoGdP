@@ -784,6 +784,23 @@
   </div>
 </div>
 
+<!-- MODAL TRAZABILIDAD DEL RUBRO. Va ANTES del detalle del registro (#modalDetalleLibro) y del
+     de la planilla (#modalVerPlanilla) en el documento: todos los overlays comparten z-index y
+     al iniciar se mueven al body en este mismo orden, así 👁 abre el detalle ENCIMA y al
+     cerrarlo este sigue abierto. -->
+<div class="modal-overlay" id="modalTrazabilidadRubro">
+  <div class="modal" style="width:760px;max-width:98vw;max-height:95vh">
+    <div class="modal-header">
+      <div class="modal-title">📒 Trazabilidad del rubro</div>
+      <button class="btn" onclick="cerrarModal('modalTrazabilidadRubro')" style="padding:6px 10px">✕</button>
+    </div>
+    <div class="modal-body" id="trazRubroBody"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarModal('modalTrazabilidadRubro')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL DETALLE REGISTRO -->
 <div class="modal-overlay" id="modalDetalleLibro">
   <div class="modal" style="width:700px;max-width:98vw">
@@ -3774,6 +3791,8 @@ function limpiarEstadoProyecto(){
   window._editandoRegistroId = null; window._detalleRegistroId = null; window._detalleRegistroNum = null; window._nombresAprobadores = {};
   libroRubrosGuardados = {}; libroRubrosRef = {}; window._libroRubrosCatalogo = {}; libroFotosSeleccionadas = []; libroRubrosSeleccionados = []; libroEquiposSeleccionados = []; libroMaterialesSeleccionados = [];
   _libroAcumulados = null; _libroAcumuladosProyecto = null; _libroAcumuladosPromesa = null; _libroRegistroAbierto = null; _libroCargaEnCurso = null;
+  // Rubros: trazabilidad abierta (modal)
+  window._trazRubroId = null;
   // Órdenes de cambio
   _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null;
   // Formatos de calidad (editor de plantilla y llenado)
@@ -15074,6 +15093,210 @@ async function recalcularRubros(){
   }catch(e){
     toast(`Error al recalcular (${actualizados} de ${rubros.length} listos): ${e?.message||e}`, 'error');
   }
+  cargarRubros(true);
+}
+
+// ── TRAZABILIDAD DEL RUBRO ──
+// Modal que muestra de qué registros del libro de obra sale cantidad_ejecutada (bloque A) y en
+// qué planillas se ha facturado el rubro (bloque B). Sin migración: todo sale de tablas que ya
+// existen. No cachea nada: cada apertura consulta de nuevo. armarTrazabilidadLibro y
+// armarTrazabilidadPlanillas son puras (modelo sin HTML) y las cubren las pruebas.
+const PLANILLAS_EN_TRAMITE = ['borrador','en_revision','enviada'];
+
+// Badge 🔄 de un rubro nacido de una orden de cambio (la tabla de Rubros y el modal usan el mismo).
+function badgeOrdenCambioRubro(r){
+  if(!r?.es_orden_cambio) return '';
+  return `<span style="display:inline-block;background:#fff3e0;color:#b8860b;border:1px solid #ffe0a3;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px;white-space:nowrap">🔄 ${escAttr(r.orden_cambio_codigo||'OC')}</span>`;
+}
+
+// Bloque A. filas: lo que devuelve libro_obra_rubros con libro_obra!inner
+// [{id, registro_id, cantidad_dia, libro_obra:{id, fecha, numero_registro, estado_aprobacion, created_at}}].
+// rubro: {cantidad_contrato, cantidad_ejecutada}. Devuelve
+// {registros:[{id, fecha, numero, estado_aprobacion, cantidad, acumulado, saldo}], suma, contrato,
+//  ejecutada, diferencia, coincide, pendientes:{n, suma}}.
+function armarTrazabilidadLibro(filas, rubro){
+  const contrato = numeroRef(rubro?.cantidad_contrato), ejecutada = numeroRef(rubro?.cantidad_ejecutada);
+  // Varias filas del mismo rubro en un registro → una sola línea (como enRegistro en acumuladosLibroPorRegistro)
+  const porRegistro = new Map();
+  for(const f of (filas||[])){
+    const lo = f.libro_obra||{};
+    const reg = porRegistro.get(f.registro_id) || { id: f.registro_id, fecha: lo.fecha||'', numero: lo.numero_registro, created_at: lo.created_at||'', estado_aprobacion: lo.estado_aprobacion||null, cantidad: 0 };
+    reg.cantidad += numeroRef(f.cantidad_dia);
+    porRegistro.set(f.registro_id, reg);
+  }
+  // Mismo orden de corte que el libro (compararRegistrosLibro: fecha, número, created_at, id).
+  // Un registro con fecha anterior y número mayor entra ANTES y el siguiente ya lo incluye; es
+  // el comportamiento deseado (ver el N°38/N°37 de Parqueadero en acumuladosLibroPorRegistro).
+  const registros = [...porRegistro.values()].sort(compararRegistrosLibro);
+  let corriente = 0, pendN = 0, pendSuma = 0;
+  for(const r of registros){
+    corriente += r.cantidad;
+    r.cantidad = redondear4Libro(r.cantidad);
+    r.acumulado = redondear4Libro(corriente);
+    r.saldo = contrato > 0 ? redondear4Libro(contrato - r.acumulado) : null;
+    // Pendiente de aprobación: todo lo que no está aprobado, null incluido (como pendientesPorRubroLibro)
+    if(r.estado_aprobacion !== 'aprobado'){ pendN++; pendSuma += r.cantidad; }
+  }
+  const suma = redondear4Libro(corriente);
+  const diferencia = redondear4Libro(suma - ejecutada);
+  return { registros, suma, contrato, ejecutada, diferencia, coincide: redondear4Libro(ejecutada) === suma, pendientes: { n: pendN, suma: redondear4Libro(pendSuma) } };
+}
+
+// Bloque B. filas: lo que devuelve planilla_rubros con planillas_pago!inner
+// [{planilla_id, cantidad_periodo, cantidad_acumulada, precio_unitario, monto_periodo,
+//   planillas_pago:{id, numero, estado, fecha_inicio, fecha_fin}}]. Devuelve
+// {planillas:[{id, numero, estado, fecha_inicio, fecha_fin, cantidad_periodo, cantidad_acumulada,
+//   precio_unitario, monto_periodo, grupo:'facturado'|'tramite'|null}] (solo con cantidad, por
+//   número ascendente), sinCantidad, facturado, enTramite, ejecutada, pendienteFacturar, sobreFacturado}.
+// Facturado = cantidad_periodo de las aprobadas y pagadas (PLANILLAS_COMPROMETIDAS); en trámite =
+// borrador, en revisión y enviada; las rechazadas no suman en ninguno.
+function armarTrazabilidadPlanillas(filas, rubro){
+  const ejecutada = numeroRef(rubro?.cantidad_ejecutada);
+  const todas = (filas||[]).map(f=>{
+    const p = f.planillas_pago||{};
+    return { id: p.id||f.planilla_id, numero: p.numero, estado: p.estado, fecha_inicio: p.fecha_inicio||null, fecha_fin: p.fecha_fin||null,
+      cantidad_periodo: numeroRef(f.cantidad_periodo), cantidad_acumulada: numeroRef(f.cantidad_acumulada), precio_unitario: numeroRef(f.precio_unitario), monto_periodo: numeroRef(f.monto_periodo) };
+  }).sort((a,b)=> ((Number(a.numero)||0) - (Number(b.numero)||0)) || String(a.id).localeCompare(String(b.id)));
+  const planillas = todas.filter(p=> p.cantidad_periodo !== 0 || p.cantidad_acumulada !== 0);
+  let facturado = 0, enTramite = 0;
+  for(const p of planillas){
+    p.grupo = PLANILLAS_COMPROMETIDAS.includes(p.estado) ? 'facturado' : PLANILLAS_EN_TRAMITE.includes(p.estado) ? 'tramite' : null;
+    if(p.grupo === 'facturado') facturado += p.cantidad_periodo;
+    else if(p.grupo === 'tramite') enTramite += p.cantidad_periodo;
+  }
+  facturado = redondear4Libro(facturado); enTramite = redondear4Libro(enTramite);
+  const pendienteFacturar = redondear4Libro(ejecutada - facturado);
+  return { planillas, sinCantidad: todas.length - planillas.length, facturado, enTramite, ejecutada, pendienteFacturar, sobreFacturado: pendienteFacturar < 0 };
+}
+
+function htmlCabeceraTrazabilidad(rubro){
+  const contrato = numeroRef(rubro.cantidad_contrato), ejec = numeroRef(rubro.cantidad_ejecutada);
+  const pct = contrato > 0 ? ejec/contrato*100 : null;
+  const saldo = contrato > 0 ? redondear4Libro(contrato - ejec) : null;
+  return `<div style="margin-bottom:14px">
+    <div style="font-weight:600;font-size:14px;line-height:1.4">${badgeOrdenCambioRubro(rubro)}<span style="color:#676879;font-size:12px">[${escAttr(rubro.codigo||'—')}]</span> ${escAttr(rubro.descripcion||'')} <span style="color:#676879;font-weight:400">· ${escAttr(rubro.unidad||'—')}</span></div>
+    <div style="font-size:12px;color:#676879;margin-top:4px">Contrato <b style="color:#323338">${fmtCantidadRef(contrato)}</b> · Ejecutado <b style="color:#0073ea">${fmtCantidadRef(ejec)}</b> · <b style="color:${pct!=null&&pct>100?'#e2445c':'#323338'}">${pct==null?'—':pct.toFixed(1)+'%'}</b> · Saldo <b style="color:${saldo!=null&&saldo<0?'#e2445c':'#323338'}">${saldo==null?'—':fmtCantidadRef(saldo)}</b></div>
+  </div>`;
+}
+
+const TRAZ_TD = 'padding:6px 8px;font-size:12px;white-space:nowrap';
+const TRAZ_TH = 'padding:6px 8px;font-size:11px;color:#676879;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap';
+function tituloBloqueTrazabilidad(t){ return `<div style="font-size:11px;font-weight:600;color:#676879;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 8px">${t}</div>`; }
+function avisoAmbar(t){ return `<div style="color:#b8860b;background:#fdf6e3;font-size:12px;padding:6px 10px;border-radius:6px;margin-top:6px">⚠️ ${t}</div>`; }
+
+// m: armarTrazabilidadLibro; opciones.puedeRecalcular: botón «Recalcular este rubro» ante una diferencia.
+function htmlTrazabilidadLibro(m, rubro, opciones){
+  const u = rubro.unidad ? ' '+escAttr(rubro.unidad) : '';
+  if(!m.registros.length){
+    return `<div style="color:#676879;font-size:13px;padding:4px 0">${m.ejecutada > 0 ? '⚠️ Ejecutado sin respaldo en el libro de obra (importado o editado a mano)' : 'Este rubro aún no aparece en el libro de obra'}</div>`;
+  }
+  const tabla = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>
+      <th style="${TRAZ_TH};text-align:left">Fecha</th><th style="${TRAZ_TH};text-align:left">N°</th><th style="${TRAZ_TH};text-align:left">Estado</th>
+      <th style="${TRAZ_TH};text-align:right">Cantidad</th><th style="${TRAZ_TH};text-align:right">Acum. a la fecha</th><th style="${TRAZ_TH};text-align:right">Saldo a la fecha</th><th style="${TRAZ_TH}"></th>
+    </tr></thead><tbody>
+    ${m.registros.map(r=>`<tr style="border-top:1px solid #f0f0f0">
+      <td style="${TRAZ_TD}">${r.fecha ? formatFecha(r.fecha) : '—'}</td>
+      <td style="${TRAZ_TD}">${r.numero ?? '—'}</td>
+      <td style="${TRAZ_TD}">${badgeAprobacionLibro(r)}</td>
+      <td style="${TRAZ_TD};text-align:right;font-weight:600;color:#0073ea">${fmtCantidadRef(r.cantidad)}</td>
+      <td style="${TRAZ_TD};text-align:right">${fmtCantidadRef(r.acumulado)}</td>
+      <td style="${TRAZ_TD};text-align:right;color:${r.saldo!=null&&r.saldo<0?'#e2445c':'#323338'}">${r.saldo==null?'—':fmtCantidadRef(r.saldo)}</td>
+      <td style="${TRAZ_TD};text-align:right"><button class="btn" style="padding:2px 8px;font-size:12px" title="Ver registro" onclick="verDetalleLibro('${r.id}')">👁</button></td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+  let pie = `<div style="font-size:12px;color:#676879;margin-top:8px">Σ registros = <b style="color:#323338">${fmtCantidadRef(m.suma)}${u}</b> &nbsp;·&nbsp; cantidad_ejecutada = <b style="color:#0073ea">${fmtCantidadRef(m.ejecutada)}${u}</b> &nbsp;${m.coincide ? '<span style="color:#00854d;font-weight:600">✓ coincide</span>' : ''}</div>`;
+  if(!m.coincide){
+    pie += avisoAmbar(`Diferencia de ${fmtCantidadRef(Math.abs(m.diferencia))}${u}: el total del rubro no coincide con el libro de obra`
+      + (opciones?.puedeRecalcular ? ` <button class="btn" style="padding:3px 10px;font-size:11px;margin-left:8px" onclick="recalcularRubroDesdeTrazabilidad('${rubro.id}')">↻ Recalcular este rubro</button>` : ''));
+  }
+  if(m.pendientes.n > 0){
+    pie += `<div style="font-size:12px;color:#b8860b;margin-top:6px">⏳ ${m.pendientes.n} registro(s) pendiente(s) de aprobación suman ${fmtCantidadRef(m.pendientes.suma)}${u}</div>`;
+  }
+  return tabla + pie;
+}
+
+// m: armarTrazabilidadPlanillas o {error}; opciones.verPlanillas: 👁 solo para roles con sección Planillas.
+function htmlTrazabilidadPlanillas(m, rubro, opciones){
+  if(m.error) return `<div style="color:#676879;font-size:13px;padding:4px 0">Sin acceso a planillas</div>`;
+  const u = rubro.unidad ? ' '+escAttr(rubro.unidad) : '';
+  const fmtEc = v => '$'+Number(v||0).toLocaleString('es-EC',{minimumFractionDigits:2});
+  const periodo = p => p.fecha_inicio && p.fecha_fin ? `${formatFecha(p.fecha_inicio)} → ${formatFecha(p.fecha_fin)}` : '—';
+  const badge = p => { const e = ESTADOS_PLANILLA[p.estado]||ESTADOS_PLANILLA.borrador; return `<span style="background:${e.bg};color:${e.color};border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${e.emoji} ${e.label}</span>`; };
+  let tabla = '';
+  if(m.planillas.length){
+    tabla = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>
+        <th style="${TRAZ_TH};text-align:left">Planilla</th><th style="${TRAZ_TH};text-align:left">Periodo</th><th style="${TRAZ_TH};text-align:left">Estado</th>
+        <th style="${TRAZ_TH};text-align:right">Cant. periodo</th><th style="${TRAZ_TH};text-align:right">Cant. acumulada</th><th style="${TRAZ_TH};text-align:right">P.U.</th><th style="${TRAZ_TH};text-align:right">Monto periodo</th><th style="${TRAZ_TH}"></th>
+      </tr></thead><tbody>
+      ${m.planillas.map(p=>{ const tach = p.estado==='rechazada' ? ';text-decoration:line-through;color:#9a9ca8' : ''; return `<tr style="border-top:1px solid #f0f0f0">
+        <td style="${TRAZ_TD}${tach}">N° ${p.numero ?? '—'}</td>
+        <td style="${TRAZ_TD}${tach}">${periodo(p)}</td>
+        <td style="${TRAZ_TD}">${badge(p)}</td>
+        <td style="${TRAZ_TD};text-align:right;font-weight:600${tach||';color:#0073ea'}">${fmtCantidadRef(p.cantidad_periodo)}</td>
+        <td style="${TRAZ_TD};text-align:right${tach}">${fmtCantidadRef(p.cantidad_acumulada)}</td>
+        <td style="${TRAZ_TD};text-align:right${tach}">${fmtEc(p.precio_unitario)}</td>
+        <td style="${TRAZ_TD};text-align:right;font-weight:600${tach}">${fmtEc(p.monto_periodo)}</td>
+        <td style="${TRAZ_TD};text-align:right">${opciones?.verPlanillas ? `<button class="btn" style="padding:2px 8px;font-size:12px" title="Ver planilla" onclick="verPlanilla('${p.id}')">👁</button>` : ''}</td>
+      </tr>`; }).join('')}
+    </tbody></table></div>`;
+  } else {
+    tabla = `<div style="color:#676879;font-size:13px;padding:4px 0">Este rubro no tiene cantidades en ninguna planilla</div>`;
+  }
+  if(m.sinCantidad > 0) tabla += `<div style="font-size:11px;color:#9a9ca8;margin-top:4px">En ${m.sinCantidad} planilla(s) más el rubro aparece sin cantidad</div>`;
+  let pie = `<div style="font-size:12px;color:#676879;margin-top:8px">Facturado (aprobadas + pagadas) = <b style="color:#323338">${fmtCantidadRef(m.facturado)}${u}</b> &nbsp;·&nbsp; Ejecutado = <b style="color:#0073ea">${fmtCantidadRef(m.ejecutada)}${u}</b> &nbsp;→&nbsp; Pendiente de facturar = <b style="color:${m.sobreFacturado?'#e2445c':'#00854d'}">${fmtCantidadRef(m.pendienteFacturar)}${u}</b>`
+    + (m.enTramite ? ` &nbsp;·&nbsp; en trámite: <b style="color:#323338">${fmtCantidadRef(m.enTramite)}${u}</b>` : '') + `</div>`;
+  if(m.sobreFacturado) pie += avisoAmbar(`Facturado por encima de lo ejecutado en ${fmtCantidadRef(Math.abs(m.pendienteFacturar))}${u}`);
+  return tabla + pie;
+}
+
+// libro: {filas} | {error}; planillas: {filas} | {error}.
+function htmlTrazabilidadRubro(rubro, libro, planillas, opciones){
+  const htmlLibro = libro.error
+    ? `<div style="color:#e2445c;font-size:13px">No se pudo leer el libro de obra: ${escAttr(libro.error?.message||String(libro.error))}</div>`
+    : htmlTrazabilidadLibro(armarTrazabilidadLibro(libro.filas, rubro), rubro, opciones);
+  const htmlPlan = htmlTrazabilidadPlanillas(planillas.error ? { error: planillas.error } : armarTrazabilidadPlanillas(planillas.filas, rubro), rubro, opciones);
+  return htmlCabeceraTrazabilidad(rubro) + tituloBloqueTrazabilidad('📒 Libro de obra') + htmlLibro + tituloBloqueTrazabilidad('🧾 Planillas') + htmlPlan;
+}
+
+async function abrirTrazabilidadRubro(rubroId){
+  window._trazRubroId = rubroId;
+  const body = document.getElementById('trazRubroBody');
+  body.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando trazabilidad...</div>';
+  document.getElementById('modalTrazabilidadRubro').classList.add('show');
+  const { data: rubro, error } = await sb.from('rubros').select('id,codigo,descripcion,unidad,cantidad_contrato,cantidad_ejecutada,es_orden_cambio,orden_cambio_codigo,proyecto_id').eq('id', rubroId).single();
+  if(window._trazRubroId !== rubroId) return; // se abrió otro rubro (o se cambió de proyecto) mientras cargaba
+  if(error || !rubro){ body.innerHTML = `<div style="color:#e2445c;font-size:13px">No se pudo cargar el rubro: ${escAttr(error?.message||'')}</div>`; return; }
+  // Las dos consultas en paralelo; cada una captura su propio error (si planillas falla por RLS,
+  // el bloque del libro se muestra igual). Paginadas por consistencia con el libro.
+  const [libro, planillas] = await Promise.all([
+    traerPaginado(()=> sb.from('libro_obra_rubros')
+      .select('id,registro_id,cantidad_dia, libro_obra!inner(id,fecha,numero_registro,estado_aprobacion,created_at,proyecto_id)')
+      .eq('rubro_id', rubroId).order('id'), 1000, true).then(filas=>({ filas }), e=>({ error: e })),
+    traerPaginado(()=> sb.from('planilla_rubros')
+      .select('planilla_id,cantidad_anterior,cantidad_periodo,cantidad_acumulada,precio_unitario,monto_periodo, planillas_pago!inner(id,numero,estado,fecha_inicio,fecha_fin,proyecto_id)')
+      .eq('rubro_id', rubroId).order('planilla_id'), 1000, true).then(filas=>({ filas }), e=>({ error: e })),
+  ]);
+  if(window._trazRubroId !== rubroId) return;
+  body.innerHTML = htmlTrazabilidadRubro(rubro, libro, planillas, {
+    puedeRecalcular: puedeGestionarRubros() && !window._proyectoCerrado,
+    verPlanillas: ['admin','fiscalizador','residente'].includes(currentPerfil?.rol),
+  });
+}
+
+// Botón del modal ante una diferencia: recalcula ese rubro, refresca el modal y la tabla.
+async function recalcularRubroDesdeTrazabilidad(rubroId){
+  if(!puedeGestionarRubros() || bloquearSiCerrado()) return;
+  const btn = event?.target?.closest('button');
+  if(btn){ btn.disabled = true; btn.textContent = 'Recalculando...'; }
+  try{
+    const { total } = await recalcularRubro(rubroId);
+    toast(`✅ Rubro recalculado: ${fmtCantidadRef(total)}`, 'success');
+  }catch(e){
+    toast('Error al recalcular: '+(e?.message||e), 'error');
+    if(btn){ btn.disabled = false; btn.textContent = '↻ Recalcular este rubro'; }
+    return;
+  }
+  await abrirTrazabilidadRubro(rubroId);
   cargarRubros(true);
 }
 
