@@ -259,6 +259,9 @@ que responde desde un fixture JSON (`lib/arnes.js`).
 - `expediente-f2.test.js`, `actas.test.js`, `reporte-libro.test.js` (byte a byte del reporte
   del libro) y `tomos.test.js` (unidades, empaquetado, conteos, documento por tomo).
 - `modal-expediente.test.js`: modal, presets, lista y flujo de generación con jsdom.
+- `rubro-trazabilidad.test.js`: modal de trazabilidad del rubro (orden de corte, agrupación,
+  Σ frente a `cantidad_ejecutada`, pendientes, planillas facturadas/en trámite/rechazadas,
+  fallo RLS en planillas) y `recalcularRubro` frente a `recalcularRubros`.
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
 `fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.

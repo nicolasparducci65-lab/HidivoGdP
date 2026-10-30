@@ -67,7 +67,7 @@ function extraerConst(src, nombre){
 // .range().single().maybeSingle(), insert(fila), update(fila) y delete() con filtros, y
 // `await` / Promise.all sobre el builder.
 // Las filas salen del fixture {tabla: [filas]}. Devuelve {data, error:null}.
-const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id', libro_obra: 'registro_id', observaciones: 'observacion_id' };
+const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id', libro_obra: 'registro_id', observaciones: 'observacion_id', planillas_pago: 'planilla_id' };
 
 function crearSb(fixture, opciones = {}){
   const llamadas = [];
