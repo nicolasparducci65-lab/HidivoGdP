@@ -3,3 +3,6 @@ tests/node_modules/
 tests/fixtures/*.real.json
 tests/snapshots/*.real.html
 tests/.tmp/
+# Herramientas y limpiezas locales de supabase (van al repo privado)
+supabase/herramientas/
+supabase/limpieza/
