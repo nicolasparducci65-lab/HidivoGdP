@@ -262,6 +262,8 @@ que responde desde un fixture JSON (`lib/arnes.js`).
 - `rubro-trazabilidad.test.js`: modal de trazabilidad del rubro (orden de corte, agrupación,
   Σ frente a `cantidad_ejecutada`, pendientes, planillas facturadas/en trámite/rechazadas,
   fallo RLS en planillas) y `recalcularRubro` frente a `recalcularRubros`.
+- `libro-recalculo.test.js`: editar y eliminar un registro del libro recalculan los rubros afectados con
+  `recalcularRubro` (redondeo, estado, error en uno sin cortar el resto) y refrescan la trazabilidad abierta.
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
 `fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.

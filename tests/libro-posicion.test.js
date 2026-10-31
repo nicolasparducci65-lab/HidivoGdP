@@ -48,6 +48,8 @@ function crearPagina(){
   w.cargarArchivos = () => {}; w.invalidarCacheProyectos = () => {}; w.notificarPorPush = () => {}; w.notificarPorEmail = () => {};
   w.cargarNotificacionesGlobales = () => {}; w.cargarRubrosConReferenciaLibro = () => Promise.resolve(null); w.eliminarObjetosStorage = async () => {};
   w.confirm = () => true; w.prompt = () => null;
+  // El recálculo de rubros al eliminar (recalcularRubrosAfectados) y el refresco de la trazabilidad no son de esta prueba
+  w.recalcularRubrosAfectados = async () => 0; w.refrescarTrazabilidadSiAbierta = () => {};
   // scrollIntoView no existe en jsdom: se registra cada llamada
   w.scrolls = []; w.Element.prototype.scrollIntoView = function(o){ w.scrolls.push({ el: this, opts: o }); };
   // scrollTop del contenedor: jsdom no hace layout, así que se emula el recorte del navegador (con el

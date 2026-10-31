@@ -102,10 +102,11 @@ function crearSb(fixture, opciones = {}){
       _ejecutar(){
         llamadas.push({ tabla, select: b._select, filtros: b._filtros.length, rango: b._rango });
         if(b._insert){
-          const fila = { id: 'ins-' + (llamadas.length), ...b._insert };
-          (fixture[tabla] = fixture[tabla] || []).push(fila);
-          if(opciones.alInsertar) opciones.alInsertar(tabla, fila);
-          return { data: b._single ? fila : [fila], error: null };
+          // insert(fila) o insert([filas]): cada fila recibe un id si no trae uno
+          const lista = Array.isArray(b._insert) ? b._insert : [b._insert];
+          const filas = lista.map((f, i) => ({ id: 'ins-' + (llamadas.length) + (Array.isArray(b._insert) ? '-' + i : ''), ...f }));
+          filas.forEach(f => { (fixture[tabla] = fixture[tabla] || []).push(f); if(opciones.alInsertar) opciones.alInsertar(tabla, f); });
+          return { data: b._single ? filas[0] : filas, error: null };
         }
         if(b._update){
           const filas = (fixture[tabla]||[]).filter(f => b._filtros.every(fn => fn(f)));
