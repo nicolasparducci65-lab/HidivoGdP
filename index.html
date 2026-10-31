@@ -15078,6 +15078,28 @@ async function recalcularRubro(rubroId){
   return { total, estado: nuevoEstado };
 }
 
+// Recalcula varios rubros (los afectados al editar o eliminar un registro del libro) con
+// recalcularRubro. Un fallo en uno no corta el resto: se avisa con toast y se sigue; al final, si
+// hubo fallos, se informa cuántos quedaron recalculados. Devuelve el número de rubros recalculados.
+async function recalcularRubrosAfectados(rubroIds){
+  const ids = [...new Set(rubroIds||[])];
+  let listos = 0;
+  for(const rubroId of ids){
+    try{ await recalcularRubro(rubroId); listos++; }
+    catch(e){ toast('Error al recalcular un rubro: '+(e?.message||e), 'error'); }
+  }
+  if(listos < ids.length) toast(`${listos} de ${ids.length} rubros recalculados`, 'error');
+  return listos;
+}
+
+// Si el modal de trazabilidad está abierto (p. ej. se editó o eliminó un registro desde su 👁),
+// vuelve a cargarlo para que no muestre datos viejos.
+function refrescarTrazabilidadSiAbierta(){
+  if(window._trazRubroId && document.getElementById('modalTrazabilidadRubro')?.classList.contains('show')){
+    abrirTrazabilidadRubro(window._trazRubroId);
+  }
+}
+
 async function recalcularRubros(){
   if(!currentProyecto){ toast('Selecciona un proyecto','error'); return; }
   const btn = event.target.closest('button');
@@ -16323,16 +16345,13 @@ async function guardarEdicionRegistro(){
     );
   }
 
-  // Recalcular cantidad_ejecutada para todos los rubros afectados
+  // Recalcular los rubros afectados (anteriores ∪ nuevos) con la misma regla que el botón
+  // «Recalcular»: suma paginada y redondeada a 4 decimales, y estado automático.
   const todosRubroIds = [...new Set([
     ...(rubrosAnteriores||[]).map(r=>r.rubro_id),
     ...rubrosActualizados.map(r=>r.rubro_id)
   ])];
-  for(const rubroId of todosRubroIds){
-    const { data: sumas } = await sb.from('libro_obra_rubros').select('cantidad_dia').eq('rubro_id', rubroId);
-    const total = (sumas||[]).reduce((a,r)=>a+(parseFloat(r.cantidad_dia)||0),0);
-    await sb.from('rubros').update({cantidad_ejecutada: total}).eq('id', rubroId);
-  }
+  await recalcularRubrosAfectados(todosRubroIds);
 
   // Subir nuevas fotos
   const fotosFallidas = [];
@@ -16353,6 +16372,7 @@ async function guardarEdicionRegistro(){
   cerrarModal('modalLibro');
   _libroRegistroAbierto = id; // la fila editada queda centrada y resaltada
   cargarLibroObra(true);
+  refrescarTrazabilidadSiAbierta();
 }
 
 async function confirmarEliminarRegistro(id, num){
@@ -16376,23 +16396,16 @@ async function confirmarEliminarRegistro(id, num){
   const { error } = await sb.from('libro_obra').delete().eq('id', id);
   if(error){ toast('Error al eliminar: '+error.message,'error'); return; }
 
-  // Recalcular cantidad_ejecutada para cada rubro afectado
-  if(rubrosAfectados && rubrosAfectados.length){
-    const rubroIds = [...new Set(rubrosAfectados.map(r=>r.rubro_id))];
-    for(const rubroId of rubroIds){
-      const { data: sumas } = await sb.from('libro_obra_rubros')
-        .select('cantidad_dia')
-        .eq('rubro_id', rubroId);
-      const total = (sumas||[]).reduce((acc, r) => acc + (parseFloat(r.cantidad_dia)||0), 0);
-      await sb.from('rubros').update({ cantidad_ejecutada: total }).eq('id', rubroId);
-    }
-  }
+  // Recalcular cada rubro que tenía el registro con la misma regla que el botón «Recalcular»
+  // (suma paginada y redondeada a 4 decimales, estado automático)
+  await recalcularRubrosAfectados((rubrosAfectados||[]).map(r=>r.rubro_id));
 
   invalidarCacheProyectos();
   cargarRubrosConReferenciaLibro(currentProyecto).catch(()=>{}); // caché "al último sync" sin este registro
   toast('Registro eliminado y rubros actualizados','success');
   cerrarModal('modalDetalleLibro');
   cargarLibroObra(true); // solo restaura el scroll: eliminar no fija la marca
+  refrescarTrazabilidadSiAbierta();
 }
 function toast(msg, tipo='info'){
   const el=document.getElementById('toast');
