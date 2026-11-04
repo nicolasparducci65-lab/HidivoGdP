@@ -4145,8 +4145,11 @@ function leerPlantillaRubros(data){
     fechaIni: headers.findIndex(h=>h==='fecha inicio'||h.includes('inicio')||h.includes('start')||h.includes('desde')),
     fechaFin: headers.findIndex(h=>h==='fecha fin'||h.includes('fin')||h.includes('end')||h.includes('hasta')),
   };
-  // Si no hay columna de Código real, usar N°/Item como respaldo (comportamiento anterior)
-  if(colIdx.codigo===-1) colIdx.codigo = colIdx.numero;
+  // Los códigos identifican cada rubro: sin columna «Código» se rechaza el archivo. La columna
+  // N°/Item es ordinal (y suele ser una fórmula arrastrada) y ya no sirve como respaldo.
+  if(headerRow>=0 && colIdx.codigo===-1){
+    return { rechazo: 'El Excel no tiene columna "Código". Los códigos identifican cada rubro; la columna N°/Item no sirve como código.' };
+  }
 
   // Fallback si no se detectaron columnas
   if(colIdx.descrip===-1){ colIdx.codigo=0; colIdx.descrip=2; colIdx.unidad=3; colIdx.cantidad=4; colIdx.precio=5; colIdx.fechaIni=7; colIdx.fechaFin=8; }
@@ -4197,12 +4200,31 @@ function leerPlantillaRubros(data){
     return null;
   }
 
-  // Filas normalizadas. filaExcel es el número de fila real de la hoja,
-  // para que los rechazos señalen exactamente dónde está el problema.
+  // El código se lee de la celda real con el texto tal como Excel lo muestra (.w): sheet_to_json
+  // entrega el valor crudo, que en una celda nacida de una fórmula (=B2+0.01 arrastrada) es un
+  // double sucio (2.0199999999999996) y, convertido con String(), pierde el cero de 2.10 y el
+  // de 01. Las filas y columnas de `rows` empiezan en el origen del rango de la hoja (!ref),
+  // que no siempre es A1. Sin .w y con número: String(Number(v.toFixed(6))) como respaldo
+  // (limpia el ruido; no recupera el cero de 2.10).
+  const rango = XLSX.utils.decode_range(ws['!ref']||'A1');
+  function leerCodigo(rowIdx){
+    if(colIdx.codigo<0) return null;
+    const celda = ws[XLSX.utils.encode_cell({ r: rango.s.r + rowIdx, c: rango.s.c + colIdx.codigo })];
+    let v;
+    if(celda && celda.w != null && String(celda.w).trim() !== '') v = celda.w;
+    else if(celda && celda.v != null) v = celda.v;
+    else v = rows[rowIdx][colIdx.codigo] ?? '';
+    if(typeof v === 'number') v = String(Number(v.toFixed(6)));
+    const s = String(v ?? '').trim().replace(/\s+/g,' ');
+    return s || null;
+  }
+
+  // Filas normalizadas. filaExcel es el número de fila real de la hoja (cuenta desde el origen
+  // del rango), para que los rechazos señalen exactamente dónde está el problema.
   const filas = dataRows.map((r,i)=>({
-    filaExcel: rows.indexOf(r)+1,
+    filaExcel: rango.s.r + rows.indexOf(r) + 1,
     orden: i+1,
-    codigo: colIdx.codigo>=0 ? String(r[colIdx.codigo]||'').trim()||null : null,
+    codigo: leerCodigo(rows.indexOf(r)),
     descripcion: String(r[colIdx.descrip]).trim(),
     unidad: colIdx.unidad>=0 ? String(r[colIdx.unidad]||'').trim()||null : null,
     cantidad_contrato: parseFloat(String(r[colIdx.cantidad]).replace(',','.'))||0,
@@ -4216,6 +4238,13 @@ function leerPlantillaRubros(data){
   const sinCodigo = filas.filter(f=>!f.codigo);
   if(sinCodigo.length){
     return { rechazo: `${sinCodigo.length} fila(s) sin código. Cada rubro necesita un código único dentro del proyecto.\n\nFilas del Excel: ${sinCodigo.map(f=>f.filaExcel).join(', ')}` };
+  }
+  // Red de seguridad: un código numérico con 5+ decimales o con una racha 0000/9999 seguida de
+  // dígitos al final es el residuo de una fórmula que Excel también muestra (formato General con
+  // valor sucio). Los códigos no numéricos (1.1.1, OC-01-03, A.2) pasan sin tocar.
+  const conRuido = filas.filter(f=> /^\d+(\.\d+)?$/.test(f.codigo) && (/^\d+\.\d{5,}$/.test(f.codigo) || /\.\d*(0{4,}|9{4,})\d*$/.test(f.codigo)));
+  if(conRuido.length){
+    return { rechazo: `Código con ruido de cálculo (${conRuido.map(f=>`fila ${f.filaExcel}: ${f.codigo}`).join('; ')}). Escribe los códigos como texto o pega valores, no fórmulas.` };
   }
   const primeraFila = {}; const repetidos = [];
   filas.forEach(f=>{
