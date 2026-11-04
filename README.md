@@ -270,3 +270,8 @@ que responde desde un fixture JSON (`lib/arnes.js`).
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
 `fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.
+
+`herramientas/inventario-codigos.js` corre `inventario-codigos.sql` (ruido flotante, sin código,
+repetidos y resumen por proyecto de `rubros.codigo`) sobre un dump cargado en Postgres embebido
+(`npm install --no-save @electric-sql/pglite`) y escribe un CSV por consulta fuera del repo. Solo
+lectura: nunca toca producción.
