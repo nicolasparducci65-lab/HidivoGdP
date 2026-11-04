@@ -264,6 +264,9 @@ que responde desde un fixture JSON (`lib/arnes.js`).
   fallo RLS en planillas) y `recalcularRubro` frente a `recalcularRubros`.
 - `libro-recalculo.test.js`: editar y eliminar un registro del libro recalculan los rubros afectados con
   `recalcularRubro` (redondeo, estado, error en uno sin cortar el resto) y refrescan la trazabilidad abierta.
+- `importador-codigos.test.js`: `leerPlantillaRubros` con libros xlsx en memoria: código como texto
+  (.w), respaldo sin .w, rechazos por ruido de fórmula y por falta de columna Código, rango que
+  no empieza en A1; prueba también la plantilla oficial si está en `Downloads/plantilla`.
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
 `fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.
