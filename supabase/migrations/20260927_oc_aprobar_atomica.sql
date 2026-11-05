@@ -10,7 +10,19 @@
 -- Dentro de una función todo ocurre en una sola transacción: o se aplica todo
 -- o no se aplica nada.
 --
--- La app (SW v30) llama a esta función si existe. Mientras no esté instalada,
+-- Revisión 2026-11-05 (regla única de códigos, antes del índice único
+-- rubros_proyecto_codigo_uniq (proyecto_id, codigo) WHERE codigo IS NOT NULL):
+--   - Un ítem nuevo sin código recibe OC-NN-SS (NN = número de la orden, SS =
+--     secuencial del ítem dentro de la orden, saltando los códigos ya usados en
+--     la orden o en el proyecto), igual que el editor de la app; el código
+--     generado se guarda también en orden_cambio_items para que el ítem y el
+--     rubro coincidan. Antes todos recibían el mismo OC-NN y, con el índice,
+--     una orden con dos ítems sin código no se podría aprobar.
+--   - Antes de insertar rechaza con mensaje claro: código repetido en el
+--     proyecto, código repetido dentro de la orden, código con más de 4
+--     decimales o racha 0000/9999 (ruido de fórmula de Excel).
+--
+-- La app (SW v30+) llama a esta función si existe. Mientras no esté instalada,
 -- aplica la aprobación desde el navegador, en el mismo orden y con reversión.
 --
 -- No crea tablas ni columnas y no modifica ningún dato al instalarse.
@@ -30,6 +42,9 @@ declare
   v_max_orden int;
   v_nuevos int := 0;
   v_modificados int := 0;
+  v_item record;
+  v_seq int := 0;
+  v_cand text;
 begin
   select * into v_oc from public.ordenes_cambio where id = p_orden_id for update;
   if not found then
@@ -51,13 +66,44 @@ begin
 
   v_codigo := 'OC-' || lpad(v_oc.numero::text, 2, '0');
 
-  -- Un rubro nuevo no puede repetir un código que ya existe en el proyecto
-  select string_agg(distinct btrim(i.codigo), ', ') into v_lista
-    from public.orden_cambio_items i
-    join public.rubros r on r.proyecto_id = v_oc.proyecto_id and btrim(r.codigo) = btrim(i.codigo)
-   where i.orden_id = p_orden_id and i.tipo = 'nuevo' and nullif(btrim(i.codigo), '') is not null;
+  -- ── Códigos de los ítems nuevos: los escritos, normalizados; los vacíos reciben OC-NN-SS ──
+  drop table if exists _oc_codigos;
+  create temporary table _oc_codigos (item_id uuid primary key, codigo text, generado boolean not null default false) on commit drop;
+  insert into _oc_codigos (item_id, codigo)
+  select id, nullif(regexp_replace(btrim(codigo), '\s+', ' ', 'g'), '')
+    from public.orden_cambio_items where orden_id = p_orden_id and tipo = 'nuevo';
+
+  for v_item in select item_id from _oc_codigos c
+                 join public.orden_cambio_items i on i.id = c.item_id
+                where c.codigo is null order by i.created_at, i.id loop
+    loop
+      v_seq := v_seq + 1;
+      v_cand := v_codigo || '-' || lpad(v_seq::text, 2, '0');
+      exit when not exists (select 1 from _oc_codigos where codigo = v_cand)
+             and not exists (select 1 from public.rubros where proyecto_id = v_oc.proyecto_id and btrim(codigo) = v_cand);
+    end loop;
+    update _oc_codigos set codigo = v_cand, generado = true where item_id = v_item.item_id;
+  end loop;
+
+  -- Código con ruido de fórmula (más de 4 decimales o racha 0000/9999 al final)
+  select string_agg(codigo, ', ') into v_lista from _oc_codigos
+   where codigo ~ '^\d+(\.\d+)?$' and (codigo ~ '^\d+\.\d{5,}$' or codigo ~ '\.\d*(0{4,}|9{4,})\d*$');
   if v_lista is not null then
-    raise exception 'Estos códigos ya existen en los rubros del proyecto: %.', v_lista using errcode = '23505';
+    raise exception 'Código con ruido de cálculo (máximo 4 decimales, sin rachas 0000/9999): %.', v_lista using errcode = '23514';
+  end if;
+
+  -- Código repetido dentro de la orden
+  select string_agg(codigo, ', ') into v_lista from (select codigo from _oc_codigos group by codigo having count(*) > 1) x;
+  if v_lista is not null then
+    raise exception 'Código repetido dentro de la orden de cambio: %.', v_lista using errcode = '23505';
+  end if;
+
+  -- Código repetido en el proyecto: un rubro nuevo no puede repetir un código que ya existe
+  select string_agg(distinct c.codigo, ', ') into v_lista
+    from _oc_codigos c
+    join public.rubros r on r.proyecto_id = v_oc.proyecto_id and btrim(r.codigo) = c.codigo;
+  if v_lista is not null then
+    raise exception 'Código repetido en el proyecto: %. Cambia el código del ítem o conviértelo en modificación de cantidad.', v_lista using errcode = '23505';
   end if;
 
   if exists (select 1 from public.orden_cambio_items
@@ -84,6 +130,12 @@ begin
     raise exception 'La cantidad quedaría negativa en: %.', v_lista using errcode = '23514';
   end if;
 
+  -- 0) Los códigos generados quedan también en los ítems de la orden
+  update public.orden_cambio_items i
+     set codigo = c.codigo
+    from _oc_codigos c
+   where c.item_id = i.id and c.generado;
+
   -- 1) Rubros nuevos
   select coalesce(max(orden), 0) into v_max_orden from public.rubros where proyecto_id = v_oc.proyecto_id;
   insert into public.rubros (proyecto_id, orden, codigo, descripcion, unidad,
@@ -91,10 +143,11 @@ begin
                              es_orden_cambio, orden_cambio_codigo, orden_cambio_id)
   select v_oc.proyecto_id,
          v_max_orden + row_number() over (order by i.created_at, i.id),
-         coalesce(nullif(btrim(i.codigo), ''), v_codigo), i.descripcion, nullif(btrim(i.unidad), ''),
+         c.codigo, i.descripcion, nullif(btrim(i.unidad), ''),
          i.cantidad, i.precio_unitario, 0,
          true, v_codigo, p_orden_id
     from public.orden_cambio_items i
+    join _oc_codigos c on c.item_id = i.id
    where i.orden_id = p_orden_id and i.tipo = 'nuevo';
   get diagnostics v_nuevos = row_count;
 
@@ -121,6 +174,7 @@ begin
             'Oficio ' || btrim(p_oficio) || ': ' || v_nuevos || ' rubro(s) nuevo(s), ' || v_modificados || ' modificado(s)', auth.uid();
   end if;
 
+  drop table if exists _oc_codigos;
   return jsonb_build_object('orden', v_codigo, 'rubros_nuevos', v_nuevos, 'rubros_modificados', v_modificados);
 end $$;
 
@@ -137,14 +191,18 @@ commit;
 -- 2) Rechazos que no escriben nada (consola del navegador, con sesión de fiscalizador):
 --   (await sb.rpc('oc_aprobar', { p_orden_id: '<orden en borrador>', p_oficio: 'x', p_fecha: '2026-09-27' })).error?.code   // '23514'
 --   (await sb.rpc('oc_aprobar', { p_orden_id: '<orden solicitada>', p_oficio: '',  p_fecha: '2026-09-27' })).error?.code   // '23514'
+--   Con un ítem nuevo cuyo código ya exista en el proyecto:                                                                // '23505' «Código repetido en el proyecto: X»
 --   Con sesión de residente o de un miembro de otro proyecto:                                                              // '42501'
 --
 -- 3) Una aprobación real SÍ escribe y no tiene vuelta atrás desde la app. Probarla solo con la
 --    orden que se quiere aprobar. Después:
 --   select estado, oficio_referencia, fecha_aprobacion from ordenes_cambio where id = '<orden>';           -- aprobada
 --   select count(*) from rubros where orden_cambio_id = '<orden>';                                          -- = ítems nuevos de la orden
+--   select codigo from rubros where orden_cambio_id = '<orden>' order by orden;                             -- los ítems sin código salen OC-NN-SS
 --   select round(sum(monto_contrato), 2) from rubros where orden_cambio_id = '<orden>';                     -- = suma de los ítems nuevos
 
 -- ── Reversión ────────────────────────────────────────────────────────────────
--- Quitar la función no deshace aprobaciones ya hechas; la app vuelve a aprobar desde el navegador.
+-- Quitar la función no deshace aprobaciones ya hechas; la app vuelve a aprobar desde el navegador
+-- (con la misma regla de códigos). Para volver a la versión anterior de la función, reaplicar el
+-- archivo del commit 671a124 del repo.
 --   drop function if exists public.oc_aprobar(uuid, text, date, text);
