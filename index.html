@@ -4433,7 +4433,7 @@ async function aplicarImportacionRubros(){
     const payload = { orden: a.f.orden, updated_at: new Date().toISOString() };
     a.cambios.forEach(c=>{ payload[c.campo] = a.f[c.campo]; });
     const { error } = await sb.from('rubros').update(payload).eq('id', a.ex.id);
-    if(error){ fallo(`Error actualizando [${a.ex.codigo}]: ${error.message}. Aplicados ${actualizados} de ${plan.actualizar.length}; ningún nuevo insertado.`); cargarRubros(); return; }
+    if(error){ fallo(`Error actualizando [${a.ex.codigo}]: ${mensajeErrorRubro(error)}. Aplicados ${actualizados} de ${plan.actualizar.length}; ningún nuevo insertado.`); cargarRubros(); return; }
     actualizados++;
   }
 
@@ -4444,7 +4444,7 @@ async function aplicarImportacionRubros(){
       unidad: f.unidad, cantidad_contrato: f.cantidad_contrato, precio_unitario: f.precio_unitario,
       fecha_inicio: f.fecha_inicio, fecha_fin: f.fecha_fin, estado: 'planificado', cantidad_ejecutada: 0
     })));
-    if(error){ fallo(`Actualizados ${actualizados}, pero falló el alta de los ${plan.nuevos.length} nuevos: ${error.message}`); cargarRubros(); return; }
+    if(error){ fallo(`Actualizados ${actualizados}, pero falló el alta de los ${plan.nuevos.length} nuevos: ${mensajeErrorRubro(error)}`); cargarRubros(); return; }
   }
 
   // 3) Cronograma de la línea base ACTIVA: upsert por (rubro, LB), sin borrar
@@ -4494,6 +4494,14 @@ function toggleCampoOC(){
   document.getElementById('campoOCCodigo').style.display = checked ? 'block' : 'none';
 }
 
+// Mensaje legible para los errores de la base al escribir rubros. Con el índice único
+// rubros_proyecto_codigo_uniq (proyecto_id, codigo) un código repetido llega como 23505 y, sin
+// esto, el usuario vería «duplicate key value violates unique constraint …».
+function mensajeErrorRubro(error){
+  if(error?.code === '23505' && /rubros_proyecto_codigo_uniq/.test(error.message||'')) return 'Ese código ya existe en otro rubro del proyecto: cada código debe ser único dentro del proyecto.';
+  return error?.message || String(error);
+}
+
 async function guardarRubro(){
   if(bloquearSiCerrado()) return;
   const id = document.getElementById('rubroId').value;
@@ -4530,7 +4538,7 @@ async function guardarRubro(){
     ({ error } = await sb.from('rubros').insert(payload));
   }
 
-  if(error){ toast('Error: '+error.message,'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  if(error){ toast('Error: '+mensajeErrorRubro(error),'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
   toast(id ? 'Rubro actualizado ✓' : 'Rubro creado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevoRubro');
@@ -4969,7 +4977,9 @@ async function aprobarOC(id){
     if(archivoUrl) upd.archivo_url = archivoUrl;
     fallo = await aplicarAprobacionOC(oc, plan, upd);
   } else if(eRpc){
-    fallo = `${eRpc.message}. No se aplicó nada: el presupuesto y la orden quedaron como estaban.`;
+    // oc_aprobar ya explica sus propios rechazos; el 23505 del índice único (dos ítems nuevos sin
+    // código reciben el mismo OC-NN) llegaría crudo, así que se traduce igual que en rubros.
+    fallo = `${mensajeErrorRubro(eRpc)}. No se aplicó nada: el presupuesto y la orden quedaron como estaban.`;
   }
   if(fallo){
     if(archivoUrl) await eliminarObjetosStorage([archivoUrl]);
