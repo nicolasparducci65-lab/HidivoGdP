@@ -267,6 +267,8 @@ que responde desde un fixture JSON (`lib/arnes.js`).
 - `importador-codigos.test.js`: `leerPlantillaRubros` con libros xlsx en memoria: código como texto
   (.w), respaldo sin .w, rechazos por ruido de fórmula y por falta de columna Código, rango que
   no empieza en A1; prueba también la plantilla oficial si está en `Downloads/plantilla`.
+- `oc-codigos.test.js`: regla única de códigos de rubro (validación, OC-NN-SS para ítems nuevos sin código,
+  rechazo de repetidos y existentes, 23505 legible con la fila del Excel, `guardarRubro` en jsdom).
 
 Los datos reales no se commitean: `herramientas/fixture-desde-dump.js` genera
 `fixtures/*.real.json` desde un dump (ignorado por git) y las pruebas los usan si existen.
