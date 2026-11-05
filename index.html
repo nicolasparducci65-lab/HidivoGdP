@@ -3794,7 +3794,7 @@ function limpiarEstadoProyecto(){
   // Rubros: trazabilidad abierta (modal)
   window._trazRubroId = null;
   // Órdenes de cambio
-  _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null;
+  _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null; _ocNumeroPrevisto = null;
   // Formatos de calidad (editor de plantilla y llenado)
   _camposPlantillaActual = []; _plantillaLlenadoActual = null; _respuestaLlenadoId = null; _valoresLlenado = {}; _fotosLlenadoNuevas = {};
   window._fotosLlenadoExistentes = []; window._residenteLlenadoNombre = null;
@@ -4444,7 +4444,7 @@ async function aplicarImportacionRubros(){
       unidad: f.unidad, cantidad_contrato: f.cantidad_contrato, precio_unitario: f.precio_unitario,
       fecha_inicio: f.fecha_inicio, fecha_fin: f.fecha_fin, estado: 'planificado', cantidad_ejecutada: 0
     })));
-    if(error){ fallo(`Actualizados ${actualizados}, pero falló el alta de los ${plan.nuevos.length} nuevos: ${mensajeErrorRubro(error)}`); cargarRubros(); return; }
+    if(error){ fallo(`Actualizados ${actualizados}, pero falló el alta de los ${plan.nuevos.length} nuevos: ${mensajeErrorRubro(error)}${filaExcelDelError(plan.nuevos, error)}`); cargarRubros(); return; }
   }
 
   // 3) Cronograma de la línea base ACTIVA: upsert por (rubro, LB), sin borrar
@@ -4494,12 +4494,76 @@ function toggleCampoOC(){
   document.getElementById('campoOCCodigo').style.display = checked ? 'block' : 'none';
 }
 
-// Mensaje legible para los errores de la base al escribir rubros. Con el índice único
-// rubros_proyecto_codigo_uniq (proyecto_id, codigo) un código repetido llega como 23505 y, sin
-// esto, el usuario vería «duplicate key value violates unique constraint …».
-function mensajeErrorRubro(error){
-  if(error?.code === '23505' && /rubros_proyecto_codigo_uniq/.test(error.message||'')) return 'Ese código ya existe en otro rubro del proyecto: cada código debe ser único dentro del proyecto.';
+// ── CÓDIGOS DE RUBRO: regla única de inserción ──
+// Todo rubro nuevo entra con código texto, no vacío, con máximo 4 decimales si es numérico, sin
+// rachas 0000/9999 y único dentro del proyecto (índice rubros_proyecto_codigo_uniq). NULL dejó de
+// ser válido para rubros nuevos el 5-nov-2026 (los históricos ya no tienen). La aplican el
+// formulario de rubro, el editor de órdenes de cambio, el plan de aprobación y oc_aprobar en la base.
+function normalizarCodigoRubro(codigo){ return String(codigo ?? '').trim().replace(/\s+/g,' '); }
+// Puro: devuelve el mensaje de error o null.
+function validarCodigoRubro(codigo){
+  const c = normalizarCodigoRubro(codigo);
+  if(!c) return 'El código es obligatorio.';
+  if(/^\d+(\.\d+)?$/.test(c) && (/^\d+\.\d{5,}$/.test(c) || /\.\d*(0{4,}|9{4,})\d*$/.test(c))) return `Código con ruido de cálculo (${c}): máximo 4 decimales y sin rachas 0000/9999.`;
+  return null;
+}
+// Código de un ítem nuevo de orden de cambio que se dejó sin código: OC-NN-SS (NN = número de la
+// OC, SS = secuencial del ítem dentro de la OC), el mismo patrón de los rubros OC-01-xx de Parqueadero.
+function codigoItemOC(numeroOC, secuencia){ return `OC-${String(numeroOC).padStart(2,'0')}-${String(secuencia).padStart(2,'0')}`; }
+// Asigna OC-NN-SS a los ítems nuevos sin código, en su orden, saltando los códigos ya tomados
+// (los de otros ítems de la OC y los del proyecto). items se modifica en sitio; devuelve los asignados.
+function asignarCodigosItemsOC(items, numeroOC, codigosProyecto){
+  const tomados = new Set((codigosProyecto||[]).map(normalizarCodigoRubro).filter(Boolean));
+  items.forEach(it=>{ if(it.tipo==='nuevo' && normalizarCodigoRubro(it.codigo)) tomados.add(normalizarCodigoRubro(it.codigo)); });
+  let s = 0; const asignados = [];
+  for(const it of items){
+    if(it.tipo!=='nuevo' || normalizarCodigoRubro(it.codigo)) continue;
+    let c; do{ c = codigoItemOC(numeroOC, ++s); } while(tomados.has(c));
+    it.codigo = c; tomados.add(c); asignados.push(c);
+  }
+  return asignados;
+}
+// Valida los ítems nuevos de una OC contra la regla única: código válido, no repetido dentro de la
+// orden y no existente en el proyecto. rubrosProyecto: [{codigo}]. Devuelve el mensaje o null.
+function validarCodigosItemsOC(items, rubrosProyecto){
+  const existentes = new Set((rubrosProyecto||[]).map(r=>normalizarCodigoRubro(r.codigo)).filter(Boolean));
+  const vistos = new Set();
+  for(const it of items){
+    if(it.tipo!=='nuevo') continue;
+    const c = normalizarCodigoRubro(it.codigo);
+    const e = validarCodigoRubro(c); if(e) return e;
+    if(existentes.has(c)) return `Ya existe un rubro con el código ${c} en este proyecto. Cambia el código del ítem o conviértelo en modificación de cantidad.`;
+    if(vistos.has(c)) return `El código ${c} está repetido dentro de la orden de cambio.`;
+    vistos.add(c);
+  }
+  return null;
+}
+// ¿Ya hay un rubro con ese código en el proyecto? excluirId: el rubro que se está editando.
+async function codigoRubroExiste(proyectoId, codigo, excluirId){
+  const { data, error } = await sb.from('rubros').select('id').eq('proyecto_id', proyectoId).eq('codigo', normalizarCodigoRubro(codigo)).limit(2);
+  if(error) throw error;
+  return (data||[]).some(r=>r.id!==excluirId);
+}
+// Código que rechazó el índice único: PostgREST lo trae en details «Key (proyecto_id, codigo)=(…, X) already exists.»
+function codigoDeError23505(error){
+  const m = /\(proyecto_id, codigo\)=\([^,]+, (.*)\) already exists/.exec(error?.details||'');
+  return m ? m[1] : null;
+}
+// Mensaje legible para los errores de la base al escribir rubros. Con el índice único un código
+// repetido llega como 23505 y, sin esto, el usuario vería «duplicate key value violates unique
+// constraint …». codigo: el que se intentó escribir, por si el detalle no lo trae.
+function mensajeErrorRubro(error, codigo){
+  if(error?.code === '23505' && /rubros_proyecto_codigo_uniq/.test((error.message||'')+' '+(error.details||''))){
+    const c = codigoDeError23505(error) || normalizarCodigoRubro(codigo);
+    return c ? `Ya existe un rubro con el código ${c} en este proyecto.` : 'Ya existe un rubro con ese código en este proyecto.';
+  }
   return error?.message || String(error);
+}
+// Fila del Excel a la que corresponde un 23505 del alta en lote del importador (el detalle trae el código).
+function filaExcelDelError(filas, error){
+  const c = codigoDeError23505(error);
+  const f = c && (filas||[]).find(x=>normalizarCodigoRubro(x.codigo)===c);
+  return f ? ` (fila ${f.filaExcel} del Excel)` : '';
 }
 
 async function guardarRubro(){
@@ -4509,21 +4573,29 @@ async function guardarRubro(){
   const unidad = document.getElementById('rubroUnidad').value.trim();
   const cantidad = parseFloat(document.getElementById('rubroCantidad').value)||0;
   const precio = parseFloat(document.getElementById('rubroPrecio').value)||0;
-  const codigo = document.getElementById('rubroCodigo').value.trim();
+  const codigo = normalizarCodigoRubro(document.getElementById('rubroCodigo').value);
   const esOC = document.getElementById('rubroEsOC').checked;
   const ocCodigo = document.getElementById('rubroOCCodigo').value.trim();
   if(!descripcion){ toast('La descripción es obligatoria','error'); return; }
+  // Regla única de códigos: obligatorio, bien formado y único en el proyecto (también al editar)
+  const errCodigo = validarCodigoRubro(codigo);
+  if(errCodigo){ toast(errCodigo,'error'); return; }
   if(esOC && !ocCodigo){ toast('Ingresa el código de la Orden de Cambio','error'); return; }
 
   const btn = document.getElementById('btnGuardarRubro');
   btn.disabled=true; btn.textContent='Guardando...';
+  try{
+    if(await codigoRubroExiste(currentProyecto, codigo, id||null)){
+      toast(`Ya existe un rubro con el código ${codigo} en este proyecto.`,'error'); btn.disabled=false; btn.textContent='Guardar'; return;
+    }
+  }catch(e){ toast('No se pudo comprobar el código: '+(e?.message||e),'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
 
   const payload = {
     proyecto_id: currentProyecto,
     descripcion, unidad,
     cantidad_contrato: cantidad,
     precio_unitario: precio,
-    codigo: codigo||null,
+    codigo,
     es_orden_cambio: esOC,
     orden_cambio_codigo: esOC ? ocCodigo : null
   };
@@ -4538,7 +4610,7 @@ async function guardarRubro(){
     ({ error } = await sb.from('rubros').insert(payload));
   }
 
-  if(error){ toast('Error: '+mensajeErrorRubro(error),'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
+  if(error){ toast('Error: '+mensajeErrorRubro(error, codigo),'error'); btn.disabled=false; btn.textContent='Guardar'; return; }
   toast(id ? 'Rubro actualizado ✓' : 'Rubro creado ✓','success');
   btn.disabled=false; btn.textContent='Guardar';
   cerrarModal('modalNuevoRubro');
@@ -4644,6 +4716,7 @@ function restaurarPosicionLibro(contenedor, scrollPrevio, registroId, scrollXPre
 // ── ÓRDENES DE CAMBIO ──
 let _ocItems = [];
 let _ocEditando = null;
+let _ocNumeroPrevisto = null; // número de la OC abierta (o el que tendrá una nueva: max+1), para proponer OC-NN-SS antes de guardar
 let _ocRubros = [];
 const fmtOC = v => (v<0?'−$':'$') + Math.abs(v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -4698,6 +4771,12 @@ async function abrirEditorOC(id=null){
     _ocItems = (items||[]).map(i=>({id:i.id, created_at:i.created_at, tipo:i.tipo, rubro_id:i.rubro_id, codigo:i.codigo, descripcion:i.descripcion, unidad:i.unidad, precio_unitario:i.precio_unitario, cantidad:i.cantidad}));
   }
   const oc = _ocEditando;
+  // Número de la orden, para proponer OC-NN-SS a los ítems nuevos sin código desde el editor
+  if(oc) _ocNumeroPrevisto = oc.numero;
+  else {
+    const { data: maxN } = await sb.from('ordenes_cambio').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
+    _ocNumeroPrevisto = (maxN?.[0]?.numero||0)+1;
+  }
   const soloLectura = oc && ['aprobada','rechazada'].includes(oc.estado);
   document.getElementById('ocTituloModal').textContent = oc ? `OC-${String(oc.numero).padStart(2,'0')} · ${ESTADOS_OC[oc.estado].label}` : 'Nueva orden de cambio';
 
@@ -4754,6 +4833,8 @@ function agregarItemOC(tipo){
   _ocItems.push(tipo==='nuevo'
     ? {tipo:'nuevo', codigo:'', descripcion:'', unidad:'', precio_unitario:0, cantidad:0}
     : {tipo:'modificacion', rubro_id:'', cantidad:0});
+  // El ítem nuevo nace con OC-NN-SS propuesto; el usuario puede cambiarlo antes de guardar
+  if(tipo==='nuevo') asignarCodigosItemsOC(_ocItems, _ocNumeroPrevisto||0, _ocRubros.map(r=>r.codigo));
   renderItemsOC(false);
 }
 
@@ -4819,11 +4900,25 @@ async function guardarOC(estado){
   const invalido = _ocItems.some(it=> it.tipo==='nuevo' ? !it.descripcion.trim() : !it.rubro_id);
   if(invalido){ toast('Completa todos los ítems (descripción o rubro)','error'); return; }
 
+  // Número de la orden: el de la OC existente o el siguiente libre. Los ítems nuevos sin código
+  // reciben OC-NN-SS con ese número (si cambió desde que se abrió el editor, se renumeran) y
+  // después se aplica la regla única: válido, no repetido en la OC, no existente en el proyecto.
+  let numero = _ocEditando?.numero;
+  if(!numero){
+    const { data: maxN } = await sb.from('ordenes_cambio').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
+    numero = (maxN?.[0]?.numero||0)+1;
+  }
+  if(_ocNumeroPrevisto && numero !== _ocNumeroPrevisto){
+    const re = new RegExp('^OC-'+String(_ocNumeroPrevisto).padStart(2,'0')+'-(\\d{2,})$');
+    _ocItems.forEach(it=>{ const m = it.tipo==='nuevo' && re.exec(normalizarCodigoRubro(it.codigo)); if(m) it.codigo = codigoItemOC(numero, m[1]); });
+  }
+  asignarCodigosItemsOC(_ocItems, numero, _ocRubros.map(r=>r.codigo));
+  const errCodigo = validarCodigosItemsOC(_ocItems, _ocRubros);
+  if(errCodigo){ toast(errCodigo,'error'); renderItemsOC(false); return; }
+
   const montoTotal = _ocItems.reduce((s,it)=>s+montoItemOC(it),0);
   let ocId = _ocEditando?.id;
   if(!ocId){
-    const { data: maxN } = await sb.from('ordenes_cambio').select('numero').eq('proyecto_id', currentProyecto).order('numero',{ascending:false}).limit(1);
-    const numero = (maxN?.[0]?.numero||0)+1;
     const { data: nueva, error } = await sb.from('ordenes_cambio').insert({
       proyecto_id: currentProyecto, numero, titulo,
       justificacion: document.getElementById('ocJustificacion').value.trim()||null,
@@ -4842,7 +4937,7 @@ async function guardarOC(estado){
   if(_ocItems.length){
     await sb.from('orden_cambio_items').insert(_ocItems.map(it=>({
       orden_id: ocId, tipo: it.tipo, rubro_id: it.rubro_id||null,
-      codigo: it.codigo||null, descripcion: it.descripcion||null, unidad: it.unidad||null,
+      codigo: it.tipo==='nuevo' ? normalizarCodigoRubro(it.codigo) : null, descripcion: it.descripcion||null, unidad: it.unidad||null,
       precio_unitario: it.tipo==='nuevo' ? (it.precio_unitario||0) : (_ocRubros.find(x=>x.id===it.rubro_id)?.precio_unitario||0),
       cantidad: it.cantidad||0, monto: montoItemOC(it)
     })));
@@ -4858,17 +4953,19 @@ async function guardarOC(estado){
 function planAprobacionOC(oc, items, rubros){
   const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
   if(!items.length) return { error: 'La orden no tiene ítems' };
-  const codigosProyecto = new Set(rubros.map(r=>String(r.codigo??'').trim()).filter(Boolean));
   const nuevos = items.filter(it=>it.tipo==='nuevo');
-  const repetidos = nuevos.map(it=>String(it.codigo??'').trim()).filter(c=>c && codigosProyecto.has(c));
-  if(repetidos.length) return { error: `Estos códigos ya existen en los rubros del proyecto: ${repetidos.join(', ')}. Cambia el código del ítem o conviértelo en modificación de cantidad.` };
+  // Ítems guardados antes del 5-nov-2026 pueden venir sin código: reciben OC-NN-SS aquí (oc_aprobar
+  // hace lo mismo del lado de la base). Después, la regla única de códigos.
+  asignarCodigosItemsOC(items, oc.numero, rubros.map(r=>r.codigo));
+  const errCodigo = validarCodigosItemsOC(items, rubros);
+  if(errCodigo) return { error: errCodigo };
   const sinDescripcion = nuevos.filter(it=>!String(it.descripcion??'').trim()).length;
   if(sinDescripcion) return { error: `${sinDescripcion} rubro(s) nuevo(s) sin descripción` };
 
   const maxOrden = rubros.reduce((m,r)=>Math.max(m, r.orden||0), 0);
   const altas = nuevos.map((it,i)=>({
     proyecto_id: oc.proyecto_id, orden: maxOrden+1+i,
-    codigo: String(it.codigo??'').trim()||codigoOC, descripcion: it.descripcion, unidad: it.unidad||null,
+    codigo: normalizarCodigoRubro(it.codigo), descripcion: it.descripcion, unidad: it.unidad||null,
     cantidad_contrato: Number(it.cantidad)||0, precio_unitario: Number(it.precio_unitario)||0,
     cantidad_ejecutada: 0,
     es_orden_cambio: true, orden_cambio_codigo: codigoOC, orden_cambio_id: oc.id
@@ -4917,7 +5014,7 @@ async function aplicarAprobacionOC(oc, plan, datosAprobacion){
   // 1) Rubros nuevos, en un solo insert
   if(plan.altas.length){
     const { data, error } = await sb.from('rubros').insert(plan.altas).select('id');
-    if(error) return `Error insertando los rubros nuevos: ${error.message}. No se aplicó nada.`;
+    if(error) return `Error insertando los rubros nuevos: ${mensajeErrorRubro(error)}. No se aplicó nada.`;
     (data||[]).forEach(r=>insertados.push(r.id));
     if(insertados.length!==plan.altas.length) return await fallar(`Se insertaron ${insertados.length} de ${plan.altas.length} rubros nuevos`);
   }
