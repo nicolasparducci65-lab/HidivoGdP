@@ -15372,7 +15372,30 @@ async function cambiarRolUsuario(id, rolActual){
   cargarUsuarios();
 }
 
+// Edge Function bright-handler (borra cuentas de Auth). La función exige la sesión de un
+// administrador: se envía el token del usuario, nunca la clave pública. Devuelve siempre
+// un objeto; cualquier fallo (sin sesión, sin red, rechazo de la función) llega en .error.
+async function llamarBrightHandler(cuerpo){
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    if(!session?.access_token) return { error: 'Tu sesión venció. Vuelve a ingresar.' };
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/bright-handler`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':`Bearer ${session.access_token}` },
+      body: JSON.stringify(cuerpo)
+    });
+    const data = (await resp.json().catch(()=>null)) || {};
+    if(!resp.ok && !data.error) data.error = data.message || ('Error '+resp.status);
+    return data;
+  }catch(err){
+    return { error: 'No se pudo contactar al servidor' };
+  }
+}
+
 async function eliminarUsuario(id, nombre){
+  if(id === currentUser?.id){ toast('No puedes eliminar tu propia cuenta','error'); return; }
+  const { data: { session: sesionAdmin } } = await sb.auth.getSession();
+  if(!sesionAdmin){ toast('Tu sesión venció. Vuelve a ingresar.','error'); return; }
   if(!confirm(`¿Eliminar al usuario ${nombre}?\n\nSe eliminará su cuenta y no podrá volver a entrar con ese email.\n\nEsta acción no se puede deshacer.`)) return;
 
   const btn = event?.target;
@@ -15390,15 +15413,7 @@ async function eliminarUsuario(id, nombre){
   await sb.from('perfiles').delete().eq('id', id);
 
   // 3. Eliminar de Auth via Edge Function
-  const resp = await fetch('https://kpswaoqxaxvhrgxntkcq.supabase.co/functions/v1/bright-handler', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwc3dhb3F4YXh2aHJneG50a2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTgsImV4cCI6MjA5NjY3MTk1OH0.10PgjG-EHI4_fj044Cw62b6rRBAQz8tbETQVSeJhoIA`
-    },
-    body: JSON.stringify({ accion: 'eliminarUsuario', userId: id })
-  });
-  const data = await resp.json();
+  const data = await llamarBrightHandler({ accion: 'eliminarUsuario', userId: id });
 
   if(data.error){
     toast('Perfil eliminado, pero hubo un error en Auth: '+data.error,'error');
@@ -15419,12 +15434,8 @@ async function cancelarInvitacion(id, email){
     try{
       const { data: perfilExistente } = await sb.from('perfiles').select('id').eq('email', email).maybeSingle();
       if(!perfilExistente){
-        const resp = await fetch(`${SUPABASE_URL}/functions/v1/bright-handler`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-          body: JSON.stringify({ accion: 'buscarYEliminarUsuarioPorEmail', email })
-        });
-        await resp.json().catch(()=>{});
+        const data = await llamarBrightHandler({ accion: 'buscarYEliminarUsuarioPorEmail', email });
+        if(data.error) console.error('No se pudo limpiar el usuario fantasma en Auth:', data.error);
       }
     }catch(err){
       console.error('No se pudo limpiar el usuario fantasma en Auth:', err);
