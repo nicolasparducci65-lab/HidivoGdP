@@ -2495,6 +2495,8 @@ const { createClient } = supabase;
 // Retorno desde el correo de recuperación. Se lee ANTES de crear el cliente porque
 // supabase-js consume y borra el hash al iniciar. 'ok' | 'vencido' | null.
 let _retornoRecuperacion = leerRetornoRecuperacion(window.location.hash, window.location.search);
+// Token que traía el enlace: la recuperación solo vale si la sesión abierta es ESA.
+let _tokenRetornoRecuperacion = _retornoRecuperacion==='ok' ? tokenDelRetorno(window.location.hash) : null;
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 vigilarRecuperacion(sb);
 
@@ -2607,6 +2609,7 @@ async function enviarEnlaceClave(){
 const CLAVE_MIN = 6; // la misma longitud mínima que exige Supabase Auth (valor por defecto del proyecto)
 const MARCA_RECUPERACION = 'hidivo_recuperacion'; // sessionStorage: sobrevive a una recarga, no a cerrar la pestaña
 let _modoNuevaClave = null; // null | 'recuperacion'
+let _recuperacionConfirmada = false; // copia en memoria de la marca (por si no hay sessionStorage)
 
 // Qué trae la URL al cargar: 'ok' (enlace válido: #access_token…&type=recovery),
 // 'vencido' (#error=…&error_code=otp_expired, también puede venir en la query) o null.
@@ -2619,21 +2622,40 @@ function leerRetornoRecuperacion(hash, search){
   return null;
 }
 
-function marcarRecuperacion(){ try{ sessionStorage.setItem(MARCA_RECUPERACION, '1'); }catch(e){} }
+function tokenDelRetorno(hash){
+  return new URLSearchParams(String(hash || '').replace(/^#/, '')).get('access_token');
+}
+
+// La marca de «recuperación confirmada» solo se pone cuando consta que la sesión salió del
+// enlace: evento PASSWORD_RECOVERY del cliente, o sesión cuyo token es el que traía la URL.
+// Un #access_token=…&type=recovery escrito a mano sobre una sesión normal NO la pone.
+function marcarRecuperacion(){
+  _recuperacionConfirmada = true;
+  try{ sessionStorage.setItem(MARCA_RECUPERACION, '1'); }catch(e){}
+}
 function limpiarRecuperacion(){
   _retornoRecuperacion = null;
+  _tokenRetornoRecuperacion = null;
+  _recuperacionConfirmada = false;
   try{ sessionStorage.removeItem(MARCA_RECUPERACION); }catch(e){}
 }
 function recuperacionPendiente(){
-  if(_retornoRecuperacion==='ok') return true;
+  if(_recuperacionConfirmada) return true;
   try{ return sessionStorage.getItem(MARCA_RECUPERACION)==='1'; }catch(e){ return false; }
+}
+// Hay un retorno 'ok' en la URL: ¿la sesión abierta es la del enlace?
+function confirmarRetornoRecuperacion(session){
+  const esDelEnlace = !!session && !!_tokenRetornoRecuperacion && session.access_token === _tokenRetornoRecuperacion;
+  _retornoRecuperacion = null;
+  _tokenRetornoRecuperacion = null;
+  if(esDelEnlace) marcarRecuperacion();
+  return esDelEnlace;
 }
 
 // Se llama una vez, justo después de crear el cliente. En el retorno de recuperación
 // supabase-js emite PASSWORD_RECOVERY (en lugar de SIGNED_IN). El oyente solo toca el DOM:
 // llamar a sb.auth desde aquí puede bloquear el cliente.
 function vigilarRecuperacion(cliente){
-  if(_retornoRecuperacion==='ok') marcarRecuperacion();
   cliente.auth.onAuthStateChange((event)=>{
     if(event!=='PASSWORD_RECOVERY') return;
     marcarRecuperacion();
@@ -2783,6 +2805,8 @@ async function checkAuth(){
     currentUser = session.user;
     // Recuperación de contraseña: SOLO la pantalla de contraseña nueva, con prioridad
     // sobre el onboarding, el landing por rol y cualquier sección del historial
+    // (la URL sola no basta: la sesión tiene que ser la que abrió el enlace)
+    if(_retornoRecuperacion==='ok' && !confirmarRetornoRecuperacion(session) && !recuperacionPendiente()){ mostrarEnlaceVencido(); return; }
     if(recuperacionPendiente()){ mostrarNuevaClave('recuperacion'); return; }
     await cargarPerfil();
     // Si el usuario no tiene perfil aún (primer login vía Magic Link), pedirle nombre/apellido
@@ -2794,7 +2818,7 @@ async function checkAuth(){
     mostrarApp();
   } else {
     // Venía de un enlace de recuperación pero no hay sesión: el enlace no se pudo validar
-    if(recuperacionPendiente()){ mostrarEnlaceVencido(navigator.onLine ? '' : MSG_SIN_CONEXION_CLAVE); return; }
+    if(_retornoRecuperacion==='ok' || recuperacionPendiente()){ mostrarEnlaceVencido(navigator.onLine ? '' : MSG_SIN_CONEXION_CLAVE); return; }
     document.getElementById('authScreen').style.display='flex';
     document.getElementById('appScreen').style.display='none';
     // Limpiar campos para evitar autocompletado del caché
