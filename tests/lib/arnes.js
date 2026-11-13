@@ -151,7 +151,8 @@ function crearSb(fixture, opciones = {}){
   return {
     from: builder,
     llamadas,
-    auth: { getUser: async () => ({ data: { user: { id: opciones.usuarioId || null } } }) },
+    // `opciones.auth` añade o sustituye métodos de sb.auth (p. ej. el Auth simulado de olvide-clave.test.js)
+    auth: { getUser: async () => ({ data: { user: { id: opciones.usuarioId || null } } }), ...(opciones.auth || {}) },
     // Storage simulado: getPublicUrl con y sin transformación (misma forma de URL que Supabase)
     storage: { from(bucket){ return {
       getPublicUrl: (p, opts) => ({ data: { publicUrl: opts && opts.transform
