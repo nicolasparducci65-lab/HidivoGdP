@@ -45,6 +45,17 @@
         </div>
       </div>
       <button class="btn primary" style="width:100%;justify-content:center;padding:11px" onclick="login()">Ingresar</button>
+      <div style="text-align:center;margin-top:12px"><button type="button" class="link-btn" id="linkOlvideClave" onclick="mostrarOlvideClave()">¿Olvidaste tu contraseña?</button></div>
+      <div class="auth-divider">o</div>
+    </div>
+    <div id="olvideClaveForm" style="display:none">
+      <div style="font-size:13px;color:#676879;line-height:1.5;margin-bottom:14px">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva.</div>
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input type="email" class="form-control" id="olvideClaveEmail" placeholder="tu@hidivo.com" autocomplete="email"/>
+      </div>
+      <button class="btn primary" id="btnOlvideClave" style="width:100%;justify-content:center;padding:11px" onclick="enviarEnlaceClave()">Enviar enlace</button>
+      <div style="text-align:center;margin-top:12px"><button type="button" class="link-btn" onclick="volverAIngreso()">Volver a ingresar</button></div>
       <div class="auth-divider">o</div>
     </div>
     <div style="text-align:center;font-size:13px;color:#676879;padding:4px 0">
@@ -2448,6 +2459,103 @@ let currentPage = 'dashboard';
 let currentProyecto = null;
 let proyectos = [];
 
+// ── RECUPERAR / CAMBIAR CONTRASEÑA ──
+// El mensaje tras pedir el enlace es SIEMPRE el mismo, exista o no el correo: la pantalla
+// de ingreso no debe revelar qué correos tienen cuenta.
+const MSG_ENLACE_ENVIADO = 'Si el correo está registrado, recibirás un enlace para crear una contraseña nueva.';
+const MSG_SIN_CONEXION_CLAVE = 'Necesitas conexión para restablecer tu contraseña';
+const MSG_DEMASIADOS_INTENTOS = 'Demasiados intentos, prueba en unos minutos';
+const ESPERA_REENVIO_S = 60; // Supabase Auth no reenvía al mismo correo antes de 60 s
+let _olvideClaveHasta = 0;
+let _olvideClaveTimer = null;
+
+// URL pública de la app (sin query ni hash): a ella vuelve el enlace del correo.
+function urlPublicaApp(){ return window.location.origin + window.location.pathname; }
+
+function esLimiteDeEnvios(error){
+  return !!error && (error.status===429 || /rate_limit/.test(error.code||'') || /rate limit|security purposes|too many/i.test(error.message||''));
+}
+function esErrorDeRed(error){
+  return !navigator.onLine || (!!error && (error.name==='AuthRetryableFetchError' || error.status===0 || /failed to fetch|networkerror|load failed/i.test(error.message||'')));
+}
+
+// Error de signInWithPassword en español (GoTrue responde en inglés).
+function mensajeErrorIngreso(error){
+  if(esErrorDeRed(error)) return 'Sin conexión. Revisa tu internet e inténtalo de nuevo.';
+  if(esLimiteDeEnvios(error)) return MSG_DEMASIADOS_INTENTOS;
+  const codigo = (error && error.code) || '', msg = (error && error.message) || '';
+  if(codigo==='invalid_credentials' || /invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos';
+  if(codigo==='email_not_confirmed' || /email not confirmed/i.test(msg)) return 'Tu correo aún no está confirmado. Revisa tu bandeja de entrada.';
+  if(codigo==='user_banned' || /banned/i.test(msg)) return 'Tu cuenta está suspendida. Contacta al administrador de HIDIVO.';
+  return 'No se pudo ingresar. Inténtalo de nuevo.';
+}
+
+function showAuthSuccess(msg){
+  const el = document.getElementById('authSuccess');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('authError').style.display = 'none';
+}
+function ocultarMensajesAuth(){
+  document.getElementById('authError').style.display = 'none';
+  document.getElementById('authSuccess').style.display = 'none';
+}
+
+function mostrarOlvideClave(){
+  if(!navigator.onLine){ showAuthError(MSG_SIN_CONEXION_CLAVE); return; }
+  ocultarMensajesAuth();
+  document.getElementById('olvideClaveEmail').value = document.getElementById('loginEmail').value.trim();
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('olvideClaveForm').style.display = 'block';
+  actualizarBotonOlvideClave();
+}
+
+function volverAIngreso(){
+  ocultarMensajesAuth();
+  document.getElementById('olvideClaveForm').style.display = 'none';
+  document.getElementById('loginForm').style.display = 'block';
+}
+
+// Botón «Enviar enlace»: deshabilitado mientras dura la espera de reenvío, con cuenta atrás.
+function actualizarBotonOlvideClave(){
+  const btn = document.getElementById('btnOlvideClave');
+  if(!btn) return;
+  const faltan = Math.ceil((_olvideClaveHasta - Date.now()) / 1000);
+  if(faltan > 0){ btn.disabled = true; btn.textContent = 'Enviar otro enlace en ' + faltan + ' s'; return; }
+  btn.disabled = false; btn.textContent = 'Enviar enlace';
+  if(_olvideClaveTimer){ clearInterval(_olvideClaveTimer); _olvideClaveTimer = null; }
+}
+function iniciarEsperaReenvio(){
+  _olvideClaveHasta = Date.now() + ESPERA_REENVIO_S * 1000;
+  if(_olvideClaveTimer) clearInterval(_olvideClaveTimer);
+  _olvideClaveTimer = setInterval(actualizarBotonOlvideClave, 1000);
+  actualizarBotonOlvideClave();
+}
+
+async function enviarEnlaceClave(){
+  const correo = document.getElementById('olvideClaveEmail').value.trim();
+  if(!/^\S+@\S+\.\S+$/.test(correo)){ showAuthError('Escribe tu correo electrónico'); return; }
+  if(!navigator.onLine){ showAuthError(MSG_SIN_CONEXION_CLAVE); return; }
+  if(Date.now() < _olvideClaveHasta) return;
+  const btn = document.getElementById('btnOlvideClave');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  ocultarMensajesAuth();
+  let error = null;
+  try{ ({ error } = await sb.auth.resetPasswordForEmail(correo, { redirectTo: urlPublicaApp() })); }
+  catch(e){ error = e; }
+  if(error && esErrorDeRed(error)){
+    // No salió ninguna petición: no hay espera de reenvío que respetar
+    btn.disabled = false; btn.textContent = 'Enviar enlace';
+    showAuthError(MSG_SIN_CONEXION_CLAVE);
+    return;
+  }
+  iniciarEsperaReenvio();
+  if(error && esLimiteDeEnvios(error)){ showAuthError(MSG_DEMASIADOS_INTENTOS); return; }
+  // Cualquier otro resultado (enviado, correo sin cuenta, error del servidor) muestra lo mismo
+  if(error) console.error('resetPasswordForEmail:', error.code || error.status || 'error');
+  showAuthSuccess(MSG_ENLACE_ENVIADO);
+}
+// ── FIN RECUPERAR / CAMBIAR CONTRASEÑA ──
+
 // ── AUTH ──
 async function checkAuth(){
   // Capturar token de invitación de la URL (si vino de un magic link de invitación)
@@ -2511,7 +2619,7 @@ async function login(){
   const pass = document.getElementById('loginPassword').value;
   if(!email||!pass){ showAuthError('Completa todos los campos'); return; }
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-  if(error){ showAuthError(error.message); return; }
+  if(error){ showAuthError(mensajeErrorIngreso(error)); return; }
   currentUser = data.user;
   await cargarPerfil();
   mostrarApp();
