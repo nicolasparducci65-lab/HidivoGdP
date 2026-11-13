@@ -118,7 +118,7 @@
   </div>
 </div>
 
-<!-- CONTRASEÑA NUEVA (retorno del enlace de recuperación) -->
+<!-- CONTRASEÑA NUEVA (retorno del enlace de recuperación o «Cambiar mi contraseña» del menú de usuario) -->
 <div id="nuevaClaveScreen" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f5f6f8;padding:24px">
   <div style="background:#fff;border-radius:16px;padding:40px 32px;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08)">
     <div id="nuevaClaveForm">
@@ -126,6 +126,15 @@
         <div style="font-size:40px;margin-bottom:12px">🔑</div>
         <div id="nuevaClaveTitulo" style="font-size:20px;font-weight:700;color:#323338;margin-bottom:8px">Crear contraseña nueva</div>
         <div style="font-size:14px;color:#676879;line-height:1.6">Es la contraseña con la que entrarás a HIDIVO.</div>
+      </div>
+      <div class="form-group" id="nuevaClaveActualGrupo" style="display:none;margin-bottom:14px">
+        <label class="form-label">Contraseña actual</label>
+        <div style="position:relative">
+          <input type="password" class="form-control" id="nuevaClaveActual" placeholder="Tu contraseña de hoy" autocomplete="current-password" style="padding-right:40px"/>
+          <span onclick="togglePasswordVisibility('nuevaClaveActual', this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:#676879;display:flex;align-items:center" title="Mostrar/ocultar contraseña">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </div>
       </div>
       <div class="form-group" style="margin-bottom:14px">
         <label class="form-label">Contraseña nueva</label>
@@ -270,7 +279,11 @@
       <button id="btnActivarPush" onclick="toggleNotificacionesPush()" class="btn" style="width:100%;margin-bottom:8px;justify-content:center;gap:6px;font-size:12px">
         🔔 Activar notificaciones
       </button>
-      <div class="user-pill" onclick="logout()">
+      <div class="menu-usuario" id="menuUsuario" style="display:none">
+        <button type="button" onclick="abrirCambiarClave()">🔑 Cambiar mi contraseña</button>
+        <button type="button" onclick="cerrarMenuUsuario();logout()">↩ Cerrar sesión</button>
+      </div>
+      <div class="user-pill" id="userPill" onclick="toggleMenuUsuario(event)" title="Opciones de tu cuenta">
         <div class="user-avatar" id="sidebarAvatar">N</div>
         <div>
           <div class="user-name" id="sidebarNombre">Usuario</div>
@@ -2603,12 +2616,14 @@ async function enviarEnlaceClave(){
 }
 
 // ── Contraseña nueva ──
-// Invariante: la pantalla «Crear contraseña nueva» solo se abre con una recuperación en
-// curso (retorno del enlace del correo o evento PASSWORD_RECOVERY). Nunca por una URL
-// escrita a mano, y mientras la recuperación siga pendiente no se entra al resto de la app.
+// Invariante: la pantalla de contraseña nueva solo se abre (a) con una recuperación en
+// curso (retorno del enlace del correo o evento PASSWORD_RECOVERY) o (b) desde «Cambiar mi
+// contraseña» del menú de usuario, con sesión iniciada y verificando la contraseña actual.
+// Nunca por una URL escrita a mano, y mientras una recuperación siga pendiente no se
+// entra al resto de la app.
 const CLAVE_MIN = 6; // la misma longitud mínima que exige Supabase Auth (valor por defecto del proyecto)
 const MARCA_RECUPERACION = 'hidivo_recuperacion'; // sessionStorage: sobrevive a una recarga, no a cerrar la pestaña
-let _modoNuevaClave = null; // null | 'recuperacion'
+let _modoNuevaClave = null; // null | 'recuperacion' | 'menu'
 let _recuperacionConfirmada = false; // copia en memoria de la marca (por si no hay sessionStorage)
 
 // Qué trae la URL al cargar: 'ok' (enlace válido: #access_token…&type=recovery),
@@ -2671,7 +2686,10 @@ function mostrarNuevaClave(modo){
   const yaActiva = !!_modoNuevaClave;
   _modoNuevaClave = modo;
   ocultarPantallas(['authScreen','esperaAsignacionScreen','completarPerfilScreen','appScreen']);
-  ['nuevaClave','nuevaClaveConfirm'].forEach(id=>{ document.getElementById(id).value = ''; });
+  ['nuevaClaveActual','nuevaClave','nuevaClaveConfirm'].forEach(id=>{ document.getElementById(id).value = ''; });
+  // La contraseña actual solo se pide con sesión normal; en recuperación el usuario no la sabe
+  document.getElementById('nuevaClaveActualGrupo').style.display = modo==='menu' ? 'block' : 'none';
+  document.getElementById('nuevaClaveTitulo').textContent = modo==='menu' ? 'Cambiar mi contraseña' : 'Crear contraseña nueva';
   document.getElementById('nuevaClaveError').style.display = 'none';
   const btn = document.getElementById('btnNuevaClave');
   btn.disabled = false; btn.textContent = 'Guardar contraseña';
@@ -2725,10 +2743,12 @@ async function guardarNuevaClave(){
   if(!modo) return;
   const nueva = document.getElementById('nuevaClave').value;
   const repetir = document.getElementById('nuevaClaveConfirm').value;
+  const actual = document.getElementById('nuevaClaveActual').value;
   const errEl = document.getElementById('nuevaClaveError');
   const avisar = msg=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
   errEl.style.display = 'none';
 
+  if(modo==='menu' && !actual){ avisar('Escribe tu contraseña actual'); return; }
   if(nueva.length < CLAVE_MIN){ avisar('La contraseña debe tener al menos ' + CLAVE_MIN + ' caracteres'); return; }
   if(nueva !== repetir){ avisar('Las contraseñas no coinciden'); return; }
   if(!navigator.onLine){ avisar(MSG_SIN_CONEXION_CLAVE); return; }
@@ -2736,6 +2756,20 @@ async function guardarNuevaClave(){
   const btn = document.getElementById('btnNuevaClave');
   btn.disabled = true; btn.textContent = 'Guardando...';
   const rehabilitar = ()=>{ btn.disabled = false; btn.textContent = 'Guardar contraseña'; };
+
+  // Desde el menú: la contraseña actual se verifica ingresando de nuevo con ella. Si no
+  // es correcta no se llama a updateUser (y la sesión abierta no se pierde).
+  if(modo==='menu'){
+    let errActual = null;
+    try{ ({ error: errActual } = await sb.auth.signInWithPassword({ email: currentUser.email, password: actual })); }
+    catch(e){ errActual = e; }
+    if(errActual){
+      rehabilitar();
+      const credenciales = errActual.code==='invalid_credentials' || /invalid login credentials/i.test(errActual.message||'');
+      avisar(credenciales ? 'La contraseña actual no es correcta' : mensajeErrorIngreso(errActual));
+      return;
+    }
+  }
 
   let error = null;
   try{ ({ error } = await sb.auth.updateUser({ password: nueva })); }
@@ -2747,6 +2781,7 @@ async function guardarNuevaClave(){
     avisar(mensajeErrorClave(error));
     return;
   }
+  if(modo==='menu'){ volverALaAppTrasCambiarClave(); toast('Contraseña actualizada ✓', 'success'); return; }
   await entrarTrasRecuperacion();
 }
 
@@ -2767,8 +2802,43 @@ async function entrarTrasRecuperacion(){
 }
 
 // Cancelar una recuperación cierra la sesión que abrió el enlace: sin clave nueva no se entra.
+// Cancelar el cambio desde el menú vuelve a la app tal como estaba.
 function cancelarNuevaClave(){
+  if(_modoNuevaClave==='menu'){ volverALaAppTrasCambiarClave(); return; }
   logout();
+}
+
+// ── Menú de usuario (pastilla del sidebar) ──
+function toggleMenuUsuario(ev){
+  if(ev) ev.stopPropagation();
+  const menu = document.getElementById('menuUsuario');
+  menu.style.display = menu.style.display==='none' ? 'block' : 'none';
+}
+function cerrarMenuUsuario(){
+  const menu = document.getElementById('menuUsuario');
+  if(menu) menu.style.display = 'none';
+}
+document.addEventListener('click', e=>{
+  if(!(e.target && e.target.closest && e.target.closest('#menuUsuario'))) cerrarMenuUsuario();
+});
+
+// Única entrada a la pantalla con sesión normal. No depende de la URL.
+function abrirCambiarClave(){
+  cerrarMenuUsuario();
+  if(!currentUser) return;
+  if(!navigator.onLine){ toast('Necesitas conexión para cambiar tu contraseña', 'error'); return; }
+  mostrarNuevaClave('menu');
+}
+
+// Cierra la pantalla abierta desde el menú y devuelve la app donde estaba. La entrada
+// centinela del historial pasa a ser una entrada normal de la sección actual.
+function volverALaAppTrasCambiarClave(){
+  _modoNuevaClave = null;
+  document.getElementById('nuevaClaveScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'flex';
+  _histIdx += 1; _histMax = _histIdx;
+  history.replaceState({ seccion: currentPage, proyecto_id: currentProyecto || null, idx: _histIdx }, '');
+  actualizarBotonesHistorial();
 }
 // ── FIN RECUPERAR / CAMBIAR CONTRASEÑA ──
 
@@ -2859,6 +2929,7 @@ async function logout(){
   await sb.auth.signOut();
   currentUser = null; currentPerfil = null;
   limpiarRecuperacion(); _modoNuevaClave = null;
+  cerrarMenuUsuario();
   document.getElementById('appScreen').style.display='none';
   document.getElementById('completarPerfilScreen').style.display='none';
   document.getElementById('nuevaClaveScreen').style.display='none';
