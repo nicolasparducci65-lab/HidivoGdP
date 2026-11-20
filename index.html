@@ -11368,7 +11368,7 @@ async function cargarReportesGlobales(){
   proyectosFiltrados.forEach(p=>proyectoMap[p.id]=p);
 
   if(!idsProyectos.length){
-    el.innerHTML = renderFiltrosReportes(contratantes) + '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin proyectos</div><div class="empty-sub">No hay proyectos para este filtro</div></div>';
+    el.innerHTML = renderFiltrosReportes(contratantes, barraEmpresaTipoRep) + '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin proyectos</div><div class="empty-sub">No hay proyectos para este filtro</div></div>';
     return;
   }
 
@@ -11409,7 +11409,7 @@ async function cargarReportesGlobales(){
   obsData.forEach(r=>{ if(conteoPorProyecto[r.proyecto_id]) conteoPorProyecto[r.proyecto_id].obs++; });
   solData.forEach(r=>{ if(conteoPorProyecto[r.proyecto_id]) conteoPorProyecto[r.proyecto_id].sol++; });
 
-  el.innerHTML = renderFiltrosReportes(contratantes) + `
+  el.innerHTML = renderFiltrosReportes(contratantes, barraEmpresaTipoRep) + `
 
   <!-- Métricas generales -->
   <div class="metrics" style="margin-bottom:20px">
@@ -11438,10 +11438,11 @@ async function cargarReportesGlobales(){
   </div>`;
 }
 
-function renderFiltrosReportes(contratantes){
+// barraEmpresaTipo: HTML de los selects de empresa y tipo (lo arma cargarReportesGlobales; vacío sin multiempresa).
+function renderFiltrosReportes(contratantes, barraEmpresaTipo = ''){
   return `
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
-    ${barraEmpresaTipoRep}
+    ${barraEmpresaTipo}
     <select id="reportesContratanteSel" onchange="reportesFiltroContratante=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
       <option value="">— Todos los contratantes —</option>
       ${contratantes.map(c=>`<option value="${c}" ${reportesFiltroContratante===c?'selected':''}>${c}</option>`).join('')}
