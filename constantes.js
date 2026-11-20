@@ -9,6 +9,21 @@ const LOGO_URL = (() => {
   try{ if(typeof document !== 'undefined' && document.baseURI) return new URL('vendor/logo-hidivo.png', document.baseURI).href; }catch(_){ /* about:blank u otra base no válida */ }
   return 'https://hidivo.com/vendor/logo-hidivo.png';
 })();
+// ── MULTIEMPRESA ──
+// Tipos de proyecto (proyectos.tipo) y su abreviatura en el código SIGLA-TIP-AAAA-NNN.
+// Deben coincidir con proyectos_tipo_chk y proyecto_tipo_abrev() de la base.
+const TIPOS_PROYECTO = [
+  { id:'fiscalizacion',  nombre:'Fiscalización',        abrev:'FIS' },
+  { id:'gerencia',       nombre:'Gerencia de proyecto', abrev:'GER' },
+  { id:'disenos',        nombre:'Diseños',              abrev:'DIS' },
+  { id:'construccion',   nombre:'Construcción',         abrev:'CON' },
+  { id:'pilotes',        nombre:'Pilotes',              abrev:'PIL' },
+  { id:'muros_pantalla', nombre:'Muros pantalla',       abrev:'MUR' },
+  { id:'puentes',        nombre:'Puentes',              abrev:'PUE' }
+];
+const RE_CODIGO_PROYECTO = /^[A-Z0-9]{2,5}-[A-Z]{3}-[0-9]{4}-[0-9]{3}$/;
+function tipoProyectoLabel(t){ return TIPOS_PROYECTO.find(x=>x.id===t)?.nombre || '—'; }
+
 const PLANTILLA_RUBROS_URL = 'https://kpswaoqxaxvhrgxntkcq.supabase.co/storage/v1/object/public/hidivo-archivos/plantillas/plantilla_rubros_hidivo.xlsx';
 
 const ESTADOS_OC = {

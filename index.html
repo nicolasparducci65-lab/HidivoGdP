@@ -630,6 +630,33 @@
         <label class="form-label">Nombre del proyecto *</label>
         <input type="text" class="form-control" id="pNombre" placeholder="Ej: Construcción parqueadero PTAR"/>
       </div>
+      <div id="pBloqueEmpresa" style="display:none">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Empresa gestora *</label>
+            <select class="form-control" id="pEmpresa"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo de proyecto *</label>
+            <select class="form-control" id="pTipo"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Emisor de documentos</label>
+            <select class="form-control" id="pEmisor"></select>
+            <div style="font-size:11px;color:#676879;margin-top:4px">Membrete, razón social y RUC de los PDF. Si cambia, los documentos con fecha anterior conservan el emisor de entonces.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Código</label>
+            <div style="display:flex;gap:6px">
+              <input type="text" class="form-control" id="pCodigo" placeholder="Se asigna al guardar" autocomplete="off" style="text-transform:uppercase"/>
+              <button type="button" class="btn" id="pCodigoSugerir" onclick="sugerirCodigoProyecto()" title="Proponer el siguiente código libre" style="white-space:nowrap">Sugerir</button>
+            </div>
+            <div id="pCodigoNota" style="font-size:11px;color:#676879;margin-top:4px"></div>
+          </div>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Contratante</label>
@@ -4312,6 +4339,109 @@ async function abrirProyecto(id){
 }
 
 // ── MODAL PROYECTO ──
+// ── MULTIEMPRESA: gestora, emisor, tipo y código en el formulario de proyecto ──
+// El catálogo de empresas es de la sesión (cargarEmpresas). Con la base sin migrar
+// (empresas sin sigla) el bloque no se muestra y el guardado no envía columnas nuevas.
+function multiempresaActiva(){ return empresasCatalogo().some(e=>e.sigla); }
+function gestorasActivas(){ return empresasCatalogo().filter(e=>e.es_gestora && e.activa); }
+// Gestora de un alta: la del perfil del usuario; si no tiene, la única gestora activa.
+function gestoraPorDefecto(){
+  const g = gestorasActivas();
+  return g.find(e=>e.id===currentPerfil?.empresa_id)?.id || (g.length===1 ? g[0].id : '');
+}
+
+function prepararEmpresaProyecto(proyecto){
+  const bloque = document.getElementById('pBloqueEmpresa');
+  if(!bloque) return;
+  const activa = multiempresaActiva();
+  bloque.style.display = activa ? '' : 'none';
+  if(!activa) return;
+  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+  const opcion = e => `<option value="${e.id}">${escAttr(e.nombre)}${e.activa ? '' : ' (inactiva)'}</option>`;
+  // Gestora: las activas, más la actual del proyecto si ya no lo es. Solo el admin global la elige o reasigna.
+  const gestoras = gestorasActivas();
+  const actual = empresaPorId(proyecto?.empresa_id);
+  if(actual && !gestoras.some(e=>e.id===actual.id)) gestoras.push(actual);
+  const selEmp = document.getElementById('pEmpresa');
+  selEmp.innerHTML = '<option value="">— Seleccionar —</option>' + gestoras.map(opcion).join('');
+  selEmp.value = proyecto?.empresa_id || gestoraPorDefecto();
+  selEmp.disabled = !esAdminGlobal;
+  // Emisor: vacío = la gestora; cualquier empresa activa (gestora o no), más la actual.
+  const emisores = empresasCatalogo().filter(e=>e.activa && e.sigla);
+  const emActual = empresaPorId(proyecto?.emisor_empresa_id);
+  if(emActual && !emisores.some(e=>e.id===emActual.id)) emisores.push(emActual);
+  const selEmi = document.getElementById('pEmisor');
+  selEmi.innerHTML = '<option value="">— La empresa gestora —</option>' + emisores.map(opcion).join('');
+  selEmi.value = proyecto?.emisor_empresa_id || '';
+  const selTipo = document.getElementById('pTipo');
+  selTipo.innerHTML = '<option value="">— Seleccionar —</option>' + TIPOS_PROYECTO.map(t=>`<option value="${t.id}">${t.nombre}</option>`).join('');
+  selTipo.value = proyecto?.tipo || '';
+  // Código: libre mientras el proyecto no tenga documentos emitidos (la base lo impone igual).
+  const inp = document.getElementById('pCodigo'), nota = document.getElementById('pCodigoNota'), btn = document.getElementById('pCodigoSugerir');
+  inp.value = proyecto?.codigo || '';
+  inp.readOnly = false; btn.style.display = '';
+  inp.placeholder = proyecto ? 'Sin código' : 'Se asigna al guardar';
+  nota.textContent = proyecto ? '' : 'Déjalo vacío para asignar el siguiente de la gestora.';
+  if(proyecto?.id && proyecto.codigo){
+    sb.rpc('proyecto_tiene_documentos_emitidos', { pid: proyecto.id }).then(({ data })=>{
+      if(data !== true || document.getElementById('editProyectoId').value !== proyecto.id) return;
+      inp.readOnly = true; btn.style.display = 'none';
+      nota.textContent = 'No se puede cambiar: el proyecto ya tiene documentos emitidos.';
+    }, ()=>{});
+  }
+}
+
+// Siguiente código libre de la gestora para ese tipo y año (año de inicio o, si falta, el actual).
+async function siguienteCodigoProyecto(empresaId, tipo, fechaInicio){
+  const anio = parseInt(String(fechaInicio || hoyEcuador()).slice(0, 4), 10);
+  const { data, error } = await sb.rpc('proyecto_siguiente_codigo', { p_empresa: empresaId, p_tipo: tipo, p_anio: anio });
+  return error ? null : (data || null);
+}
+
+async function sugerirCodigoProyecto(){
+  const empresaId = document.getElementById('pEmpresa').value, tipo = document.getElementById('pTipo').value;
+  if(!empresaId || !tipo){ toast('Elige primero la empresa gestora y el tipo','error'); return; }
+  const codigo = await siguienteCodigoProyecto(empresaId, tipo, document.getElementById('pFechaInicio').value);
+  if(!codigo){ toast('No se pudo proponer un código (¿la gestora tiene sigla?)','error'); return; }
+  document.getElementById('pCodigo').value = codigo;
+}
+
+// Lee y valida el bloque de empresa del formulario. Devuelve las columnas a guardar,
+// o null si hay que detener el guardado (ya avisó con toast o el usuario canceló).
+async function leerEmpresaProyecto(id){
+  const original = id ? (proyectos.find(p=>p.id===id) || null) : null;
+  const empresaId = document.getElementById('pEmpresa').value;
+  const emisorId = document.getElementById('pEmisor').value || null;
+  const tipo = document.getElementById('pTipo').value;
+  let codigo = document.getElementById('pCodigo').value.trim().toUpperCase();
+  if(!empresaId){ toast(currentPerfil?.rolGlobal === 'admin' ? 'Selecciona la empresa gestora' : 'Tu perfil no tiene empresa asignada: pide al administrador que la asigne','error'); return null; }
+  if(!tipo){ toast('Selecciona el tipo de proyecto','error'); return null; }
+  if(codigo && !RE_CODIGO_PROYECTO.test(codigo)){ toast('El código debe tener la forma SIGLA-TIP-AAAA-NNN (ej. HDV-FIS-2026-007)','error'); return null; }
+  const cols = { tipo, emisor_empresa_id: emisorId, codigo: codigo || null };
+  const cambiaGestora = !!(original?.empresa_id && empresaId !== original.empresa_id);
+  if(cambiaGestora){
+    if(currentPerfil?.rolGlobal !== 'admin'){ toast('Solo un administrador global puede reasignar la empresa gestora','error'); return null; }
+    const de = empresaPorId(original.empresa_id)?.nombre || '—', a = empresaPorId(empresaId)?.nombre || '—';
+    const efecto = (emisorId || original.emisor_empresa_id)
+      ? 'El emisor de documentos no cambia con esta reasignación.'
+      : `Los documentos nuevos saldrán a nombre de ${a}; los de fecha anterior a hoy conservan a ${de}.`;
+    if(!confirm(`¿Reasignar este proyecto de ${de} a ${a}?\n\nPasará a la cartera de ${a}. ${efecto}`)) return null;
+  }
+  if(!id || cambiaGestora) cols.empresa_id = empresaId;
+  if(!id && !codigo){
+    cols.codigo = await siguienteCodigoProyecto(empresaId, tipo, document.getElementById('pFechaInicio').value);
+    if(!cols.codigo){ toast('No se pudo asignar el código automáticamente: escríbelo a mano','error'); return null; }
+  }
+  return cols;
+}
+
+function mensajeErrorProyecto(error){
+  const m = error?.message || '';
+  if(/proyectos_codigo_uniq/.test(m)) return 'Ya existe un proyecto con ese código. Usa «Sugerir» para tomar el siguiente libre.';
+  if(/proyectos_codigo_chk/.test(m)) return 'El código debe tener la forma SIGLA-TIP-AAAA-NNN.';
+  return 'Error: ' + m;
+}
+
 function abrirModalProyecto(proyecto=null){
   document.getElementById('editProyectoId').value = proyecto?.id||'';
   document.getElementById('modalProyectoTitle').textContent = proyecto ? 'Editar proyecto' : 'Nuevo proyecto';
@@ -4327,6 +4457,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('pFechaFin').value = proyecto?.fecha_fin_planificada||'';
   document.getElementById('pUbicacion').value = proyecto?.ubicacion||'';
   document.getElementById('pDescripcion').value = proyecto?.descripcion||'';
+  prepararEmpresaProyecto(proyecto);
   // Cargar módulos
   const mods = proyecto?.modulos || {};
   document.getElementById('modCurvaS').checked = mods.curvaS !== false;
@@ -4432,6 +4563,11 @@ async function guardarProyecto(){
     modulos
   };
   if(!data.nombre){ toast('El nombre es obligatorio','error'); return; }
+  if(multiempresaActiva()){
+    const cols = await leerEmpresaProyecto(id);
+    if(!cols) return;
+    Object.assign(data, cols);
+  }
   let error;
   if(id){
     ({ error } = await sb.from('proyectos').update(data).eq('id',id));
@@ -4452,10 +4588,11 @@ async function guardarProyecto(){
       });
     }
   }
-  if(error){ toast('Error: '+error.message,'error'); return; }
+  if(error){ toast(mensajeErrorProyecto(error),'error'); return; }
   toast(id?'Proyecto actualizado':'Proyecto creado con éxito','success');
   cerrarModal('modalProyecto');
   if(id && id===currentProyecto){
+    cargarHistorialEmisor(id); // si cambió el emisor, la base anotó el anterior
     // Módulos del proyecto actual: se reflejan en el menú de inmediato (sin esperar a cambiar de proyecto)
     const idx = proyectos.findIndex(p=>p.id===id);
     if(idx>=0) proyectos[idx] = {...proyectos[idx], ...data};
