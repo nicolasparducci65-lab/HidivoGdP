@@ -21,7 +21,10 @@ const corsHeaders = {
 };
 
 // ── PROMPT DEL AGENTE ──
-const PROMPT_AGENTE = `Eres el asistente de redacción de la Fiscalización Externa de HIDIVO, empresa fiscalizadora de obras civiles en Ecuador. Redactas comunicaciones formales dirigidas a contratistas o al Administrador del Contrato.
+// {{EMISOR}} se sustituye por el emisor documental del proyecto (multiempresa): la razón
+// social o el nombre de proyectos.emisor_empresa_id o, si está vacío, de la gestora.
+const EMISOR_POR_DEFECTO = Deno.env.get('EMISOR_POR_DEFECTO') || 'HIDIVO';
+const PROMPT_AGENTE = `Eres el asistente de redacción de la Fiscalización Externa de {{EMISOR}}, empresa fiscalizadora de obras civiles en Ecuador. Redactas comunicaciones formales dirigidas a contratistas o al Administrador del Contrato.
 
 REGLAS ESTRICTAS:
 1. Usa ÚNICAMENTE los datos del contrato y los hechos proporcionados. NUNCA inventes cláusulas, montos, fechas, nombres ni hechos no indicados. Si falta un dato necesario, deja un marcador entre corchetes, p. ej. [FECHA].
@@ -36,7 +39,7 @@ REGLAS ESTRICTAS:
    - Incumplimientos o hechos en lista numerada, cada uno con su sustento contractual
    - Disposiciones o requerimientos en lista numerada (qué debe hacer el contratista)
    - Reservas: efectos sobre plazo, multas, garantías y demás acciones, SOLO si los datos del contrato lo sustentan
-   - Cierre: "Atentamente," + bloque de firma "Ing. [NOMBRE] / Fiscalización Externa – HIDIVO / Proyecto: [nombre]"
+   - Cierre: "Atentamente," + bloque de firma "Ing. [NOMBRE] / Fiscalización Externa – {{EMISOR}} / Proyecto: [nombre]"
    - c.c.: Administrador del Contrato si consta en los datos
 5. Aplica las instrucciones adicionales del usuario si las hay.
 6. Extensión objetivo: 1 a 2 páginas. Sin encabezados markdown (#), sin negritas con asteriscos: solo texto plano listo para pegar en Word.
@@ -151,9 +154,18 @@ Deno.serve(async (req) => {
 
     const contexto = armarContexto({ proyecto, anticipo, garantias, observaciones, libro, rubros });
 
+    // ── Emisor documental: a nombre de quién firma la carta ──
+    // Tolerante a una base sin migrar (sin columnas de empresa): cae en el emisor por defecto.
+    let emisorNombre = EMISOR_POR_DEFECTO;
+    const emisorId = proyecto.emisor_empresa_id || proyecto.empresa_id;
+    if (emisorId) {
+      const { data: emp } = await sb.from('empresas').select('nombre,razon_social').eq('id', emisorId).maybeSingle();
+      emisorNombre = emp?.razon_social || emp?.nombre || EMISOR_POR_DEFECTO;
+    }
+
     // ── Mensaje único para el modelo ──
     const contenidoUsuario =
-      PROMPT_AGENTE +
+      PROMPT_AGENTE.replaceAll('{{EMISOR}}', emisorNombre) +
       '\n\n=====================\nDATOS DEL PROYECTO Y DEL CONTRATO\n=====================\n' +
       contexto +
       '\n\n=====================\nTIPO DE COMUNICADO SOLICITADO\n=====================\n' +
