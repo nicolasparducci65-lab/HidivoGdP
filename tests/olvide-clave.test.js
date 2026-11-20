@@ -29,7 +29,7 @@ function cargarNotificacionesGlobales(){} function sincronizarRegistrosOffline()
 function fijarEmpresas(l){ window._empresasFijadas = l; } function fijarHistorialEmisor(p, f){ window._historialFijado = [p, f]; }
 `;
 const CODIGO = [PRELUDIO, BLOQUE, extraerConst(src, '_retornoRecuperacion'), extraerConst(src, '_tokenRetornoRecuperacion'),
-  ...['checkAuth', 'login', 'logout', 'showAuthError', 'mostrarCompletarPerfil', 'togglePasswordVisibility', 'mostrarApp'].map(f => extraerFuncion(src, f))].join('\n');
+  ...['checkAuth', 'login', 'logout', 'showAuthError', 'mostrarCompletarPerfil', 'togglePasswordVisibility', 'mostrarApp', 'esAdminDeEmpresa', 'veProyectosPorRLS'].map(f => extraerFuncion(src, f))].join('\n');
 
 const BASE = 'https://hidivo.test/HidivoGdP/';
 const abiertas = []; // ventanas montadas: se cierran todas al final (sus temporizadores retendrían el proceso)
