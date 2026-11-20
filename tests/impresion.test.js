@@ -14,6 +14,9 @@
 //   · Fase 2, commit 1: acta y liquidación envuelven cuerpo y firmas en
 //     <div id="docCierreEditable"> (lo que «Guardar acta» persiste); es la única
 //     diferencia con los snapshots anteriores. Las OC no cambian.
+//   · Multiempresa: el alt del logo de la OC pasa de «HiDiVo» al nombre del emisor
+//     («HIDIVO» sin catálogo de empresas). Es la única diferencia; actas, liquidación
+//     y SST quedan byte a byte iguales.
 'use strict';
 const fs = require('fs');
 const path = require('path');

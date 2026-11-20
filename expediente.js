@@ -24,6 +24,76 @@ function fmtUSD(v){
 function expEsc(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+// ── 1b) Emisor documental ─────────────────────────────────────────────────────
+// A nombre de quién sale un documento: membrete (logo), razón social y RUC.
+// Por defecto emite la empresa GESTORA del proyecto (proyectos.empresa_id); si
+// proyectos.emisor_empresa_id tiene valor, emite esa. Si el emisor cambió, los
+// documentos con fecha anterior al corte (proyecto_emisor_historial.hasta)
+// conservan el emisor de entonces.
+//
+// Estado: el catálogo de empresas es de la sesión (lo fija index.html al
+// iniciar); el historial es del proyecto abierto y se limpia en
+// limpiarEstadoProyecto(). Sin catálogo (base sin migrar, pruebas) todo cae en
+// la empresa de la plataforma, que es el comportamiento anterior.
+const EMPRESA_PLATAFORMA = { sigla: 'HDV', nombre: 'HIDIVO' };
+let _empresasCatalogo = [];
+let _emisorHistorial = { proyectoId: null, filas: [] };
+
+function fijarEmpresas(lista){ _empresasCatalogo = Array.isArray(lista) ? lista : []; }
+function empresasCatalogo(){ return _empresasCatalogo; }
+function empresaPorId(id){ return id ? (_empresasCatalogo.find(x => x.id === id) || null) : null; }
+function fijarHistorialEmisor(proyectoId, filas){
+  _emisorHistorial = { proyectoId: proyectoId || null, filas: Array.isArray(filas) ? filas : [] };
+}
+
+// Empresa (fila de public.empresas) → emisor listo para imprimir. El logo es el
+// data URI guardado; la empresa de la plataforma sin logo cargado usa el logo
+// vendorizado; cualquier otra sin logo emite sin imagen (logo: '').
+function emisorDesdeEmpresa(emp){
+  if(!emp) return { id: null, sigla: EMPRESA_PLATAFORMA.sigla, nombre: EMPRESA_PLATAFORMA.nombre, razonSocial: '', ruc: '', color: '', logo: LOGO_URL, porDefecto: true };
+  return {
+    id: emp.id, sigla: emp.sigla || '', nombre: emp.nombre || '', razonSocial: emp.razon_social || '', ruc: emp.ruc || '',
+    color: emp.color || '', logo: emp.logo_data || (emp.sigla === EMPRESA_PLATAFORMA.sigla ? LOGO_URL : ''), porDefecto: false
+  };
+}
+
+// fechaDoc (YYYY-MM-DD, opcional): fecha propia del documento (acta, planilla,
+// orden de cambio). Sin fecha, o para documentos de rango, rige el emisor vigente.
+function emisorDeProyecto(proy, fechaDoc){
+  if(!proy) return emisorDesdeEmpresa(null);
+  const f = fechaDoc ? String(fechaDoc).slice(0, 10) : '';
+  if(f && _emisorHistorial.proyectoId && _emisorHistorial.proyectoId === proy.id){
+    const previo = _emisorHistorial.filas
+      .filter(h => h.hasta && f < String(h.hasta).slice(0, 10))
+      .sort((a, b) => String(a.hasta).localeCompare(String(b.hasta)) || String(a.creado_en || '').localeCompare(String(b.creado_en || '')))[0];
+    const emp = previo && empresaPorId(previo.empresa_id);
+    if(emp) return emisorDesdeEmpresa(emp);
+  }
+  return emisorDesdeEmpresa(empresaPorId(proy.emisor_empresa_id) || empresaPorId(proy.empresa_id));
+}
+
+// Emisor de un documento de varios proyectos: la gestora común si todos son de
+// la misma; si hay mezcla (o lista vacía), la empresa de la plataforma.
+function emisorDeLista(lista){
+  const ids = [...new Set((lista || []).map(p => p.empresa_id).filter(Boolean))];
+  const emp = ids.length === 1 ? empresaPorId(ids[0]) : null;
+  return emisorDesdeEmpresa(emp || _empresasCatalogo.find(x => x.sigla === EMPRESA_PLATAFORMA.sigla) || null);
+}
+
+// «Razón social · RUC 099…» para el encabezado; '' si la empresa no tiene esos datos.
+function emisorLineaLegal(em){
+  return [em?.razonSocial, em?.ruc ? 'RUC ' + em.ruc : ''].filter(Boolean).map(expEsc).join(' · ');
+}
+// Nombre con el que el emisor firma o se cita en un texto.
+function emisorNombreLegal(em){ return em?.razonSocial || em?.nombre || ''; }
+// Atributo alt del logo (texto dentro de comillas dobles).
+function emisorAlt(em){ return expEsc(em?.nombre || '').replace(/"/g, '&quot;'); }
+// Logo sobre el encabezado oscuro de los reportes: el vendorizado se pinta en blanco;
+// el logo propio de una empresa va tal cual sobre una pastilla blanca.
+function estiloLogoReporte(em){
+  return em.logo === LOGO_URL ? 'filter:brightness(0) invert(1)' : 'background:#fff;padding:4px;border-radius:4px';
+}
+
 // Sanitizador mínimo del HTML editado de un acta (se aplica al guardar y al
 // renderizar). Sin DOM, por expresiones regulares: quita script, iframe, object,
 // embed, style, link, meta y base (con su contenido), los atributos on*, las URLs
@@ -120,9 +190,11 @@ function semaforoGarantia(g, hoyISO){
 // rubrosMap: {id → rubro} de los rubros referenciados por los ítems; perfMap:
 // {id → "Nombre Apellido"} de creado_por/aprobado_por; montoContrato: Σ rubros
 // vigente; fechaTexto: fecha de generación ya formateada (la pone quien llama).
+// emisor (opcional): por defecto el del proyecto en la fecha de aprobación de la orden.
 function ocPartes(ctx){
   const { oc, items, rubrosMap, perfMap, proy, montoContrato, fechaTexto } = ctx;
-  const logoUrl = ctx.logoUrl || LOGO_URL;
+  const emisor = ctx.emisor || emisorDeProyecto(proy, oc.fecha_aprobacion);
+  const logoUrl = ctx.logoUrl || emisor.logo;
   const codigoOC = `OC-${String(oc.numero).padStart(2,'0')}`;
   const esBorrador = oc.estado==='borrador';
   const f = fmtUSD;
@@ -145,20 +217,22 @@ function ocPartes(ctx){
     </tr>`;
   }).join('');
 
-  return { oc, items, rubrosMap, perfMap, proy, montoContrato, fechaTexto, codigoOC, esBorrador, f, e, filasItems, logoUrl };
+  return { oc, items, rubrosMap, perfMap, proy, montoContrato, fechaTexto, codigoOC, esBorrador, f, e, filasItems, logoUrl, emisor };
 }
 
 // Cuerpo del documento (encabezado, datos, tabla, resumen y firmas): lo que el
 // expediente incrusta por cada orden de cambio.
 function ocCuerpoHTML(ctx){
-  const { oc, perfMap, proy, montoContrato, fechaTexto, codigoOC, esBorrador, f, e, filasItems, logoUrl } = ocPartes(ctx);
+  const { oc, perfMap, proy, montoContrato, fechaTexto, codigoOC, esBorrador, f, e, filasItems, logoUrl, emisor } = ocPartes(ctx);
+  const legal = emisorLineaLegal(emisor);
   return `
       <div class="encabezado">
         <div style="display:flex;align-items:center;gap:16px">
-          <img src="${logoUrl}" alt="HiDiVo"/>
+          ${logoUrl ? `<img src="${logoUrl}" alt="${emisorAlt(emisor)}"/>` : ''}
           <div>
             <h1>ORDEN DE CAMBIO ${codigoOC}</h1>
-            <div class="sub">${e(oc.titulo)} — Generado: ${fechaTexto}</div>
+            <div class="sub">${e(oc.titulo)} — Generado: ${fechaTexto}</div>${legal ? `
+            <div class="sub">${legal}</div>` : ''}
           </div>
         </div>
         ${esBorrador?'<span class="marca-borrador">BORRADOR</span>':oc.estado==='aprobada'?'<span class="marca-borrador" style="color:#00854d;border-color:#00854d">APROBADA</span>':''}
@@ -261,8 +335,12 @@ function liquidacionCuerpoHTML(liq, proy){
 // Cuerpo y firmas van dentro de <div id="docCierreEditable">: es lo que «Guardar
 // acta» persiste. Si llega editableHtml (texto guardado de un acta, ya saneado),
 // sustituye a cuerpo y firmas dentro de ese mismo envoltorio.
-function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, editableHtml){
+// emisor (opcional): por defecto el vigente del proyecto; quien llama pasa el de la
+// fecha del documento cuando la tiene (acta, liquidación).
+function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, editableHtml, emisor){
   const e = expEsc;
+  const em = emisor || emisorDeProyecto(proy);
+  const legal = emisorLineaLegal(em);
   const editable = editableHtml != null ? editableHtml : `${cuerpoHtml}
     <div class="firmas">${firmas.map(fi=>`<div class="fb"><div class="lf"></div><div style="font-size:12px;font-weight:700">${e(fi[0])}</div><div style="font-size:11px;color:#676879">${e(fi[1])}</div></div>`).join('')}</div>`;
   return `<html><head><title>${e(titulo)} — ${e(proy?.nombre||'')}</title>
@@ -274,8 +352,8 @@ function docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, editableHtm
     .nota-edicion{background:#fdf6e3;color:#b8860b;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:14px}
     @media print{.nota-edicion{display:none}body{padding:0}}</style></head>
     <body contenteditable="true">
-    <div class="enc"><img src="${LOGO_URL}"/>
-      <div><h1>${e(titulo)}</h1><div style="font-size:11px;color:#676879">${e(proy?.nombre||'')} — ${fechaTexto}</div></div></div>
+    <div class="enc">${em.logo ? `<img src="${em.logo}"/>` : ''}
+      <div><h1>${e(titulo)}</h1><div style="font-size:11px;color:#676879">${e(proy?.nombre||'')} — ${fechaTexto}</div>${legal ? `<div style="font-size:11px;color:#676879">${legal}</div>` : ''}</div></div>
     <div class="nota-edicion">✏️ Este borrador es editable: haz clic sobre cualquier texto para ajustarlo antes de imprimir (Ctrl+P). Esta nota no sale en el PDF.</div>
     <div id="docCierreEditable">${editable}</div>
     </body></html>`;
@@ -429,7 +507,8 @@ function renderEnsayosTablaHTML(ensayos){
 //   { preset, secciones:[...], filtros:{ incluirOCsNoAprobadas, detallePlanillas }, subtitulo }
 // `datos` es un objeto plano serializable (JSON) con todo lo que el documento
 // necesita; `meta` lleva lo que no sale de la base:
-//   { version, generadoEn (ISO), generadoPor, rol, hoy (YYYY-MM-DD), logoDataUri, nombreArchivo }
+//   { version, generadoEn (ISO), generadoPor, rol, hoy (YYYY-MM-DD), logoDataUri, nombreArchivo, emisor }
+//   emisor: el del proyecto (emisorDeProyecto); logoDataUri, si viene, sustituye su logo.
 // En la fase 3, Puppeteer ejecutará expedienteGenerarHTML tal cual con un
 // `datos` cargado en el servidor.
 
@@ -663,7 +742,11 @@ function expedienteGenerarHTML(datos, seleccion, meta){
   const fechaTexto = expFmtFechaLarga(fechaGen);
   const nombreArchivo = meta.nombreArchivo || expedienteNombreArchivo(proy, version, fechaGen, tomo);
   const tomoTxt = tomo ? `Tomo ${tomo.k} de ${tomo.de}` : '';
-  const logo = meta.logoDataUri || LOGO_URL;
+  const emisor = meta.emisor || emisorDeProyecto(proy);
+  const logo = meta.logoDataUri || emisor.logo;
+  const logoAlt = emisorAlt(emisor);
+  // Sin fiscalizador escrito en el proyecto: lo es el emisor cuando el proyecto es de fiscalización.
+  const fiscalizacionTxt = proy.fiscalizador || ((!proy.tipo || proy.tipo === 'fiscalizacion') ? emisorNombreLegal(emisor) : '—');
   const e = expEsc;
   const f = fmtUSD;
 
@@ -688,7 +771,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       ['Ubicación', e(proy.ubicacion || '—')],
       ['Contratante', e(proy.contratante || '—')],
       ['Contratista', e(proy.contratista || '—')],
-      ['Fiscalización', e(proy.fiscalizador || 'HIDIVO S.A.S.')],
+      ['Fiscalización', e(fiscalizacionTxt)],
       ['Fecha del contrato', expFmtFecha(proy.contrato_datos?.datos_no_mapeados?.fecha_suscripcion_contrato)],
       ['Inicio', expFmtFecha(proy.fecha_inicio)],
       ['Plazo', e(proy.contrato_datos?.datos_adicionales?.plazo || '—')],
@@ -705,7 +788,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       ['Estado del proyecto', `${e(ESTADO_PROY[proy.estado] || proy.estado || '—')} · ${e(estadoCierre)}`]
     ];
     return `<section class="sec portada" id="sec-portada">
-      <div class="portada-logo"><img src="${logo}" alt="HIDIVO"></div>
+      <div class="portada-logo">${logo ? `<img src="${logo}" alt="${logoAlt}">` : ''}</div>
       <div class="portada-titulo">EXPEDIENTE DE OBRA</div>
       ${seleccion?.subtitulo ? `<div class="portada-subtitulo">${e(seleccion.subtitulo)}</div>` : ''}
       <div class="portada-proyecto">${e(proy.nombre || '')}</div>
@@ -713,7 +796,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       <table class="tabla kv portada-partes"><tbody>
         <tr><th>Contratante</th><td>${e(proy.contratante || '—')}</td></tr>
         <tr><th>Contratista</th><td>${e(proy.contratista || '—')}</td></tr>
-        <tr><th>Fiscalización</th><td>${e(proy.fiscalizador || 'HIDIVO S.A.S.')}</td></tr>
+        <tr><th>Fiscalización</th><td>${e(fiscalizacionTxt)}</td></tr>
         <tr><th>Estado</th><td>${e(estadoCierre)}</td></tr>
       </tbody></table>
       <div class="portada-meta">Expediente v${version}${tomo ? ' · ' + e(tomoTxt) : ''} · generado el ${e(fechaTexto)} por ${e(meta.generadoPor || '—')}${meta.rol ? ` (${e(meta.rol)})` : ''}</div>
@@ -764,7 +847,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
       ['Objeto', proy.descripcion ? expParrafo(proy.descripcion) : '—'],
       ['Contratante', e(proy.contratante || '—')],
       ['Contratista', e(proy.contratista || '—')],
-      ['Fiscalización', e(proy.fiscalizador || 'HIDIVO S.A.S.')],
+      ['Fiscalización', e(fiscalizacionTxt)],
       ['Ubicación', e(proy.ubicacion || '—')],
       ['Inicio', expFmtFecha(proy.fecha_inicio)],
       ['Fin planificado', expFmtFecha(proy.fecha_fin_planificada)],
@@ -854,7 +937,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
     }</tbody><tfoot><tr><th colspan="4">Aprobadas: ${calc.ocsAprobadas.length} · monto neto</th><th class="num">${f(calc.montoOCs)}</th></tr></tfoot></table>`;
     const docs = ocs.map((o, k) => `<section class="sub oc-doc" id="oc-${o.id}">
       ${sub('ordenes_cambio', k + 1, `Orden de cambio OC-${String(o.numero).padStart(2, '0')} — ${o.titulo}`)}
-      ${ocCuerpoHTML({ oc: o, items: o.items || [], rubrosMap, perfMap: datos.perfiles || {}, proy, montoContrato: calc.sumaRubros, fechaTexto, logoUrl: logo })}
+      ${ocCuerpoHTML({ oc: o, items: o.items || [], rubrosMap, perfMap: datos.perfiles || {}, proy, montoContrato: calc.sumaRubros, fechaTexto, logoUrl: logo, emisor })}
     </section>`).join('');
     return `<section class="sec" id="sec-ordenes_cambio">${titulo('ordenes_cambio', 'Órdenes de cambio')}${resumen}</section>${docs}`;
   };
@@ -953,7 +1036,7 @@ function expedienteGenerarHTML(datos, seleccion, meta){
   <span>A4, márgenes predeterminados, activar «Gráficos de fondo». Nombre sugerido: ${e(nombreArchivo)}.pdf</span>
   <span class="fotos-estado" id="fotosEstado"></span>
 </div>
-<header class="enc-pagina"><img src="${logo}" alt="HIDIVO"><span class="enc-proyecto">${e(proy.nombre || '')}</span><span class="enc-version">Expediente v${version}${tomo ? ` · Tomo ${tomo.k}/${tomo.de}` : ''}</span></header>
+<header class="enc-pagina">${logo ? `<img src="${logo}" alt="${logoAlt}">` : ''}<span class="enc-proyecto">${e(proy.nombre || '')}</span><span class="enc-version">Expediente v${version}${tomo ? ` · Tomo ${tomo.k}/${tomo.de}` : ''}</span></header>
 <footer class="pie-pagina">${pie}</footer>
 ${calc.parcial ? '<div class="marca-agua" aria-hidden="true">EXPEDIENTE PARCIAL – PROYECTO EN EJECUCIÓN</div>' : ''}
 <main>

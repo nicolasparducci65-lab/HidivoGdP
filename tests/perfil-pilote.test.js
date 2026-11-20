@@ -12,8 +12,9 @@ const { RAIZ, scriptPrincipal, extraerFuncion, crearContexto, cargarFixture, pru
 const fx = cargarFixture('formato-pil-v2.json');
 const src = scriptPrincipal();
 const ctx = crearContexto({
-  codigo: [{ ruta: path.join(RAIZ, 'perfil-pilote.js'), nombre: 'perfil-pilote.js' }, extraerFuncion(src, 'exportarPdfFormato')],
-  globals: { currentProyecto: 'p1', proyectos: [{ id: 'p1', nombre: 'Proyecto de prueba' }], LOGO_URL: 'vendor/logo-hidivo.png', _residenteLlenadoNombre: 'Residente' }
+  codigo: [{ ruta: path.join(RAIZ, 'constantes.js'), nombre: 'constantes.js' }, { ruta: path.join(RAIZ, 'expediente.js'), nombre: 'expediente.js' },
+    { ruta: path.join(RAIZ, 'perfil-pilote.js'), nombre: 'perfil-pilote.js' }, extraerFuncion(src, 'exportarPdfFormato')],
+  globals: { currentProyecto: 'p1', proyectos: [{ id: 'p1', nombre: 'Proyecto de prueba' }], _residenteLlenadoNombre: 'Residente' }
 });
 
 const campoSuelo = campos => campos.find(c => c.etiqueta === 'Perfil del Suelo');

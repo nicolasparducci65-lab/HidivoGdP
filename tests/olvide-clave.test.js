@@ -25,6 +25,8 @@ function iniciarHistorialApp(){ window._aterrizajes += 1; }
 function iniciarPresencia(){} function cargarDashboard(){} function cargarProyectosSelector(){} function actualizarEstadoBotonPush(){}
 async function actualizarRolEfectivo(){} function actualizarBadgeChat(){} function suscribirseGlobalChat(){}
 function cargarNotificacionesGlobales(){} function sincronizarRegistrosOffline(){} function mostrarNavCartera(){}
+// Emisor documental (expediente.js): logout limpia el catálogo de empresas y el historial del proyecto.
+function fijarEmpresas(l){ window._empresasFijadas = l; } function fijarHistorialEmisor(p, f){ window._historialFijado = [p, f]; }
 `;
 const CODIGO = [PRELUDIO, BLOQUE, extraerConst(src, '_retornoRecuperacion'), extraerConst(src, '_tokenRetornoRecuperacion'),
   ...['checkAuth', 'login', 'logout', 'showAuthError', 'mostrarCompletarPerfil', 'togglePasswordVisibility', 'mostrarApp'].map(f => extraerFuncion(src, f))].join('\n');

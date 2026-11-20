@@ -2908,6 +2908,26 @@ async function cargarPerfil(){
     document.getElementById('sidebarNombre').textContent = data.nombre + ' ' + data.apellido;
     document.getElementById('sidebarRol').textContent = data.cargo || (data.rol==='admin' ? 'Admin' : 'Sin proyecto asignado');
   }
+  await cargarEmpresas();
+}
+
+// Catálogo de empresas (gestoras y emisores) de la sesión: lo usan los filtros, los
+// distintivos y emisorDeProyecto() (expediente.js). Si la consulta falla (sin señal,
+// base sin migrar) queda vacío y los documentos salen con la empresa de la plataforma.
+async function cargarEmpresas(){
+  try{
+    const { data, error } = await sb.from('empresas').select('*').order('nombre');
+    fijarEmpresas(error ? [] : (data||[]));
+  }catch(_){ fijarEmpresas([]); }
+}
+
+// Emisores anteriores del proyecto abierto (para documentos con fecha previa al cambio).
+// Estado por proyecto: lo limpia limpiarEstadoProyecto().
+async function cargarHistorialEmisor(proyectoId){
+  try{
+    const { data, error } = await sb.from('proyecto_emisor_historial').select('empresa_id,hasta,creado_en').eq('proyecto_id', proyectoId);
+    if(currentProyecto === proyectoId) fijarHistorialEmisor(proyectoId, error ? [] : (data||[]));
+  }catch(_){ if(currentProyecto === proyectoId) fijarHistorialEmisor(null, []); }
 }
 
 async function login(){
@@ -2928,6 +2948,7 @@ async function logout(){
   try{ Object.keys(localStorage).filter(k=>k.startsWith(CACHE_RUBROS_LIBRO)).forEach(k=>localStorage.removeItem(k)); }catch(e){}
   await sb.auth.signOut();
   currentUser = null; currentPerfil = null;
+  fijarEmpresas([]); fijarHistorialEmisor(null, []); window._logoDataUri = null;
   limpiarRecuperacion(); _modoNuevaClave = null;
   cerrarMenuUsuario();
   document.getElementById('appScreen').style.display='none';
@@ -4150,6 +4171,7 @@ async function cambiarProyecto(id){
     window._proyectoCerrado = proy.estado_cierre === 'liquidado';
     if(window._proyectoCerrado) toast('🏁 Proyecto LIQUIDADO — solo lectura','info');
   }
+  await cargarHistorialEmisor(id);
   // Los módulos se aplican SIEMPRE (con la copia en caché si la recarga falló sin
   // señal): si no, los ítems de menú quedan como los dejó el rol y un módulo
   // apagado (p. ej. Recorridos 360) aparecería visible.
@@ -4182,6 +4204,8 @@ async function cambiarProyecto(id){
 // en otro (caso _lbActiva). Lo que es estado de UI (pestañas, filtros) o
 // global del usuario (proyectos, notiDatos, _resumenesCartera) NO va aquí.
 function limpiarEstadoProyecto(){
+  // Emisor documental: historial de emisores del proyecto abierto
+  fijarHistorialEmisor(null, []);
   // Curva S
   window._curvaGhostRows = null; window._curvaGhostNum = null;
   // Planillas de pago
@@ -10907,7 +10931,10 @@ function exportarPdfFormato(){
   const plantilla = _plantillaLlenadoActual;
   if(!plantilla){ toast('No hay formato cargado','error'); return; }
 
-  const proyectoNombre = proyectos.find(p=>p.id===currentProyecto)?.nombre || '';
+  const proyActual = proyectos.find(p=>p.id===currentProyecto) || null;
+  const proyectoNombre = proyActual?.nombre || '';
+  const emisor = emisorDeProyecto(proyActual);
+  const emisorLegal = emisorLineaLegal(emisor);
   const campos = plantilla.campos||[];
   const fotos = window._fotosLlenadoExistentes||[];
 
@@ -10980,10 +11007,11 @@ function exportarPdfFormato(){
     </style></head>
     <body>
       <div class="encabezado">
-        <img src="${LOGO_URL}" alt="HiDiVo"/>
+        ${emisor.logo ? `<img src="${emisor.logo}" alt="${emisorAlt(emisor)}"/>` : ''}
         <div>
           <h1>${plantilla.nombre}</h1>
-          <div class="sub">Proyecto: ${proyectoNombre} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>
+          <div class="sub">Proyecto: ${proyectoNombre} — Generado: ${new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'})}</div>${emisorLegal ? `
+          <div class="sub">${emisorLegal}</div>` : ''}
         </div>
       </div>
       <table>${filasHtml}</table>
@@ -12118,7 +12146,8 @@ async function imprimirActa(actaId){
     actaId: a.id,
     editableHtml: a.contenido_html ? sanitizarHtmlActa(a.contenido_html) : null,
     guardadoEn: a.contenido_html ? a.contenido_actualizado_en : null,
-    puedeGuardar: ['admin','fiscalizador'].includes(currentPerfil?.rol) && !window._proyectoCerrado
+    puedeGuardar: ['admin','fiscalizador'].includes(currentPerfil?.rol) && !window._proyectoCerrado,
+    emisor: emisorDeProyecto(proy, a.fecha)
   });
 }
 
@@ -12128,11 +12157,12 @@ async function imprimirLiquidacion(){
     sb.from('proyectos').select('*').eq('id', currentProyecto).single()
   ]);
   if(!liq) return;
-  abrirVentanaDocCierre('LIQUIDACIÓN FINAL DE OBRA', proy, liquidacionCuerpoHTML(liq, proy), firmasCierre(proy));
+  abrirVentanaDocCierre('LIQUIDACIÓN FINAL DE OBRA', proy, liquidacionCuerpoHTML(liq, proy), firmasCierre(proy), { emisor: emisorDeProyecto(proy, liq.fecha) });
 }
 
 // Abre la ventana de impresión de un documento de cierre (acta o liquidación).
 // El HTML lo arma docCierreHTML (expediente.js); este borrador sí es editable.
+// opciones.emisor: emisor del documento (por defecto el vigente del proyecto).
 // opciones (solo actas): { actaId, editableHtml, guardadoEn, puedeGuardar }. Con
 // actaId se inyecta por DOM, después del write, una barra flotante con «Guardar
 // acta» y, si hay texto guardado, «Restablecer plantilla»; la barra no se imprime
@@ -12140,7 +12170,7 @@ async function imprimirLiquidacion(){
 function abrirVentanaDocCierre(titulo, proy, cuerpoHtml, firmas, opciones){
   const fechaTexto = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
   const ventana = window.open('', '_blank');
-  ventana.document.write(docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, opciones?.editableHtml ?? null));
+  ventana.document.write(docCierreHTML(titulo, proy, cuerpoHtml, firmas, fechaTexto, opciones?.editableHtml ?? null, opciones?.emisor));
   ventana.document.close();
   if(opciones?.actaId && opciones.puedeGuardar) inyectarBarraActa(ventana, opciones);
   return ventana;
@@ -12490,8 +12520,9 @@ async function generarExpediente(){
     const meta = {
       version: fila.version, generadoEn: fila.generado_en, hoy,
       generadoPor: `${currentPerfil?.nombre||''} ${currentPerfil?.apellido||''}`.trim() || 'Usuario',
-      rol: currentPerfil?.rol || '', logoDataUri: await obtenerLogoDataUri()
+      rol: currentPerfil?.rol || '', emisor: emisorDeProyecto(datos.proyecto)
     };
+    meta.logoDataUri = await obtenerLogoDataUri(meta.emisor.logo);
     window._expedienteGenerado = { datos, sel: { ...sel, filtros: filtrosGuardados }, meta, plan, proyectoId: currentProyecto };
     if(plan.length <= 1){
       meta.nombreArchivo = expedienteNombreArchivo(datos.proyecto, fila.version, hoy);
@@ -12604,10 +12635,13 @@ async function prepararCronogramaExpediente(datos, proyectoId){
   return cr;
 }
 
-// Logo como data URI (documento autocontenido). Se lee del mismo origen
-// (vendor/logo-hidivo.png) y se cachea para la sesión; si falla, el documento
-// usa la URL del logo.
-async function obtenerLogoDataUri(){
+// Logo del emisor como data URI (documento autocontenido). El de una empresa
+// ya viene así de la base; el vendorizado de la plataforma se lee del mismo
+// origen y se cachea para la sesión; si falla, el documento usa la URL. Sin
+// logo devuelve '' (el documento sale sin imagen).
+async function obtenerLogoDataUri(url = LOGO_URL){
+  if(!url || String(url).startsWith('data:')) return url || '';
+  if(url !== LOGO_URL) return url;
   if(window._logoDataUri) return window._logoDataUri;
   try{
     const resp = await fetch(LOGO_URL);
@@ -16012,6 +16046,9 @@ async function generarReporteDashboard(){
   const { spiEstados, montosReales } = await calcularEstadosProyectos(listaProyectos);
 
   const filtrosTexto = `${contratante || 'Todos los Contratantes'} - ${contratista || 'Todos los Contratistas'} - ${estadoFiltro ? estadoLabel(estadoFiltro) : 'Todos los estados'}`;
+  // Membrete: la gestora común de los proyectos listados; si hay mezcla, la plataforma.
+  const emisorRep = emisorDeLista(listaProyectos);
+  const emisorRepLegal = emisorLineaLegal(emisorRep);
 
   const estadoLabelMap = {planificacion:'Planificación',ejecucion:'En ejecución',pausado:'Pausado',finalizado:'Finalizado',cancelado:'Cancelado'};
   const estadoColorMap = {planificacion:'#0073ea',ejecucion:'#ff9f00',pausado:'#676879',finalizado:'#00c875',cancelado:'#e2445c'};
@@ -16023,9 +16060,9 @@ async function generarReporteDashboard(){
 
 <div class="header">
   <div class="header-logo">
-    <img src="${LOGO_URL}"
-         style="height:48px;width:auto;max-width:160px;object-fit:contain;filter:brightness(0) invert(1)"
-         alt="HIDIVO"/>
+    ${emisorRep.logo ? `<img src="${emisorRep.logo}"
+         style="height:48px;width:auto;max-width:160px;object-fit:contain;${estiloLogoReporte(emisorRep)}"
+         alt="${emisorAlt(emisorRep)}"/>` : `<div class="header-logo-text">${emisorAlt(emisorRep)}</div>`}
     <div>
       <div class="header-logo-sub">Gestión de Obras Civiles</div>
     </div>
@@ -16081,7 +16118,7 @@ ${metricas ? `
 </div>
 
 <div class="footer">
-  <div>HIDIVO — Gestión de Obras Civiles</div>
+  <div>${emisorAlt(emisorRep)} — Gestión de Obras Civiles${emisorRepLegal ? ' · ' + emisorRepLegal : ''}</div>
   <div>Documento generado automáticamente</div>
 </div>
 
@@ -16469,6 +16506,10 @@ async function generarReportePDF(){
       : null;
   }
 
+  // Membrete: documento de rango, rige el emisor vigente del proyecto.
+  const emisorRep = emisorDeProyecto(proy);
+  const emisorRepLegal = emisorLineaLegal(emisorRep);
+
   // Generar HTML del reporte (formato A4)
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -16477,9 +16518,9 @@ async function generarReportePDF(){
 
 <div class="header">
   <div class="header-logo">
-    <img src="${LOGO_URL}" 
-         style="height:48px;width:auto;max-width:160px;object-fit:contain;filter:brightness(0) invert(1)" 
-         alt="HIDIVO"/>
+    ${emisorRep.logo ? `<img src="${emisorRep.logo}" 
+         style="height:48px;width:auto;max-width:160px;object-fit:contain;${estiloLogoReporte(emisorRep)}" 
+         alt="${emisorAlt(emisorRep)}"/>` : `<div class="header-logo-text">${emisorAlt(emisorRep)}</div>`}
     <div>
       <div class="header-logo-sub">Gestión de Obras Civiles</div>
     </div>
@@ -16591,7 +16632,7 @@ ${incCurvaS && curvaSDatos ? `
 
 ${montoLibro.difiere ? `<div style="font-size:8px;color:#676879;margin:4px 0 6px">* Monto contractual del registro del proyecto. Vigente por rubros (con órdenes de cambio): $${Number(montoLibro.vigente).toLocaleString('es-EC',{minimumFractionDigits:2})} · Δ ${(montoLibro.delta>=0?'+':'−')+'$'+Number(Math.abs(montoLibro.delta)).toLocaleString('es-EC',{minimumFractionDigits:2})}.</div>` : ''}
 <div class="footer">
-  <span class="footer-left">HIDIVO — Gestión de Obras Civiles · ${proy.nombre||'—'}</span>
+  <span class="footer-left">${emisorAlt(emisorRep)} — Gestión de Obras Civiles · ${proy.nombre||'—'}${emisorRepLegal ? ' · ' + emisorRepLegal : ''}</span>
   <span class="footer-right">Generado: ${fechaGeneracion}</span>
 </div>
 
@@ -18354,7 +18395,7 @@ async function imprimirActaEPP(id){
   abrirVentanaDocCierre('Acta de Entrega-Recepción de EPP', proy, renderActaEppCuerpoHTML(reg), [
     [reg.trabajador_nombre||'Trabajador','Recibí conforme'],
     ['','Responsable de SST']
-  ]);
+  ], { emisor: emisorDeProyecto(proy, reg.fecha_entrega) });
 }
 
 async function imprimirRegistroCapacitacion(id){
@@ -18365,7 +18406,7 @@ async function imprimirRegistroCapacitacion(id){
   abrirVentanaDocCierre('Registro de Asistencia — Capacitación en SST', proy, renderCapacitacionCuerpoHTML(cap, asistentes), [
     [cap.responsable||'','Instructor / responsable'],
     ['','Responsable de SST']
-  ]);
+  ], { emisor: emisorDeProyecto(proy, cap.fecha) });
 }
 
 async function imprimirInformeIncidente(id){
@@ -18376,7 +18417,7 @@ async function imprimirInformeIncidente(id){
     ['','Responsable de SST'],
     ['','Representante del empleador'],
     [x.trabajador_nombre||'','Trabajador afectado']
-  ]);
+  ], { emisor: emisorDeProyecto(proy, x.fecha_hora) });
 }
 
 async function imprimirPTE(id){
@@ -18386,7 +18427,7 @@ async function imprimirPTE(id){
   abrirVentanaDocCierre('Permiso de Trabajo Especial — PTE-'+String(p.numero).padStart(3,'0'), proy, renderPteCuerpoHTML(p), [
     [p.tecnico_nombre||'','Técnico SST — Autoriza'],
     [p.supervisor_nombre||'','Supervisor']
-  ]);
+  ], { emisor: emisorDeProyecto(proy, p.fecha) });
 }
 
 // ── INIT ──
