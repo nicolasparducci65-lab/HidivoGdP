@@ -2950,7 +2950,7 @@ async function cargarPerfil(){
     currentPerfil.rolGlobal = data.rol; // 'admin' es el único rol verdaderamente global
     document.getElementById('sidebarAvatar').textContent = data.nombre[0].toUpperCase();
     document.getElementById('sidebarNombre').textContent = data.nombre + ' ' + data.apellido;
-    document.getElementById('sidebarRol').textContent = data.cargo || (data.rol==='admin' ? 'Admin' : 'Sin proyecto asignado');
+    document.getElementById('sidebarRol').textContent = data.cargo || (data.rol==='admin' ? 'Admin' : data.rol==='admin_empresa' ? 'Admin de empresa' : 'Sin proyecto asignado');
   }
   await cargarEmpresas();
 }
@@ -3186,8 +3186,8 @@ function togglePasswordVisibility(inputId, iconEl){
 async function mostrarApp(){
   // Invariante: con una recuperación pendiente no se entra a la app sin crear la contraseña nueva
   if(recuperacionPendiente()){ mostrarNuevaClave('recuperacion'); return; }
-  // Admin global siempre entra
-  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+  // Admin global y admin de empresa siempre entran (no dependen de membresías)
+  const esAdminGlobal = veProyectosPorRLS();
 
   if(!esAdminGlobal){
     const { data: membs } = await sb.from('proyecto_miembros').select('proyecto_id').eq('usuario_id', currentUser.id).limit(1);
@@ -3237,6 +3237,12 @@ async function cargarNotificacionesGlobales(){
     } else {
       const { data: membs } = await sb.from('proyecto_miembros').select('proyecto_id,rol').eq('usuario_id', currentUser.id);
       membresias = membs||[];
+      if(esAdminDeEmpresa()){
+        // Admin en todos los proyectos de su empresa; en los demás, su membresía
+        const { data: proys } = await sb.from('proyectos').select('id').eq('empresa_id', currentPerfil.empresa_id);
+        const propios = new Set((proys||[]).map(p=>p.id));
+        membresias = membresias.filter(m=>!propios.has(m.proyecto_id)).concat([...propios].map(id=>({proyecto_id:id, rol:'admin'})));
+      }
     }
     const rolPorProyecto = {};
     membresias.forEach(m=>rolPorProyecto[m.proyecto_id]=m.rol);
@@ -3489,6 +3495,24 @@ async function actualizarRolEfectivo(proyectoId){
     return 'admin';
   }
 
+  // Admin de empresa: admin sin proyecto elegido (plataforma) y en los proyectos de su empresa;
+  // en un proyecto de otra gestora rige su membresía, como para cualquiera.
+  if(esAdminDeEmpresa()){
+    let empresaProyecto = null;
+    if(proyectoId){
+      empresaProyecto = proyectos.find(p=>p.id===proyectoId)?.empresa_id;
+      if(empresaProyecto === undefined){
+        const { data: pr } = await sb.from('proyectos').select('empresa_id').eq('id', proyectoId).maybeSingle();
+        empresaProyecto = pr?.empresa_id || null;
+      }
+    }
+    if(!proyectoId || empresaProyecto === currentPerfil.empresa_id){
+      currentPerfil.rol = 'admin';
+      aplicarAccesosPorRol('admin');
+      return 'admin';
+    }
+  }
+
   if(!proyectoId){
     // Sin proyecto seleccionado: sin rol, sin accesos a módulos de proyecto
     currentPerfil.rol = null;
@@ -3506,6 +3530,11 @@ async function actualizarRolEfectivo(proyectoId){
 }
 
 // ── HELPERS DE ROL ──
+// Admin de empresa: perfiles.rol = 'admin_empresa' con empresa asignada. En los proyectos cuya
+// gestora es su empresa su rol efectivo es 'admin' (igual que en la base: sst_rol_en_proyecto).
+function esAdminDeEmpresa(){ return currentPerfil?.rolGlobal === 'admin_empresa' && !!currentPerfil?.empresa_id; }
+// Quien administra (global o de empresa) pide los proyectos sin filtro: la RLS devuelve solo los suyos.
+function veProyectosPorRLS(){ return currentPerfil?.rolGlobal === 'admin' || esAdminDeEmpresa(); }
 // Gates de escritura por ROL, para no depender de la capa CSS de
 // body.modo-visualizador / modo-cliente (frágil: solo tapa botones cuyo
 // onclick coincide con un patrón — ver PERMISOS.md I-8/I-9).
@@ -3992,7 +4021,7 @@ async function asegurarCacheProyectos(lista){
 
 // Proyectos visibles para el usuario: admin global todos; el resto, por membresía.
 async function cargarProyectosDelUsuario(){
-  if(currentPerfil?.rolGlobal === 'admin'){
+  if(veProyectosPorRLS()){
     const { data: p } = await sb.from('proyectos').select('*').order('created_at',{ascending:false});
     return p||[];
   }
@@ -4159,7 +4188,7 @@ function filtrarProyectosLista(){
 }
 
 async function cargarProyectosSelector(){
-  const esAdminGlobal = currentPerfil?.rolGlobal === 'admin';
+  const esAdminGlobal = veProyectosPorRLS();
   let data;
   if(!esAdminGlobal){
     const { data: miembros } = await sb.from('proyecto_miembros')
@@ -4526,7 +4555,7 @@ function abrirModalProyecto(proyecto=null){
   document.getElementById('modalProyectoTitle').textContent = proyecto ? 'Editar proyecto' : 'Nuevo proyecto';
   // Mostrar botón eliminar solo en edición y solo para admin
   const btnEliminar = document.getElementById('btnEliminarProyecto');
-  if(btnEliminar) btnEliminar.style.display = (proyecto && currentPerfil?.rol==='admin') ? 'flex' : 'none';
+  if(btnEliminar) btnEliminar.style.display = (proyecto && currentPerfil?.rolGlobal==='admin') ? 'flex' : 'none';
   document.getElementById('pNombre').value = proyecto?.nombre||'';
   document.getElementById('pContratante').value = proyecto?.contratante||'';
   document.getElementById('pContratista').value = proyecto?.contratista||'';
@@ -15546,6 +15575,9 @@ async function cargarUsuarios(){
   (membresias||[]).forEach(m=>{ conteoProyectos[m.usuario_id] = (conteoProyectos[m.usuario_id]||0)+1; });
 
   const content = document.getElementById('usuariosContent');
+  // Invitar, eliminar cuentas y conceder roles globales son solo del admin global; el admin
+  // de empresa usa esta pantalla para dar acceso a los proyectos de su empresa.
+  const esGlobal = currentPerfil?.rolGlobal === 'admin';
 
   content.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -15556,10 +15588,10 @@ async function cargarUsuarios(){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="navTo('permisos')" class="btn" style="gap:6px">🔐 Matriz de permisos</button>
       ${currentPerfil?.rolGlobal === 'admin' && multiempresaActiva() ? `<button onclick="navTo('empresas')" class="btn" style="gap:6px">🏢 Empresas</button>` : ''}
-      <button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
+      ${esGlobal ? `<button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Invitar usuario
-      </button>
+      </button>` : ''}
     </div>
   </div>
 
@@ -15596,15 +15628,17 @@ async function cargarUsuarios(){
             <td style="text-align:center">
               ${p.rol==='admin'
                 ? `<span style="background:#0073ea20;color:#0073ea;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">✓ Admin</span>`
+                : p.rol==='admin_empresa'
+                ? `<span style="background:#00854d20;color:#00854d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Admin de ${escAttr(empresaPorId(p.empresa_id)?.nombre || 'empresa')}</span>`
                 : `<span style="color:#c5c7d4;font-size:12px">—</span>`}
             </td>
             <td style="text-align:center;font-size:13px;color:#676879">
               ${conteoProyectos[p.id] ? `${conteoProyectos[p.id]} proyecto${conteoProyectos[p.id]>1?'s':''}` : 'Sin proyectos'}
             </td>
             <td style="text-align:center">
-              ${p.id!==currentUser?.id?`
+              ${(esGlobal && p.id!==currentUser?.id)?`
               <div style="display:flex;gap:6px;justify-content:center">
-                <button onclick="cambiarRolUsuario('${p.id}','${p.rol}')" class="btn" style="padding:4px 10px;font-size:12px" title="Conceder/quitar permisos de Administrador">⚙️ Admin</button>
+                <button onclick="cambiarRolUsuario('${p.id}','${p.rol||''}','${p.empresa_id||''}')" class="btn" style="padding:4px 10px;font-size:12px" title="Conceder o quitar el rol de Administrador del sistema o de empresa">⚙️ Admin</button>
                 <button onclick="eliminarUsuario('${p.id}','${p.nombre}')" class="btn" style="padding:4px 10px;font-size:12px;color:#e2445c">🗑</button>
               </div>`:'—'}
             </td>
@@ -15620,7 +15654,7 @@ async function cargarUsuarios(){
     <div id="proyectoMiembros"></div>
   </div>`;
 
-  cargarInvitacionesPendientes();
+  if(esGlobal) cargarInvitacionesPendientes();
   cargarMiembrosPorProyecto();
 }
 
@@ -15796,37 +15830,53 @@ async function enviarInvitacion(){
   cargarUsuarios();
 }
 
-async function cambiarRolUsuario(id, rolActual){
-  const esAdminActual = rolActual === 'admin';
-  const confirmar = await new Promise(resolve=>{
+async function cambiarRolUsuario(id, rolActual, empresaActual){
+  const gestoras = multiempresaActiva() ? gestorasActivas() : [];
+  const elegido = await new Promise(resolve=>{
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const opcion = (valor, texto) => `<label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:10px">
+          <input type="radio" name="_rolGlobal" value="${valor}" ${(rolActual||'')===valor?'checked':''} style="width:16px;height:16px;accent-color:#0073ea"/> ${texto}</label>`;
     overlay.innerHTML = `
-      <div style="background:#fff;border-radius:12px;padding:24px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
-        <div style="font-weight:700;font-size:16px;margin-bottom:12px">Permisos de Administrador</div>
+      <div style="background:#fff;border-radius:12px;padding:24px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+        <div style="font-weight:700;font-size:16px;margin-bottom:12px">Rol global del usuario</div>
         <div style="font-size:13px;color:#676879;margin-bottom:16px">
-          Los roles por proyecto (Fiscalizador, Residente, Visualizador, etc.) se asignan desde "Agregar miembro a proyecto". Aquí solo puedes conceder o quitar acceso total de <b>Administrador</b>.
+          Los roles por proyecto (Fiscalizador, Residente, Visualizador, etc.) se asignan desde "Agregar miembro a proyecto". Aquí se concede o quita el acceso de administración.
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:20px">
-          <input type="checkbox" id="_esAdminCheck" ${esAdminActual?'checked':''} style="width:16px;height:16px;accent-color:#0073ea"/>
-          Es Administrador del sistema
-        </label>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
+        ${opcion('', 'Sin rol global (solo sus proyectos)')}
+        ${opcion('admin', 'Administrador del sistema (todas las empresas)')}
+        ${gestoras.length ? opcion('admin_empresa', 'Administrador de empresa: todos los proyectos de') + `
+        <select id="_rolEmpresa" class="form-control" style="margin:0 0 10px 24px;width:calc(100% - 24px)">
+          ${gestoras.map(e=>`<option value="${e.id}" ${e.id===empresaActual?'selected':''}>${escAttr(e.nombre)}</option>`).join('')}
+        </select>` : ''}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
           <button id="_rolCancelar" style="padding:8px 16px;border:1px solid #c5c7d4;border-radius:8px;cursor:pointer;background:#fff">Cancelar</button>
           <button id="_rolGuardar" style="padding:8px 16px;background:#0073ea;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">Guardar</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.querySelector('#_rolGuardar').onclick = ()=>{ const v=overlay.querySelector('#_esAdminCheck').checked; document.body.removeChild(overlay); resolve(v); };
+    if(!overlay.querySelector('input[name="_rolGlobal"]:checked')) overlay.querySelector('input[name="_rolGlobal"]').checked = true;
+    overlay.querySelector('#_rolGuardar').onclick = ()=>{
+      const rol = overlay.querySelector('input[name="_rolGlobal"]:checked').value;
+      const empresa = overlay.querySelector('#_rolEmpresa')?.value || null;
+      document.body.removeChild(overlay); resolve({ rol, empresa });
+    };
     overlay.querySelector('#_rolCancelar').onclick = ()=>{ document.body.removeChild(overlay); resolve(null); };
   });
-  if(confirmar===null) return;
+  if(elegido===null) return;
 
-  const nuevoRol = confirmar ? 'admin' : null;
-  const { error } = await sb.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
+  // El admin de empresa lleva su empresa en el perfil; los demás roles no la cambian.
+  const cambio = { rol: elegido.rol || null };
+  if(elegido.rol === 'admin_empresa'){
+    if(!elegido.empresa){ toast('Elige la empresa que va a administrar','error'); return; }
+    cambio.empresa_id = elegido.empresa;
+  }
+  const { error } = await sb.from('perfiles').update(cambio).eq('id', id);
   if(error){ toast('Error: '+error.message,'error'); return; }
 
-  toast(confirmar ? 'Usuario ahora es Administrador ✓' : 'Permisos de Administrador removidos ✓','success');
+  toast(elegido.rol === 'admin' ? 'Usuario ahora es Administrador ✓'
+      : elegido.rol === 'admin_empresa' ? `Usuario ahora administra ${empresaPorId(elegido.empresa)?.nombre || 'la empresa'} ✓`
+      : 'Rol global removido ✓','success');
   cargarUsuarios();
 }
 

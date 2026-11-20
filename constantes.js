@@ -335,6 +335,16 @@ const PERMISOS = {
   ]
 };
 
+// Admin de empresa (perfiles.rol = 'admin_empresa' + perfiles.empresa_id): en los proyectos
+// cuya gestora es su empresa equivale al Admin; no ve nada de la otra empresa. Las celdas
+// se derivan de la columna Admin salvo lo que sigue siendo solo del admin global.
+PERMISOS.roles.splice(1, 0, { id:'admin_empresa', nombre:'Admin de empresa' });
+PERMISOS.secciones.forEach(s=>{
+  s.roles.admin_empresa = s.id === 'empresas' ? null : s.roles.admin;
+});
+PERMISOS.secciones.find(s=>s.id==='usuarios').nota += ' Admin de empresa: solo agrega y quita miembros en los proyectos de su empresa; invitar, eliminar cuentas y conceder roles globales siguen siendo del admin global.';
+PERMISOS.secciones.find(s=>s.id==='proyectos').nota += ' Admin de empresa: crea y edita los proyectos de su empresa; eliminar proyectos y reasignar la gestora son solo del admin global.';
+
 // ── EXPEDIENTE DE OBRA ──
 // Catálogo de secciones del expediente, en el orden del documento. fase: 1 =
 // disponible; 2 y 3 = el modal las muestra deshabilitadas como «próximamente»
