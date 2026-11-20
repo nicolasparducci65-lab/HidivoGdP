@@ -379,6 +379,12 @@
           <div class="card-header">
             <div><div class="card-title">Mis proyectos</div><div class="card-subtitle">Vista general de todas las obras</div></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="filtroEmpresa" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px;display:none">
+                <option value="">— Todas las empresas —</option>
+              </select>
+              <select id="filtroTipo" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px;display:none">
+                <option value="">— Todos los tipos —</option>
+              </select>
               <select id="filtroContratante" onchange="filtrarProyectosDashboard()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
                 <option value="">— Todos los contratantes —</option>
               </select>
@@ -405,6 +411,12 @@
       <!-- PROYECTOS -->
       <div class="page" id="page-proyectos">
         <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <select id="filtroEmpresaProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px;display:none">
+            <option value="">— Todas las empresas —</option>
+          </select>
+          <select id="filtroTipoProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px;display:none">
+            <option value="">— Todos los tipos —</option>
+          </select>
           <select id="filtroContratanteProyectos" onchange="filtrarProyectosLista()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
             <option value="">— Todos los contratantes —</option>
           </select>
@@ -3778,16 +3790,66 @@ function formatoKSinSigno(valor){
 // ── LISTAS DE PROYECTOS: FILTROS EN MEMORIA, CACHÉ COMPARTIDA Y RENDER ÚNICO ──
 // Filtros por pantalla, solo en memoria y por sesión (son del usuario, no del
 // proyecto: limpiarEstadoProyecto no los toca; no se persisten).
-const filtrosDashboard = { contratante:'', contratista:'', estado:'' };
-const filtrosProyectos = { contratante:'', contratista:'', estado:'' };
+const filtrosDashboard = { empresa:'', tipo:'', contratante:'', contratista:'', estado:'' };
+const filtrosProyectos = { empresa:'', tipo:'', contratante:'', contratista:'', estado:'' };
+const CLAVES_FILTRO = ['empresa','tipo','contratante','contratista','estado'];
 const SELECTS_FILTRO = {
-  dashboard: { contratante:'filtroContratante', contratista:'filtroContratista', estado:'filtroEstado' },
-  proyectos: { contratante:'filtroContratanteProyectos', contratista:'filtroContratistaProyectos', estado:'filtroEstadoProyectos' }
+  dashboard: { empresa:'filtroEmpresa', tipo:'filtroTipo', contratante:'filtroContratante', contratista:'filtroContratista', estado:'filtroEstado' },
+  proyectos: { empresa:'filtroEmpresaProyectos', tipo:'filtroTipoProyectos', contratante:'filtroContratanteProyectos', contratista:'filtroContratistaProyectos', estado:'filtroEstadoProyectos' }
 };
 
-// AND entre los tres; sin estado definido cuenta como 'ejecucion'.
-function aplicarFiltroProyectos(lista, f){
+// ── MULTIEMPRESA: filtro por empresa gestora y tipo, y distintivo de empresa ──
+// Filtros de sesión de Cartera y Reportes Globales (del usuario, no del proyecto:
+// limpiarEstadoProyecto no los toca).
+const filtrosCartera = { empresa:'', tipo:'' };
+const filtrosReportes = { empresa:'', tipo:'' };
+function filtrarPorEmpresaTipo(lista, f){
   let r = lista||[];
+  if(f.empresa) r = r.filter(p=>p.empresa_id===f.empresa);
+  if(f.tipo)    r = r.filter(p=>p.tipo===f.tipo);
+  return r;
+}
+// Opciones presentes en la lista: [[valor, texto], …] por empresa gestora y por tipo.
+function opcionesEmpresaTipo(lista){
+  const l = lista||[];
+  return {
+    empresa: [...new Set(l.map(p=>p.empresa_id).filter(Boolean))].map(id=>[id, empresaPorId(id)?.nombre || '—']).sort((a,b)=>a[1].localeCompare(b[1])),
+    tipo: TIPOS_PROYECTO.filter(t=>l.some(p=>p.tipo===t.id)).map(t=>[t.id, t.nombre])
+  };
+}
+// Dos selects (empresa, tipo) para una vista que se repinta entera. nombreFiltros es el
+// nombre de la constante de filtros; alCambiar, la llamada que recarga la vista.
+function barraFiltroEmpresaTipo(nombreFiltros, alCambiar, lista, filtros){
+  if(!multiempresaActiva()) return '';
+  const o = opcionesEmpresaTipo(lista);
+  for(const k of ['empresa','tipo']) if(filtros[k] && !o[k].some(([v])=>v===filtros[k])) filtros[k] = '';
+  const sel = (k, ph) => `<select onchange="${nombreFiltros}.${k}=this.value;${alCambiar}" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
+      <option value="">${ph}</option>${o[k].map(([v,t])=>`<option value="${escAttr(v)}" ${filtros[k]===v?'selected':''}>${escAttr(t)}</option>`).join('')}
+    </select>`;
+  return sel('empresa','— Todas las empresas —') + sel('tipo','— Todos los tipos —');
+}
+function colorEmpresa(e){ return /^#[0-9a-f]{6}$/i.test(e?.color||'') ? e.color : '#676879'; }
+// Pastilla con la sigla de la gestora, en su color: para no confundir carteras.
+function distintivoEmpresa(p){
+  if(!multiempresaActiva()) return '';
+  const e = empresaPorId(p?.empresa_id);
+  if(!e) return '';
+  return `<span title="Empresa gestora: ${escAttr(e.nombre)}" style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.3px;color:#fff;background:${colorEmpresa(e)};border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:middle">${escAttr(e.sigla || e.nombre)}</span>`;
+}
+// Borde izquierdo de la fila con el color de la gestora ('' si no aplica).
+function bordeEmpresa(p){
+  const e = multiempresaActiva() ? empresaPorId(p?.empresa_id) : null;
+  return e ? `border-left:4px solid ${colorEmpresa(e)};` : '';
+}
+// «HDV-FIS-2026-007 · Fiscalización» para la línea secundaria de una fila.
+function codigoTipoTexto(p){
+  if(!multiempresaActiva()) return '';
+  return [p?.codigo, p?.tipo ? tipoProyectoLabel(p.tipo) : ''].filter(Boolean).join(' · ');
+}
+
+// AND entre todos; sin estado definido cuenta como 'ejecucion'.
+function aplicarFiltroProyectos(lista, f){
+  let r = filtrarPorEmpresaTipo(lista, f);
   if(f.contratante) r = r.filter(p=>p.contratante===f.contratante);
   if(f.contratista) r = r.filter(p=>p.contratista===f.contratista);
   if(f.estado)      r = r.filter(p=>(p.estado||'ejecucion')===f.estado);
@@ -3798,16 +3860,19 @@ function aplicarFiltroProyectos(lista, f){
 // ya no existe en los datos, vuelve a "Todos" EXPLÍCITAMENTE (estado y select).
 function poblarSelectsFiltro(ids, filtros, lista){
   const opciones = {
+    ...opcionesEmpresaTipo(lista),
     contratante: [...new Set((lista||[]).map(p=>p.contratante).filter(Boolean))].sort().map(v=>[v,v]),
     contratista: [...new Set((lista||[]).map(p=>p.contratista).filter(Boolean))].sort().map(v=>[v,v]),
     estado: [...new Set((lista||[]).map(p=>p.estado||'ejecucion'))]
       .sort((a,b)=>estadoLabel(a).localeCompare(estadoLabel(b))).map(v=>[v,estadoLabel(v)])
   };
-  const placeholder = { contratante:'— Todos los contratantes —', contratista:'— Todos los contratistas —', estado:'— Todos los estados —' };
-  for(const k of ['contratante','contratista','estado']){
+  const placeholder = { empresa:'— Todas las empresas —', tipo:'— Todos los tipos —', contratante:'— Todos los contratantes —', contratista:'— Todos los contratistas —', estado:'— Todos los estados —' };
+  for(const k of CLAVES_FILTRO){
     if(filtros[k] && !opciones[k].some(([v])=>v===filtros[k])) filtros[k] = '';
     const sel = document.getElementById(ids[k]);
     if(!sel) continue;
+    // Empresa y tipo solo se ofrecen con la base multiempresa y si hay algo que elegir
+    if(k==='empresa' || k==='tipo') sel.style.display = (multiempresaActiva() && opciones[k].length) ? '' : 'none';
     sel.innerHTML = `<option value="">${placeholder[k]}</option>` +
       opciones[k].map(([v,t])=>`<option value="${escAttr(v)}">${escAttr(t)}</option>`).join('');
     sel.value = filtros[k];
@@ -3815,7 +3880,7 @@ function poblarSelectsFiltro(ids, filtros, lista){
 }
 
 function leerFiltrosDeSelects(ids, filtros){
-  for(const k of ['contratante','contratista','estado']){
+  for(const k of CLAVES_FILTRO){
     const sel = document.getElementById(ids[k]);
     if(sel) filtros[k] = sel.value||'';
   }
@@ -4035,7 +4100,7 @@ function renderProyectosTabla(containerId, lista){
       const { label:tiempoLabel, color:tiempoColor, icon:tiempoIcon } = etiquetaTiempoPorSPI(spi);
       return `
       <tr>
-        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer"><div style="font-weight:600">${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${p.ubicacion||'Sin ubicación'}</div></td>
+        <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;${bordeEmpresa(p)}"><div style="font-weight:600">${distintivoEmpresa(p)}${p.nombre}</div><div style="font-size:11px;color:#676879;margin-top:2px">${[codigoTipoTexto(p), p.ubicacion||'Sin ubicación'].filter(Boolean).join(' · ')}</div></td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${p.contratante||'—'}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer">${montoContratoHtml(montoContratoProyecto(p, montosReales[p.id]))}</td>
         <td onclick="abrirProyecto('${p.id}')" style="cursor:pointer;white-space:nowrap">${p.fecha_fin_planificada ? formatFecha(p.fecha_fin_planificada) : '—'}</td>
@@ -4096,22 +4161,28 @@ async function cargarProyectosSelector(){
     const ids = (miembros||[]).map(m=>m.proyecto_id);
     if(!ids.length){ data=[]; }
     else {
-      const { data: proy } = await sb.from('proyectos').select('id,nombre').in('id', ids);
+      const { data: proy } = await sb.from('proyectos').select('*').in('id', ids);
       data = proy||[];
     }
   } else {
-    const { data: proy } = await sb.from('proyectos').select('id,nombre');
+    const { data: proy } = await sb.from('proyectos').select('*');
     data = proy||[];
   }
   const sel = document.getElementById('selectProyecto');
   const valorPrevio = sel.value;
   sel.innerHTML = '<option value="">Selecciona un proyecto...</option>' +
-    data.map(p=>`<option value="${p.id}">${escAttr(p.nombre)}</option>`).join('');
+    data.map(p=>`<option value="${p.id}" data-extra="${escAttr(textoBusquedaProyecto(p))}" data-sigla="${escAttr(empresaPorId(p.empresa_id)?.sigla||'')}" data-color="${multiempresaActiva() && empresaPorId(p.empresa_id) ? colorEmpresa(empresaPorId(p.empresa_id)) : ''}" data-codigo="${escAttr(p.codigo||'')}">${escAttr(p.nombre)}</option>`).join('');
   if(valorPrevio) sel.value = valorPrevio;
   sincronizarBuscadorProyecto();
 }
 
 // ── BUSCADOR DE PROYECTOS (combobox sobre #selectProyecto) ──
+// Texto extra por el que también se encuentra un proyecto: código, gestora (nombre y sigla) y tipo.
+function textoBusquedaProyecto(p){
+  if(!multiempresaActiva()) return '';
+  const e = empresaPorId(p.empresa_id);
+  return [p.codigo, e?.nombre, e?.sigla, p.tipo ? tipoProyectoLabel(p.tipo) : ''].filter(Boolean).join(' ');
+}
 function normBusquedaProyecto(s){
   return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 }
@@ -4127,9 +4198,11 @@ function renderListaBuscarProyecto(filtro){
   const sel = document.getElementById('selectProyecto');
   const lista = document.getElementById('listaBuscarProyecto');
   const f = normBusquedaProyecto(filtro);
-  const opts = [...sel.options].filter(o=>o.value && (!f || normBusquedaProyecto(o.textContent).includes(f)));
+  const opts = [...sel.options].filter(o=>o.value && (!f || normBusquedaProyecto(o.textContent + ' ' + (o.dataset.extra||'')).includes(f)));
+  const chip = o => o.dataset.color ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:${o.dataset.color};border-radius:4px;padding:1px 6px;margin-right:6px">${escAttr(o.dataset.sigla||'')}</span>` : '';
+  const cod = o => o.dataset.codigo ? `<span style="font-size:11px;color:#676879;margin-left:6px">${escAttr(o.dataset.codigo)}</span>` : '';
   lista.innerHTML = opts.length
-    ? opts.map(o=>`<div class="opcion-buscar-proyecto${o.value===sel.value?' seleccionada':''}" data-id="${o.value}" onmousedown="event.preventDefault();seleccionarProyectoBuscador('${o.value}')">${escAttr(o.textContent)}</div>`).join('')
+    ? opts.map(o=>`<div class="opcion-buscar-proyecto${o.value===sel.value?' seleccionada':''}" data-id="${o.value}" onmousedown="event.preventDefault();seleccionarProyectoBuscador('${o.value}')">${chip(o)}${escAttr(o.textContent)}${cod(o)}</div>`).join('')
     : '<div style="padding:12px;font-size:13px;color:#676879">Sin resultados</div>';
   lista.style.display = 'block';
 }
@@ -6432,7 +6505,14 @@ async function generarResumenCarteraManual(){
 async function cargarCartera(){
   const cont = document.getElementById('carteraContent');
   cont.innerHTML = '<div style="padding:30px;text-align:center;color:#676879">Calculando indicadores de la cartera...</div>';
-  const todos = await proyectosVisiblesCartera();
+  const todosVisibles = await proyectosVisiblesCartera();
+  const barraFiltro = barraFiltroEmpresaTipo('filtrosCartera', 'cargarCartera()', todosVisibles, filtrosCartera);
+  const barraFiltroHtml = barraFiltro ? `<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">${barraFiltro}</div>` : '';
+  const todos = filtrarPorEmpresaTipo(todosVisibles, filtrosCartera);
+  if(todosVisibles.length && !todos.length){
+    cont.innerHTML = barraFiltroHtml + '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Ningún proyecto coincide con el filtro</div></div>';
+    return;
+  }
   if(!todos.length){
     cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📁</div><div class="empty-title">Sin proyectos para mostrar</div><div class="empty-sub">Este panel está disponible para administradores y fiscalizadores</div></div>';
     return;
@@ -6531,7 +6611,7 @@ async function cargarCartera(){
     const estadoTxt = {en_ejecucion:'En ejecución', recepcion_provisional:'R. provisional', recepcion_definitiva:'R. definitiva'}[p.estado_cierre]||'En ejecución';
     return `<tr style="cursor:pointer" onclick="irANotificacion('${p.id}','curvaS')" title="Ir a la Curva S del proyecto">
       <td style="font-size:16px">${emoji}</td>
-      <td style="font-weight:600">${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${estadoTxt} · ${escAttr(p.contratante||'')}</div></td>
+      <td style="font-weight:600">${distintivoEmpresa(p)}${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${[escAttr(codigoTipoTexto(p)), estadoTxt, escAttr(p.contratante||'')].filter(Boolean).join(' · ')}</div></td>
       <td style="white-space:nowrap"><div style="font-size:13px;font-weight:600">${real.toFixed(1)}% <span style="color:#676879;font-weight:400">/ ${d.plan.toFixed(1)}%</span></div>
         <div style="background:#e6e9ef;border-radius:4px;height:6px;width:110px;margin-top:3px;position:relative"><div style="background:${color};border-radius:4px;height:6px;width:${Math.min(100,real)}%"></div><div style="position:absolute;top:-2px;left:${Math.min(100,d.plan)}%;width:2px;height:10px;background:#323338"></div></div></td>
       <td style="text-align:center;font-weight:800;color:${spiColor}">${spiTxt}${atraso>0?`<div style="font-size:10px;color:#e2445c;font-weight:600">~${atraso}d atraso</div>`:''}</td>
@@ -6554,7 +6634,30 @@ async function cargarCartera(){
   const nAmarillo = activos.filter(p=>porP[p.id]._sem==='🟡').length;
   const nVerde = activos.filter(p=>porP[p.id]._sem==='🟢').length;
 
+  // Totales por empresa gestora (sobre los proyectos activos mostrados)
+  const porEmpresa = {};
+  activos.forEach(p=>{
+    const t = porEmpresa[p.empresa_id||''] = porEmpresa[p.empresa_id||''] || { n:0, vigente:0, planillado:0, liquidoPend:0, rojo:0, amarillo:0, verde:0 };
+    const d = porP[p.id];
+    t.n++; t.vigente += d.vigente; t.planillado += d.planillado; t.liquidoPend += d.liquidoPend;
+    t[{'🔴':'rojo','🟡':'amarillo','🟢':'verde'}[d._sem]]++;
+  });
+  const totalesEmpresaHtml = !multiempresaActiva() ? '' : `<div class="card" style="margin-bottom:18px">
+    <div class="card-header"><div><div class="card-title">Totales por empresa</div><div class="card-subtitle">Proyectos activos de cada empresa gestora</div></div></div>
+    <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>Empresa</th><th style="text-align:center">Proyectos</th><th style="text-align:right">Cartera contratada</th><th style="text-align:right">Planillado</th><th style="text-align:right">Líquido por pagar</th><th style="text-align:center">Salud</th></tr></thead><tbody>
+    ${Object.entries(porEmpresa).map(([id,t])=>[empresaPorId(id), t]).sort((a,b)=>(a[0]?.nombre||'').localeCompare(b[0]?.nombre||'')).map(([e,t])=>`<tr>
+      <td style="font-weight:600;${e?`border-left:4px solid ${colorEmpresa(e)};`:''}">${escAttr(e?.nombre || 'Sin empresa')}</td>
+      <td style="text-align:center">${t.n}</td>
+      <td style="text-align:right;white-space:nowrap">${fmtK(t.vigente)}</td>
+      <td style="text-align:right;white-space:nowrap">${fmtK(t.planillado)}</td>
+      <td style="text-align:right;white-space:nowrap">${t.liquidoPend>0?fmtK(t.liquidoPend):'—'}</td>
+      <td style="text-align:center;white-space:nowrap">🔴${t.rojo} 🟡${t.amarillo} 🟢${t.verde}</td>
+    </tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+
   cont.innerHTML = `
+  ${barraFiltroHtml}
   ${renderTarjetaResumenCartera()}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px">
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">CARTERA CONTRATADA</div><div style="font-size:20px;font-weight:800;color:#0073ea">${fmtK(totVigente)}</div><div style="font-size:11px;color:#676879">${activos.length} proyecto(s) activo(s)</div></div>
@@ -6562,6 +6665,7 @@ async function cargarCartera(){
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">LÍQUIDO POR PAGAR</div><div style="font-size:20px;font-weight:800;color:${totLiquidoPend>0?'#b8860b':'#676879'}">${fmtK(totLiquidoPend)}</div><div style="font-size:11px;color:#676879">planillas aprobadas sin pagar</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div style="font-size:11px;color:#676879">SPI &lt; 0.85 ó garantía vencida = rojo</div></div>
   </div>
+  ${totalesEmpresaHtml}
   <div class="card">
     <div style="overflow-x:auto"><table style="width:100%"><thead><tr>
       <th></th><th>Proyecto</th><th>Avance real / plan</th><th style="text-align:center">SPI</th><th style="text-align:right">Monto vigente</th><th style="text-align:right">Líquido pend.</th><th style="text-align:right">Anticipo saldo</th><th>Alertas</th>
@@ -11215,11 +11319,12 @@ async function cargarReportesGlobales(){
   el.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando reportes...</div>';
 
   // Cargar todos los proyectos para el filtro de contratante
-  const { data: todosProyectos } = await sb.from('proyectos').select('id,nombre,contratante');
+  const { data: todosProyectos } = await sb.from('proyectos').select('*');
   const contratantes = [...new Set((todosProyectos||[]).map(p=>p.contratante).filter(Boolean))].sort();
 
-  // Filtrar proyectos según contratante seleccionado
-  let proyectosFiltrados = todosProyectos||[];
+  // Filtrar proyectos según empresa, tipo y contratante seleccionados
+  const barraEmpresaTipoRep = barraFiltroEmpresaTipo('filtrosReportes', 'cargarReportesGlobales()', todosProyectos||[], filtrosReportes);
+  let proyectosFiltrados = filtrarPorEmpresaTipo(todosProyectos||[], filtrosReportes);
   if(reportesFiltroContratante){
     proyectosFiltrados = proyectosFiltrados.filter(p=>p.contratante===reportesFiltroContratante);
   }
@@ -11301,6 +11406,7 @@ async function cargarReportesGlobales(){
 function renderFiltrosReportes(contratantes){
   return `
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
+    ${barraEmpresaTipoRep}
     <select id="reportesContratanteSel" onchange="reportesFiltroContratante=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px;padding:6px 10px">
       <option value="">— Todos los contratantes —</option>
       ${contratantes.map(c=>`<option value="${c}" ${reportesFiltroContratante===c?'selected':''}>${c}</option>`).join('')}
@@ -11308,7 +11414,7 @@ function renderFiltrosReportes(contratantes){
     <input type="date" id="reportesDesdeInput" value="${reportesFiltroDesde}" onchange="reportesFiltroDesde=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px"/>
     <span style="font-size:12px;color:#676879">hasta</span>
     <input type="date" id="reportesHastaInput" value="${reportesFiltroHasta}" onchange="reportesFiltroHasta=this.value;cargarReportesGlobales()" class="form-control" style="width:auto;font-size:13px"/>
-    ${(reportesFiltroContratante||reportesFiltroDesde||reportesFiltroHasta)?`<button onclick="reportesFiltroContratante='';reportesFiltroDesde='';reportesFiltroHasta='';cargarReportesGlobales()" class="btn" style="font-size:12px">✕ Limpiar filtros</button>`:''}
+    ${(filtrosReportes.empresa||filtrosReportes.tipo||reportesFiltroContratante||reportesFiltroDesde||reportesFiltroHasta)?`<button onclick="filtrosReportes.empresa='';filtrosReportes.tipo='';reportesFiltroContratante='';reportesFiltroDesde='';reportesFiltroHasta='';cargarReportesGlobales()" class="btn" style="font-size:12px">✕ Limpiar filtros</button>`:''}
   </div>`;
 }
 
@@ -16182,7 +16288,8 @@ async function generarReporteDashboard(){
   const metricas = incMetricas ? await calcularMetricasDashboard(listaProyectos) : null;
   const { spiEstados, montosReales } = await calcularEstadosProyectos(listaProyectos);
 
-  const filtrosTexto = `${contratante || 'Todos los Contratantes'} - ${contratista || 'Todos los Contratistas'} - ${estadoFiltro ? estadoLabel(estadoFiltro) : 'Todos los estados'}`;
+  const filtrosTexto = [filtrosDashboard.empresa ? (empresaPorId(filtrosDashboard.empresa)?.nombre || '') : '', filtrosDashboard.tipo ? tipoProyectoLabel(filtrosDashboard.tipo) : ''].filter(Boolean).map(t=>t+' - ').join('') +
+    `${contratante || 'Todos los Contratantes'} - ${contratista || 'Todos los Contratistas'} - ${estadoFiltro ? estadoLabel(estadoFiltro) : 'Todos los estados'}`;
   // Membrete: la gestora común de los proyectos listados; si hay mezcla, la plataforma.
   const emisorRep = emisorDeLista(listaProyectos);
   const emisorRepLegal = emisorLineaLegal(emisorRep);
