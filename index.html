@@ -625,6 +625,11 @@
       <div class="page" id="page-permisos">
         <div id="permisosContent"><div class="empty-state"><div class="empty-icon">🔐</div><div class="empty-title">Matriz de permisos</div></div></div>
       </div>
+
+      <!-- EMPRESAS (solo admin global): gestoras y emisores de documentos -->
+      <div class="page" id="page-empresas">
+        <div id="empresasContent"><div class="empty-state"><div class="empty-icon">🏢</div><div class="empty-title">Empresas</div></div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -3635,7 +3640,7 @@ function navTo(page, btn){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   currentPage = page;
-  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', recorridos360:'Recorridos 360', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos' };
+  const titles = { dashboard:'Dashboard', proyectos:'Proyectos', rubros:'Rubros y Cantidades', libro:'Libro de Obra', curvaS:'Curva S', fiscalizacion:'Observaciones', recorridos360:'Recorridos 360', solicitudes:'Solicitudes', planillas:'Planillas de Pago', contrato:'Contrato — Anticipo y Garantías', cartera:'Cartera — Panel Gerencial', ensayos:'Ensayos de Laboratorio', equipos:'Control de Equipos', materiales:'Control de Materiales', archivos:'Archivos del Proyecto', subcontratistas:'Subcontratistas', formatosCalidad:'Formatos de Calidad', sso:'SST / SSO', chat:'Chat', usuarios:'Usuarios', reportesGlobales:'Reportes Globales', permisos:'Matriz de Permisos', empresas:'Empresas' };
   document.getElementById('topbarTitle').textContent = titles[page]||page;
   // Importar Excel y su plantilla son acciones de escritura: solo gestores de
   // rubros (admin/fiscalizador). El residente y el visualizador ven Rubros en
@@ -3695,6 +3700,7 @@ function navTo(page, btn){
   if(page==='usuarios') cargarUsuarios();
   if(page==='reportesGlobales') cargarReportesGlobales();
   if(page==='permisos') cargarPermisos();
+  if(page==='empresas') cargarEmpresasAdmin();
 
   // Registrar la navegación en el historial del navegador (salvo cuando la
   // propia restauración por popstate está reproduciendo un estado anterior).
@@ -15287,6 +15293,180 @@ async function responderSolicitud(accion){
 // ── MATRIZ DE PERMISOS (FASE 1) ──
 // Renderiza el cuadro desde la constante PERMISOS (constantes.js). Solo
 // documentación, salvo la fila `expediente`, que sí la lee puedeGenerarExpediente().
+// ── EMPRESAS (solo admin global): gestoras y emisores de documentos ──
+// Estado de la pantalla (de la sesión, no del proyecto): empresa en edición y logo elegido
+// sin guardar. Se reinician cada vez que se entra a la pantalla o se abre el formulario.
+let _empresaEditando = null;          // null = lista · 'nueva' · id de la empresa
+let _empresaLogoPendiente;            // undefined = sin cambio · '' = quitar · data URI = nuevo
+const LOGO_EMPRESA_MAX = 300000;      // tope de empresas_logo_data_chk (caracteres del data URI)
+
+async function cargarEmpresasAdmin(){
+  const cont = document.getElementById('empresasContent');
+  if(!cont) return;
+  if(currentPerfil?.rolGlobal !== 'admin'){
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">Solo el administrador global administra las empresas</div></div>';
+    return;
+  }
+  _empresaEditando = null; _empresaLogoPendiente = undefined;
+  await cargarEmpresas();
+  if(!multiempresaActiva()){
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">🏢</div><div class="empty-title">Empresas no disponible</div><div class="empty-sub">Falta aplicar las migraciones de multiempresa en la base de datos.</div></div>';
+    return;
+  }
+  renderEmpresasAdmin();
+}
+
+function renderEmpresasAdmin(){
+  const cont = document.getElementById('empresasContent');
+  const lista = empresasCatalogo().filter(e=>e.sigla).sort((a,b)=>(b.activa-a.activa) || a.nombre.localeCompare(b.nombre));
+  const nProy = id => proyectos.filter(p=>p.empresa_id===id).length;
+  const nEmite = id => proyectos.filter(p=>p.emisor_empresa_id===id).length;
+  cont.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <button onclick="navTo('usuarios')" class="btn" style="gap:6px;margin-bottom:8px">← Volver a Usuarios</button>
+      <div style="font-size:18px;font-weight:700;color:#323338">🏢 Empresas</div>
+      <div style="font-size:13px;color:#676879">Gestoras (administran proyectos) y emisores (a su nombre salen los documentos)</div>
+    </div>
+    <button onclick="abrirFormEmpresa('nueva')" class="btn primary">+ Nueva empresa</button>
+  </div>
+  <div id="empresaForm"></div>
+  <div class="card"><div style="overflow-x:auto"><table style="width:100%">
+    <thead><tr><th>Empresa</th><th>Sigla</th><th>Razón social</th><th>RUC</th><th style="text-align:center">Logo</th><th>Papel</th><th style="text-align:center">Proyectos</th><th></th></tr></thead>
+    <tbody>${lista.map(e=>`<tr style="${e.activa?'':'opacity:.55'}">
+      <td style="font-weight:600;border-left:4px solid ${colorEmpresa(e)}">${escAttr(e.nombre)}${e.activa?'':' <span style="font-size:11px;color:#676879;font-weight:400">(inactiva)</span>'}</td>
+      <td>${escAttr(e.sigla)}</td>
+      <td>${escAttr(e.razon_social||'—')}</td>
+      <td>${escAttr(e.ruc||'—')}</td>
+      <td style="text-align:center">${emisorDesdeEmpresa(e).logo ? `<img src="${emisorDesdeEmpresa(e).logo}" alt="" style="max-height:28px;max-width:90px;object-fit:contain"/>` : '<span style="color:#e2445c;font-size:12px">sin logo</span>'}</td>
+      <td>${e.es_gestora?'Gestora':'Solo emisor'}</td>
+      <td style="text-align:center">${nProy(e.id)}${nEmite(e.id)?` <span style="font-size:11px;color:#676879">· emite ${nEmite(e.id)}</span>`:''}</td>
+      <td><button onclick="abrirFormEmpresa('${e.id}')" class="btn" style="padding:4px 10px;font-size:12px">✏️ Editar</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#676879;padding:18px">Sin empresas</td></tr>'}</tbody>
+  </table></div></div>`;
+  if(_empresaEditando) renderFormEmpresa();
+}
+
+function abrirFormEmpresa(id){
+  _empresaEditando = id; _empresaLogoPendiente = undefined;
+  renderFormEmpresa();
+  document.getElementById('empresaForm')?.scrollIntoView({ block:'nearest' });
+}
+function cerrarFormEmpresa(){
+  _empresaEditando = null; _empresaLogoPendiente = undefined;
+  const f = document.getElementById('empresaForm'); if(f) f.innerHTML = '';
+}
+
+function renderFormEmpresa(){
+  const cont = document.getElementById('empresaForm');
+  if(!cont) return;
+  const e = _empresaEditando === 'nueva' ? null : empresaPorId(_empresaEditando);
+  const logoActual = _empresaLogoPendiente !== undefined ? _empresaLogoPendiente : (e?.logo_data || '');
+  cont.innerHTML = `<div class="card" style="margin-bottom:16px;padding:18px">
+    <div style="font-weight:700;margin-bottom:12px">${e ? 'Editar '+escAttr(e.nombre) : 'Nueva empresa'}</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nombre corto *</label><input type="text" class="form-control" id="empNombre" value="${escAttr(e?.nombre||'')}" placeholder="Como se verá en filtros y distintivos"/></div>
+      <div class="form-group"><label class="form-label">Sigla * (2 a 5 letras o números)</label><input type="text" class="form-control" id="empSigla" value="${escAttr(e?.sigla||'')}" maxlength="5" style="text-transform:uppercase" placeholder="Prefijo del código de proyecto"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Razón social</label><input type="text" class="form-control" id="empRazon" value="${escAttr(e?.razon_social||'')}" placeholder="Como consta en el RUC"/></div>
+      <div class="form-group"><label class="form-label">RUC</label><input type="text" class="form-control" id="empRuc" value="${escAttr(e?.ruc||'')}" inputmode="numeric" maxlength="13"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Color del distintivo</label><input type="color" class="form-control" id="empColor" value="${colorEmpresa(e)}" style="height:38px;padding:4px"/></div>
+      <div class="form-group"><label class="form-label">Logo (PNG de fondo transparente, recomendado)</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div id="empLogoVista" style="min-width:90px;min-height:34px;display:flex;align-items:center">${logoActual ? `<img src="${logoActual}" alt="" style="max-height:40px;max-width:140px;object-fit:contain"/>` : '<span style="font-size:12px;color:#676879">Sin logo</span>'}</div>
+          <input type="file" id="empLogoArchivo" accept="image/png,image/jpeg,image/webp" onchange="elegirLogoEmpresa(this)" style="font-size:12px;max-width:220px"/>
+          ${logoActual ? '<button type="button" class="btn" style="font-size:12px;padding:4px 10px" onclick="quitarLogoEmpresa()">Quitar logo</button>' : ''}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin:4px 0 14px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="empGestora" ${e ? (e.es_gestora?'checked':'') : 'checked'} style="width:15px;height:15px"/> Gestora: administra proyectos en la plataforma</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="empActiva" ${!e || e.activa ? 'checked' : ''} style="width:15px;height:15px"/> Activa</label>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="cerrarFormEmpresa()">Cancelar</button>
+      <button class="btn primary" id="btnGuardarEmpresa" onclick="guardarEmpresa()">Guardar</button>
+    </div>
+  </div>`;
+}
+
+// Conserva lo escrito en el formulario al repintarlo (cambio de logo).
+function repintarFormEmpresaConservando(){
+  const ids = ['empNombre','empSigla','empRazon','empRuc','empColor'];
+  const v = Object.fromEntries(ids.map(i=>[i, document.getElementById(i)?.value]));
+  const c = { empGestora: document.getElementById('empGestora')?.checked, empActiva: document.getElementById('empActiva')?.checked };
+  renderFormEmpresa();
+  ids.forEach(i=>{ const el = document.getElementById(i); if(el && v[i] != null) el.value = v[i]; });
+  Object.entries(c).forEach(([i, val])=>{ const el = document.getElementById(i); if(el && val != null) el.checked = val; });
+}
+
+// Lee la imagen, la reduce a un máximo de 600×240 px y la deja como data URI PNG
+// (conserva la transparencia). Si aun así no cabe en la base, prueba más pequeña.
+async function elegirLogoEmpresa(input){
+  const file = input.files[0];
+  if(!file) return;
+  try{
+    const url = await new Promise((res, rej)=>{ const r = new FileReader(); r.onload = ()=>res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+    const img = await new Promise((res, rej)=>{ const i = new Image(); i.onload = ()=>res(i); i.onerror = ()=>rej(new Error('no es una imagen válida')); i.src = url; });
+    let dataUri = '';
+    for(const [maxW, maxH] of [[600,240],[400,160],[260,104]]){
+      const k = Math.min(1, maxW/img.naturalWidth, maxH/img.naturalHeight);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.naturalWidth*k)); cv.height = Math.max(1, Math.round(img.naturalHeight*k));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      dataUri = cv.toDataURL('image/png');
+      if(dataUri.length <= LOGO_EMPRESA_MAX) break;
+    }
+    if(dataUri.length > LOGO_EMPRESA_MAX){ toast('El logo es demasiado pesado incluso reducido: usa una imagen más simple','error'); input.value = ''; return; }
+    _empresaLogoPendiente = dataUri;
+    repintarFormEmpresaConservando();
+  }catch(err){ toast('No se pudo leer el logo: '+(err.message||err),'error'); input.value = ''; }
+}
+function quitarLogoEmpresa(){ _empresaLogoPendiente = ''; repintarFormEmpresaConservando(); }
+
+async function guardarEmpresa(){
+  if(currentPerfil?.rolGlobal !== 'admin'){ toast('Solo el administrador global administra las empresas','error'); return; }
+  const e = _empresaEditando === 'nueva' ? null : empresaPorId(_empresaEditando);
+  const fila = {
+    nombre: document.getElementById('empNombre').value.trim(),
+    sigla: document.getElementById('empSigla').value.trim().toUpperCase(),
+    razon_social: document.getElementById('empRazon').value.trim() || null,
+    ruc: document.getElementById('empRuc').value.trim() || null,
+    color: document.getElementById('empColor').value || null,
+    es_gestora: document.getElementById('empGestora').checked,
+    activa: document.getElementById('empActiva').checked
+  };
+  if(!fila.nombre){ toast('El nombre es obligatorio','error'); return; }
+  if(!/^[A-Z0-9]{2,5}$/.test(fila.sigla)){ toast('La sigla debe tener de 2 a 5 letras mayúsculas o números','error'); return; }
+  if(fila.ruc && !/^[0-9]{10,13}$/.test(fila.ruc)){ toast('El RUC debe tener 13 dígitos (o 10 si es cédula)','error'); return; }
+  if(_empresaLogoPendiente !== undefined) fila.logo_data = _empresaLogoPendiente || null;
+  if(e){
+    const gestiona = proyectos.filter(p=>p.empresa_id===e.id).length;
+    if(gestiona && e.es_gestora && (!fila.es_gestora || !fila.activa)
+       && !confirm(`${e.nombre} gestiona ${gestiona} proyecto(s). Seguirán a su nombre, pero no podrá recibir proyectos nuevos.\n\n¿Continuar?`)) return;
+    if(e.sigla && fila.sigla !== e.sigla
+       && !confirm(`Cambiar la sigla de ${e.sigla} a ${fila.sigla} solo afecta a los códigos NUEVOS: los proyectos ya codificados conservan ${e.sigla}.\n\n¿Continuar?`)) return;
+  }
+  const btn = document.getElementById('btnGuardarEmpresa');
+  btn.disabled = true;
+  const { error } = e
+    ? await sb.from('empresas').update(fila).eq('id', e.id)
+    : await sb.from('empresas').insert(fila);
+  btn.disabled = false;
+  if(error){
+    toast(/empresas_sigla_uniq/.test(error.message) ? 'Ya existe una empresa con esa sigla' : 'Error: '+error.message,'error');
+    return;
+  }
+  toast(e ? 'Empresa actualizada ✓' : 'Empresa creada ✓','success');
+  _empresaEditando = null; _empresaLogoPendiente = undefined;
+  await cargarEmpresas();
+  renderEmpresasAdmin();
+  invalidarCacheProyectos();
+}
+
 function cargarPermisos(){
   const content = document.getElementById('permisosContent');
   if(currentPerfil?.rol !== 'admin'){
@@ -15375,6 +15555,7 @@ async function cargarUsuarios(){
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="navTo('permisos')" class="btn" style="gap:6px">🔐 Matriz de permisos</button>
+      ${currentPerfil?.rolGlobal === 'admin' && multiempresaActiva() ? `<button onclick="navTo('empresas')" class="btn" style="gap:6px">🏢 Empresas</button>` : ''}
       <button onclick="abrirModalInvitar()" class="btn primary" style="gap:6px">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Invitar usuario

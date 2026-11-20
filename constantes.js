@@ -267,6 +267,10 @@ const PERMISOS = {
     { id:'reportesGlobales', nombre:'Reportes Globales', ambito:'plataforma', requiereModulo:null,
       roles:{ admin:'ver', fiscalizador:null, residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
       nota:'Sección de solo consulta. Mismo gate que Usuarios (I-11).' },
+    { id:'empresas', nombre:'Empresas', ambito:'plataforma', requiereModulo:null,
+      // Gate por rol GLOBAL (perfiles.rol = 'admin'), no por el rol efectivo del proyecto activo.
+      roles:{ admin:'gestionar', fiscalizador:null, residente:null, tecnico_sst:null, bodeguero:null, visualizador:null, cliente:null },
+      nota:'Solo el admin global: crea y edita empresas gestoras y emisoras (sigla, razón social, RUC, color, logo) y reasigna la gestora de un proyecto. RLS: emp_insert/emp_update/emp_delete y trigger proyectos_guard_gestora.' },
     // ── POR PROYECTO ──
     { id:'rubros', nombre:'Rubros (+ Órdenes de Cambio)', ambito:'proyecto', requiereModulo:null,
       roles:{ admin:'gestionar', fiscalizador:'gestionar', residente:'ver', tecnico_sst:null, bodeguero:null, visualizador:'ver', cliente:null },
