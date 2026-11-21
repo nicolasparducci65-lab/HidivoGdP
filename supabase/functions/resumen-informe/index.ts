@@ -55,6 +55,42 @@ PENDIENTES
 const fmtErr = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+// ── Admin de empresa (réplica de public.sst_rol_en_proyecto) ──
+// Devuelve true SOLO si se cumplen todas estas condiciones a la vez:
+//   · perfiles.rol === 'admin_empresa' y perfiles.empresa_id no es nulo,
+//   · el proyecto existe y proyectos.empresa_id === perfiles.empresa_id,
+//   · esa empresa tiene es_gestora === true y activa === true.
+// En ese caso el usuario actúa como 'admin' del proyecto aunque no tenga fila
+// en proyecto_miembros. Cualquier error de consulta (p. ej. base sin migrar:
+// columnas es_gestora/activa inexistentes) o fila ausente se trata como "no
+// cumple": nunca lanza y nunca concede acceso por defecto.
+async function esAdminDeEmpresaDelProyecto(
+  sb: ReturnType<typeof createClient>,
+  userId: string,
+  proyectoId: unknown
+): Promise<boolean> {
+  try {
+    if (!userId || typeof proyectoId !== 'string' || !proyectoId) return false;
+
+    const { data: perfil, error: perfilErr } = await sb.from('perfiles')
+      .select('rol, empresa_id').eq('id', userId).maybeSingle();
+    if (perfilErr || !perfil) return false;
+    if (perfil.rol !== 'admin_empresa' || !perfil.empresa_id) return false;
+
+    const { data: proyecto, error: proyErr } = await sb.from('proyectos')
+      .select('empresa_id').eq('id', proyectoId).maybeSingle();
+    if (proyErr || !proyecto || !proyecto.empresa_id) return false;
+    if (proyecto.empresa_id !== perfil.empresa_id) return false;
+
+    const { data: empresa, error: empErr } = await sb.from('empresas')
+      .select('es_gestora, activa').eq('id', perfil.empresa_id).maybeSingle();
+    if (empErr || !empresa) return false;
+    return empresa.es_gestora === true && empresa.activa === true;
+  } catch (_e) {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -85,6 +121,9 @@ Deno.serve(async (req) => {
 
     const { data: perfil } = await sb.from('perfiles').select('rol').eq('id', userId).maybeSingle();
     let autorizado = perfil?.rol === 'admin';
+    // Admin de la empresa gestora del proyecto: equivale a 'admin' del proyecto
+    // y prevalece sobre la membresía (normalmente no tiene fila en proyecto_miembros).
+    if (!autorizado) autorizado = await esAdminDeEmpresaDelProyecto(sb, userId, proyecto_id);
     if (!autorizado) {
       const { data: miembro } = await sb.from('proyecto_miembros')
         .select('rol').eq('usuario_id', userId).eq('proyecto_id', proyecto_id).maybeSingle();

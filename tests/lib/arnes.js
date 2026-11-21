@@ -74,7 +74,7 @@ function crearSb(fixture, opciones = {}){
   function builder(tabla){
     const b = {
       _tabla: tabla, _filtros: [], _orden: [], _rango: null, _single: false, _maybe: false, _select: '*',
-      select(cols = '*', opts){ b._select = cols; b._opts = opts || null; return b; },
+      select(cols = '*', opts){ b._select = cols; b._opts = opts || null; b._pidioFilas = true; return b; },
       // Columna con punto (alias.columna): filtra por la fila embebida (alias!inner(...)).
       _valor(f, c){ if(!c.includes('.')) return f[c]; const [al, col] = c.split('.'); const fk = FK_POR_ALIAS[al] || (al + '_id'); const emb = (fixture[al] || []).find(x => x.id === f[fk]); return emb ? emb[col] : undefined; },
       eq(c, v){ b._filtros.push(f => b._valor(f, c) === v); return b; },
@@ -108,6 +108,10 @@ function crearSb(fixture, opciones = {}){
           filas.forEach(f => { (fixture[tabla] = fixture[tabla] || []).push(f); if(opciones.alInsertar) opciones.alInsertar(tabla, f); });
           return { data: b._single ? filas[0] : filas, error: null };
         }
+        // opciones.denegar(tabla, 'update'|'delete') simula la RLS: la escritura se filtra, sin error y con 0 filas.
+        if((b._update || b._delete) && opciones.denegar && opciones.denegar(tabla, b._update ? 'update' : 'delete')){
+          return { data: b._pidioFilas ? [] : null, error: null, count: 0 };
+        }
         if(b._update){
           const filas = (fixture[tabla]||[]).filter(f => b._filtros.every(fn => fn(f)));
           filas.forEach(f => Object.assign(f, b._update));
@@ -115,9 +119,11 @@ function crearSb(fixture, opciones = {}){
         }
         if(b._delete){
           const quedan = (fixture[tabla]||[]).filter(f => !b._filtros.every(fn => fn(f)));
-          const borradas = (fixture[tabla]||[]).length - quedan.length;
+          const fuera = (fixture[tabla]||[]).filter(f => b._filtros.every(fn => fn(f)));
+          const borradas = fuera.length;
           fixture[tabla] = quedan;
-          return { data: null, error: null, count: borradas };
+          // Como PostgREST: delete().select() devuelve las filas borradas; sin select, data es null.
+          return { data: b._pidioFilas ? fuera : null, error: null, count: borradas };
         }
         let filas = (fixture[tabla] || []).filter(f => b._filtros.every(fn => fn(f)));
         for(const [c, asc] of b._orden.slice().reverse()){

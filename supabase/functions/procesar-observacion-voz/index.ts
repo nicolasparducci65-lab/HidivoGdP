@@ -52,6 +52,11 @@ Deno.serve(async (req) => {
 
     const { data: perfil } = await sb.from('perfiles').select('rol').eq('id', userId).maybeSingle();
     let autorizado = perfil?.rol === 'admin';
+    // Admin de empresa: equivale a 'admin' del proyecto si su empresa es la
+    // gestora (prevalece sobre la membresía, igual que sst_rol_en_proyecto).
+    if (!autorizado && perfil?.rol === 'admin_empresa') {
+      autorizado = await esAdminDeEmpresaDelProyecto(sb, userId, proyecto_id);
+    }
     if (!autorizado) {
       const { data: miembro } = await sb.from('proyecto_miembros')
         .select('rol').eq('usuario_id', userId).eq('proyecto_id', proyecto_id).maybeSingle();
@@ -144,6 +149,43 @@ Deno.serve(async (req) => {
     return json({ error: (err as Error).message || 'Error interno' }, 500);
   }
 });
+
+// Réplica en la Edge Function de la regla de public.sst_rol_en_proyecto(pid)
+// para el rol «admin de empresa»: devuelve true SOLO si se cumple todo esto:
+//   - perfiles.rol = 'admin_empresa' y perfiles.empresa_id no es nulo;
+//   - el proyecto existe y proyectos.empresa_id = perfiles.empresa_id;
+//   - esa empresa tiene es_gestora = true y activa = true.
+// Cualquier error de consulta (p. ej. base sin migrar: columnas es_gestora /
+// activa inexistentes) o fila ausente devuelve false: se deniega por esta vía
+// sin lanzar excepción y la función sigue con la membresía de siempre.
+// Nunca concede acceso a proyectos de otra empresa ni a otros roles.
+async function esAdminDeEmpresaDelProyecto(
+  sb: ReturnType<typeof createClient>,
+  userId: string,
+  proyectoId: string
+): Promise<boolean> {
+  try {
+    if (!userId || !proyectoId) return false;
+
+    const { data: perfil, error: errPerfil } = await sb.from('perfiles')
+      .select('rol,empresa_id').eq('id', userId).maybeSingle();
+    if (errPerfil || !perfil) return false;
+    if (perfil.rol !== 'admin_empresa' || !perfil.empresa_id) return false;
+
+    const { data: proyecto, error: errProyecto } = await sb.from('proyectos')
+      .select('empresa_id').eq('id', proyectoId).maybeSingle();
+    if (errProyecto || !proyecto || !proyecto.empresa_id) return false;
+    if (proyecto.empresa_id !== perfil.empresa_id) return false;
+
+    const { data: empresa, error: errEmpresa } = await sb.from('empresas')
+      .select('es_gestora,activa').eq('id', perfil.empresa_id).maybeSingle();
+    if (errEmpresa || !empresa) return false;
+
+    return empresa.es_gestora === true && empresa.activa === true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 // Quita fences de markdown y recorta a las llaves externas del objeto JSON
 function limpiarJSON(t: string): string {

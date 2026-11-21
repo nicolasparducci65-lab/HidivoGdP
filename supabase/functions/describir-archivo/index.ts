@@ -68,6 +68,11 @@ Deno.serve(async (req) => {
       const { data: miembro } = await sb.from('proyecto_miembros')
         .select('rol').eq('usuario_id', userId).eq('proyecto_id', archivo.proyecto_id).maybeSingle();
       autorizado = !!miembro;
+      // Admin de empresa: administra los proyectos de su empresa gestora aunque
+      // no tenga fila en proyecto_miembros (equivale a rol 'admin' del proyecto).
+      if (!autorizado) {
+        autorizado = await esAdminDeEmpresaDelProyecto(sb, userId, archivo.proyecto_id);
+      }
     }
     if (!autorizado) return json({ error: 'No autorizado para este proyecto' }, 403);
 
@@ -160,6 +165,43 @@ Deno.serve(async (req) => {
     return json({ error: (err as Error).message || 'Error interno' }, 500);
   }
 });
+
+// ¿El usuario es «admin de empresa» de la empresa gestora del proyecto?
+// Réplica de public.sst_rol_en_proyecto(pid) en la base: devuelve true solo si
+//   · perfiles.rol = 'admin_empresa' y perfiles.empresa_id no es nulo,
+//   · proyectos.empresa_id coincide con esa empresa, y
+//   · la fila de empresas tiene es_gestora = true y activa = true.
+// Cualquier otra situación (proyecto inexistente o sin empresa, empresa de
+// otro, empresa no gestora o inactiva, error de consulta — p. ej. base sin las
+// migraciones multiempresa, donde es_gestora/activa no existen —) devuelve
+// false: se deniega por esta vía, sin lanzar excepción.
+async function esAdminDeEmpresaDelProyecto(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  userId: string,
+  proyectoId: string | null | undefined
+): Promise<boolean> {
+  try {
+    if (!userId || !proyectoId) return false;
+
+    const { data: perfil, error: errPerfil } = await sb.from('perfiles')
+      .select('rol, empresa_id').eq('id', userId).maybeSingle();
+    if (errPerfil || !perfil) return false;
+    if (perfil.rol !== 'admin_empresa' || !perfil.empresa_id) return false;
+
+    const { data: proy, error: errProy } = await sb.from('proyectos')
+      .select('empresa_id').eq('id', proyectoId).maybeSingle();
+    if (errProy || !proy || !proy.empresa_id) return false;
+    if (proy.empresa_id !== perfil.empresa_id) return false;
+
+    const { data: empresa, error: errEmp } = await sb.from('empresas')
+      .select('id, es_gestora, activa').eq('id', perfil.empresa_id).maybeSingle();
+    if (errEmp || !empresa) return false;
+    return empresa.es_gestora === true && empresa.activa === true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 // Conversión a base64 en chunks (evita desbordar el stack con archivos grandes)
 function bytesToBase64(bytes: Uint8Array): string {

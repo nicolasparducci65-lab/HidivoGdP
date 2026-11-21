@@ -344,6 +344,11 @@ PERMISOS.secciones.forEach(s=>{
 });
 PERMISOS.secciones.find(s=>s.id==='usuarios').nota += ' Admin de empresa: solo agrega y quita miembros en los proyectos de su empresa; invitar, eliminar cuentas y conceder roles globales siguen siendo del admin global.';
 PERMISOS.secciones.find(s=>s.id==='proyectos').nota += ' Admin de empresa: crea y edita los proyectos de su empresa; eliminar proyectos y reasignar la gestora son solo del admin global.';
+// Catálogos compartidos por todas las empresas: el admin de empresa los usa pero no los modifica.
+['subcontratistas','equipos','materiales','formatosCalidad'].forEach(id=>{
+  PERMISOS.secciones.find(s=>s.id===id).nota += ' Admin de empresa: gestiona lo del proyecto, pero no crea, edita ni elimina en el catálogo compartido (plantillas, subcontratistas, ítems), que es común a todas las empresas.';
+});
+PERMISOS.secciones.find(s=>s.id==='chat').nota += ' Admin de empresa: los canales privados los crea el admin global; solo entra a los privados donde es miembro.';
 
 // ── EXPEDIENTE DE OBRA ──
 // Catálogo de secciones del expediente, en el orden del documento. fase: 1 =

@@ -3532,7 +3532,16 @@ async function actualizarRolEfectivo(proyectoId){
 // ── HELPERS DE ROL ──
 // Admin de empresa: perfiles.rol = 'admin_empresa' con empresa asignada. En los proyectos cuya
 // gestora es su empresa su rol efectivo es 'admin' (igual que en la base: sst_rol_en_proyecto).
-function esAdminDeEmpresa(){ return currentPerfil?.rolGlobal === 'admin_empresa' && !!currentPerfil?.empresa_id; }
+// Como en la base (sst_empresa_admin), la empresa debe ser una gestora activa: si se desactiva,
+// su administrador deja de serlo también en la interfaz.
+function esAdminDeEmpresa(){
+  if(currentPerfil?.rolGlobal !== 'admin_empresa' || !currentPerfil?.empresa_id) return false;
+  const e = empresaPorId(currentPerfil.empresa_id);
+  return !!e && e.es_gestora === true && e.activa === true;
+}
+// Catálogos compartidos por todas las empresas (plantillas de calidad, subcontratistas, ítems de
+// materiales y equipos): el admin de empresa los usa en sus proyectos pero no los modifica.
+function puedeEscribirCatalogos(){ return !esAdminDeEmpresa(); }
 // Quien administra (global o de empresa) pide los proyectos sin filtro: la RLS devuelve solo los suyos.
 function veProyectosPorRLS(){ return currentPerfil?.rolGlobal === 'admin' || esAdminDeEmpresa(); }
 // Gates de escritura por ROL, para no depender de la capa CSS de
@@ -4685,7 +4694,7 @@ async function guardarProyecto(){
       .select()
       .single();
     error = errIns;
-    if(!error && nuevo){
+    if(!error && nuevo && !esAdminDeEmpresa()){
       // 'fiscalizador' es el rol de proyecto más alto que existe en los mapas
       // de acceso; el antiguo 'director' no existía en ellos y dejaba al
       // creador solo con Dashboard (PERMISOS.md I-1).
@@ -6473,7 +6482,9 @@ async function mostrarNavCartera(){
 // colapsable y con acceso a los últimos 7 resúmenes.
 function renderTarjetaResumenCartera(){
   const rs = window._resumenesCartera||[];
-  const esAdmin = currentPerfil?.rol==='admin';
+  // «Generar ahora» es del admin global: la función resumen-cartera resume TODA la cartera
+  // (el resumen por empresa está en backlog) y rechaza a cualquier otro rol.
+  const esAdmin = currentPerfil?.rolGlobal==='admin';
   const btnGen = esAdmin ? `<button class="btn" id="btnGenResumenCartera" onclick="event.stopPropagation();generarResumenCarteraManual()" style="font-size:11px;padding:4px 10px">🔄 Generar ahora</button>` : '';
   if(!rs.length) return esAdmin ? `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">${btnGen}</div>` : '';
   const r = rs[0];
@@ -10162,7 +10173,7 @@ async function cargarSubcontratistas(){
   <div class="card" style="margin-top:16px">
     <div class="card-header">
       <div><div class="card-title">📋 Catálogo de subcontratistas</div><div class="card-subtitle">Empresas registradas</div></div>
-      ${puedeEditar?`<button onclick="abrirModalSubcontratista()" class="btn" style="gap:6px">
+      ${(puedeEditar && puedeEscribirCatalogos())?`<button onclick="abrirModalSubcontratista()" class="btn" style="gap:6px">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nueva empresa
       </button>`:''}
@@ -10182,7 +10193,7 @@ async function cargarSubcontratistas(){
         <div style="font-weight:600;font-size:13px">${s.nombre}</div>
         <div style="font-size:11px;color:#676879">${[s.especialidad,s.representante,s.telefono].filter(Boolean).join(' · ')}</div>
       </div>
-      ${puedeEditar?`<button onclick="abrirModalSubcontratista('${s.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
+      ${(puedeEditar && puedeEscribirCatalogos())?`<button onclick="abrirModalSubcontratista('${s.id}')" class="btn" style="padding:4px 8px;font-size:11px">✏️</button>`:''}
     </div>`).join('');
 }
 
@@ -10215,8 +10226,13 @@ async function guardarSubcontratista(){
     telefono: document.getElementById('subTelefono').value.trim()||null,
     email: document.getElementById('subEmail').value.trim()||null,
   };
-  const {error} = id ? await sb.from('subcontratistas').update(payload).eq('id',id)
-                      : await sb.from('subcontratistas').insert(payload);
+  let error;
+  if(id){
+    const r = await sb.from('subcontratistas').update(payload).eq('id',id).select('id');
+    error = r.error || (!r.data?.length ? { message: 'no tienes permiso para modificar el catálogo de subcontratistas' } : null);
+  } else {
+    ({ error } = await sb.from('subcontratistas').insert(payload));
+  }
   if(error){ toast('Error: '+error.message,'error'); return; }
   toast(id?'Subcontratista actualizado ✓':'Subcontratista creado ✓','success');
   cerrarModal('modalSubcontratista');
@@ -10371,7 +10387,7 @@ async function cargarFormatosCalidad(){
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><path d="M9 11l3 3L22 4"/></svg>
           Asignar formatos
         </button>
-        <button onclick="abrirModalPlantillaCalidad()" class="btn primary" style="gap:6px">
+        <button onclick="abrirModalPlantillaCalidad()" class="btn primary" style="gap:6px${puedeEscribirCatalogos()?'':';display:none'}">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Nueva plantilla
         </button>
@@ -10395,7 +10411,7 @@ async function cargarFormatosCalidad(){
             <td style="text-align:center">${conteoPorPlantilla[p.id]||0}</td>
             <td style="text-align:right;white-space:nowrap">
               <button onclick="event.stopPropagation();verRespuestasFormato('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px">📄 Ver respuestas</button>
-              ${puedeEditar?`<button onclick="event.stopPropagation();abrirModalPlantillaCalidad('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;margin-left:4px">✏️</button>`:''}
+              ${(puedeEditar && puedeEscribirCatalogos())?`<button onclick="event.stopPropagation();abrirModalPlantillaCalidad('${p.id}')" class="btn" style="padding:4px 8px;font-size:11px;margin-left:4px">✏️</button>`:''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -10696,7 +10712,9 @@ async function guardarPlantillaCalidad(){
 
   let error;
   if(id){
-    ({ error } = await sb.from('formatos_calidad_plantillas').update(data).eq('id',id));
+    // .select: una actualización que la base filtra por permisos no da error, devuelve 0 filas
+    const r = await sb.from('formatos_calidad_plantillas').update(data).eq('id',id).select('id');
+    error = r.error || (!r.data?.length ? { message: 'no tienes permiso para modificar plantillas del catálogo' } : null);
   } else {
     ({ error } = await sb.from('formatos_calidad_plantillas').insert(data));
   }
@@ -10713,14 +10731,19 @@ async function eliminarPlantillaCalidad(){
   const id = document.getElementById('plantillaCalidadId').value;
   if(!id) return;
   if(!confirm('¿Eliminar esta plantilla? Se eliminarán también sus asignaciones y respuestas registradas.')) return;
-  // Objetos de las fotos de todas las respuestas de la plantilla (las filas caen en cascada)
+  // Fotos de todas las respuestas de la plantilla: se anotan ANTES (las filas caen en cascada)
+  // y se borran del Storage solo DESPUÉS de confirmar que la plantilla se eliminó. Un borrado
+  // que la base filtra por permisos no da error: devuelve 0 filas.
+  let urlsFotos = [];
   const { data: respsPl } = await sb.from('formatos_calidad_respuestas').select('id').eq('plantilla_id', id);
   if(respsPl?.length){
     const { data: fotosPl } = await sb.from('formatos_calidad_fotos').select('url').in('respuesta_id', respsPl.map(r=>r.id));
-    await eliminarObjetosStorage((fotosPl||[]).map(f=>f.url));
+    urlsFotos = (fotosPl||[]).map(f=>f.url);
   }
-  const { error } = await sb.from('formatos_calidad_plantillas').delete().eq('id',id);
+  const { data: borradas, error } = await sb.from('formatos_calidad_plantillas').delete().eq('id',id).select('id');
   if(error){ toast('Error: '+error.message,'error'); return; }
+  if(!borradas?.length){ toast('No tienes permiso para eliminar plantillas del catálogo','error'); return; }
+  await eliminarObjetosStorage(urlsFotos);
   toast('Plantilla eliminada','success');
   cerrarModal('modalPlantillaCalidad');
   cargarFormatosCalidad();
@@ -11643,8 +11666,9 @@ async function guardarMaterialStock(){
     unidad=document.getElementById('matNuevoUnidadInput').value.trim();
     if(!nombre){ toast('Ingresa el nombre','error'); return; }
     // Crear en catálogo
-    const {data:nuevo}=await sb.from('catalogo_items').insert({nombre,unidad,tipo:'material'}).select().single();
-    catalogoId=nuevo?.id;
+    const {data:nuevo, error:errCat}=await sb.from('catalogo_items').insert({nombre,unidad,tipo:'material'}).select().single();
+    if(errCat || !nuevo){ toast('No se pudo crear el material en el catálogo compartido'+(esAdminDeEmpresa()?': pídelo al administrador global o elige uno existente':': '+(errCat?.message||'sin permiso')),'error'); return; }
+    catalogoId=nuevo.id;
   } else if(sel){
     const opt=document.querySelector(`#matCatalogoSelect option[value="${sel}"]`);
     nombre=opt?.dataset.nombre||'';
@@ -11999,8 +12023,9 @@ async function guardarEquipo(){
     tipo=document.getElementById('equipoTipo').value.trim();
     if(!nombre){ toast('El nombre es obligatorio','error'); return; }
     // Crear en catálogo
-    const {data:nuevo}=await sb.from('catalogo_items').insert({nombre,tipo_equipo:tipo,tipo:'equipo'}).select().single();
-    catalogoId=nuevo?.id;
+    const {data:nuevo, error:errCat}=await sb.from('catalogo_items').insert({nombre,tipo_equipo:tipo,tipo:'equipo'}).select().single();
+    if(errCat || !nuevo){ toast('No se pudo crear el equipo en el catálogo compartido'+(esAdminDeEmpresa()?': pídelo al administrador global o elige uno existente':': '+(errCat?.message||'sin permiso')),'error'); return; }
+    catalogoId=nuevo.id;
   } else if(selCat){
     const opt=document.querySelector(`#equipoCatalogoSelect option[value="${selCat}"]`);
     nombre=opt?.dataset.nombre||document.getElementById('equipoNombre').value.trim();
@@ -14717,6 +14742,9 @@ async function guardarNuevoCanal(){
   if(!nombre){ toast('Ingresa un nombre','error'); return; }
   const desc = document.getElementById('nuevoCanalDesc').value.trim();
   const privado = document.getElementById('nuevoCanalPrivado').checked;
+  // Un canal privado necesita que su creador se agregue como miembro, y eso la base solo se lo
+  // permite al administrador global (el admin de empresa no entra a privados por su cuenta).
+  if(privado && esAdminDeEmpresa()){ toast('Los canales privados los crea el administrador global. Crea el canal como público o pídeselo.','error'); return; }
   const { data: canal, error } = await sb.from('canales_chat').insert({
     proyecto_id: currentProyecto,
     nombre: nombre.toLowerCase().replace(/\s+/g,'-'),
@@ -15690,7 +15718,10 @@ async function cargarInvitacionesPendientes(){
 async function cargarMiembrosPorProyecto(){
   const el = document.getElementById('proyectoMiembros');
   if(!el) return;
-  const { data: proyects } = await sb.from('proyectos').select('id,nombre').order('nombre');
+  const { data: todosProy } = await sb.from('proyectos').select('*').order('nombre');
+  // El admin de empresa gestiona el acceso solo de los proyectos de su empresa (también puede ver,
+  // como miembro, proyectos de otra gestora: ahí no administra nada).
+  const proyects = esAdminDeEmpresa() ? (todosProy||[]).filter(p=>p.empresa_id===currentPerfil.empresa_id) : todosProy;
   if(!proyects?.length){ el.innerHTML=''; return; }
   const { data: miembros } = await sb.from('proyecto_miembros')
     .select('*,perfiles!proyecto_miembros_usuario_id_fkey(nombre,apellido,email,rol)');
@@ -16003,7 +16034,9 @@ async function guardarMiembro(){
 
 async function eliminarMiembro(miembroId, proyectoId){
   if(!confirm('¿Remover este miembro del proyecto?')) return;
-  await sb.from('proyecto_miembros').delete().eq('id', miembroId);
+  // .select: un borrado que la base filtra por permisos no da error, devuelve 0 filas
+  const { data: quitados, error } = await sb.from('proyecto_miembros').delete().eq('id', miembroId).select('id');
+  if(error || !quitados?.length){ toast(error ? 'Error: '+error.message : 'No tienes permiso para quitar miembros de este proyecto','error'); return; }
   toast('Miembro removido','success');
   cargarMiembrosPorProyecto();
 }

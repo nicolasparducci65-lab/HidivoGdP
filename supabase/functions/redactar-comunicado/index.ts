@@ -109,7 +109,13 @@ Deno.serve(async (req) => {
     const { data: perfil } = await sb.from('perfiles').select('rol').eq('id', userId).maybeSingle();
     let autorizado = perfil?.rol === 'admin';
 
-    // Si no es admin global, debe ser admin/fiscalizador en este proyecto
+    // ¿Admin de la empresa gestora de ESTE proyecto? Equivale a rol 'admin' en el
+    // proyecto y prevalece sobre la membresía (réplica de sst_rol_en_proyecto).
+    if (!autorizado) {
+      autorizado = await esAdminDeEmpresaDelProyecto(sb, userId, proyecto_id);
+    }
+
+    // Si no es admin global ni de la empresa gestora, debe ser admin/fiscalizador en este proyecto
     if (!autorizado) {
       const { data: miembro } = await sb.from('proyecto_miembros')
         .select('rol').eq('usuario_id', userId).eq('proyecto_id', proyecto_id).maybeSingle();
@@ -225,6 +231,42 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
+}
+
+// ¿Es quien llama «admin de empresa» de la empresa gestora del proyecto?
+// Réplica en la Edge Function de public.sst_rol_en_proyecto(pid): devuelve true solo si
+//   - perfiles.rol === 'admin_empresa' y perfiles.empresa_id no es nulo,
+//   - proyectos.empresa_id === perfiles.empresa_id (el proyecto es de SU empresa), y
+//   - esa empresa tiene es_gestora === true y activa === true.
+// En ese caso su rol efectivo en el proyecto es 'admin', tenga o no fila en proyecto_miembros.
+// Cualquier otra situación devuelve false SIN lanzar excepción: perfil o proyecto inexistente,
+// proyecto sin empresa_id, empresa de otra compañía, empresa no gestora o inactiva, o error de
+// consulta (base sin migrar: aún no existen empresas.es_gestora / empresas.activa). Nunca
+// concede acceso por omisión; quien no pase por aquí sigue el camino normal de membresía.
+// deno-lint-ignore no-explicit-any
+async function esAdminDeEmpresaDelProyecto(sb: any, userId: string, proyectoId: string): Promise<boolean> {
+  try {
+    if (!userId || !proyectoId) return false;
+
+    const { data: perfil, error: errPerfil } = await sb.from('perfiles')
+      .select('rol,empresa_id').eq('id', userId).maybeSingle();
+    if (errPerfil || !perfil) return false;
+    if (perfil.rol !== 'admin_empresa' || !perfil.empresa_id) return false;
+
+    const { data: proy, error: errProy } = await sb.from('proyectos')
+      .select('empresa_id').eq('id', proyectoId).maybeSingle();
+    if (errProy || !proy || !proy.empresa_id) return false;
+    if (proy.empresa_id !== perfil.empresa_id) return false;
+
+    const { data: emp, error: errEmp } = await sb.from('empresas')
+      .select('id,es_gestora,activa').eq('id', perfil.empresa_id).maybeSingle();
+    if (errEmp || !emp) return false;
+
+    return emp.es_gestora === true && emp.activa === true;
+  } catch (_e) {
+    // Ante cualquier fallo inesperado se deniega por esta vía (no se amplían permisos).
+    return false;
+  }
 }
 
 // deno-lint-ignore no-explicit-any

@@ -110,6 +110,8 @@ Deno.serve(async (req) => {
 
     const { data: perfil } = await sb.from('perfiles').select('rol').eq('id', userId).maybeSingle();
     let autorizado = perfil?.rol === 'admin';
+    // Admin de la empresa gestora del proyecto: equivale a admin del proyecto
+    if (!autorizado) autorizado = await esAdminDeEmpresaDelProyecto(sb, userId, proyecto_id);
     if (!autorizado) {
       const { data: miembro } = await sb.from('proyecto_miembros')
         .select('rol').eq('usuario_id', userId).eq('proyecto_id', proyecto_id).maybeSingle();
@@ -204,6 +206,39 @@ Deno.serve(async (req) => {
     return fmtErr({ error: (err as Error).message || 'Error interno' }, 500);
   }
 });
+
+// ── Rol «admin de empresa» (réplica de public.sst_rol_en_proyecto) ──
+// Devuelve true solo si se cumple TODO lo siguiente:
+//   · perfiles.rol del usuario es 'admin_empresa' y tiene empresa_id;
+//   · el proyecto existe y su empresa_id es exactamente el del perfil;
+//   · esa empresa es gestora y está activa (es_gestora = true, activa = true).
+// Ante cualquier error de consulta (p. ej. base sin migrar, columnas
+// inexistentes) o fila ausente devuelve false: se deniega por esta vía sin
+// lanzar excepción y la función sigue con la membresía en proyecto_miembros.
+// deno-lint-ignore no-explicit-any
+async function esAdminDeEmpresaDelProyecto(sb: any, userId: string, proyectoId: string): Promise<boolean> {
+  try {
+    if (!userId || !proyectoId) return false;
+
+    const { data: perfil, error: errPerfil } = await sb.from('perfiles')
+      .select('rol, empresa_id').eq('id', userId).maybeSingle();
+    if (errPerfil || !perfil) return false;
+    if (perfil.rol !== 'admin_empresa' || !perfil.empresa_id) return false;
+
+    const { data: proyecto, error: errProy } = await sb.from('proyectos')
+      .select('empresa_id').eq('id', proyectoId).maybeSingle();
+    if (errProy || !proyecto || !proyecto.empresa_id) return false;
+    if (proyecto.empresa_id !== perfil.empresa_id) return false;
+
+    const { data: empresa, error: errEmp } = await sb.from('empresas')
+      .select('es_gestora, activa').eq('id', perfil.empresa_id).maybeSingle();
+    if (errEmp || !empresa) return false;
+
+    return empresa.es_gestora === true && empresa.activa === true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 // Quita fences de markdown y texto alrededor del objeto JSON
 function limpiarJSON(t: string): string {
