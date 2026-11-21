@@ -1,0 +1,1373 @@
+{
+ "proyectos": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": "aaaaaaaa-0000-4000-8000-000000000003",
+   "codigo": "ZZZ-PUE-2026-015",
+   "tipo": "puentes",
+   "nombre": "ZZZ Puente sin linea base activa",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 100000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000011",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2025-005",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado sin liquidar",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 60000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2026-001",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Edificio de ejemplo",
+   "descripcion": "Construcción de un edificio de dos plantas.\nIncluye obras exteriores | y cerramiento.",
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 410000,
+   "fecha_inicio": "2026-08-03",
+   "fecha_fin_planificada": "2026-12-15",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": "ZZZ Ciudad de Ejemplo",
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000020",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-DIS-2026-013",
+   "tipo": "disenos",
+   "nombre": "ZZZ Cancelado con pendientes",
+   "descripcion": "ZZZ Diseños cancelados. Contacto: zzz.contratista@zzz-ejemplo.test (ref. cccccccc-1111-4222-8333-444444444444).",
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "cancelado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000012",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-006",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Liquidado",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 30000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "liquidado",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000017",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-010",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Solo observacion en proceso",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000009",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000002",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-003",
+   "tipo": "construccion",
+   "nombre": "ZZZ Obra pausada",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "pausado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000023",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-MUR-2026-016",
+   "tipo": "muros_pantalla",
+   "nombre": "ZZZ Muro con recepcion provisional",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "recepcion_provisional",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-008",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Solo garantia vigente",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000013",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": null,
+   "tipo": null,
+   "nombre": "ZZZ Sin codigo",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "planificacion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": "aaaaaaaa-0000-4000-8000-000000000003",
+   "codigo": "ZZZ-PIL-2026-002",
+   "tipo": "pilotes",
+   "nombre": "ZZZ Pilotes de ejemplo",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 50000,
+   "fecha_inicio": "2026-09-01",
+   "fecha_fin_planificada": "2026-11-30",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": "ZZZ Muelle de Ejemplo",
+   "latitud": -2.19,
+   "longitud": -79.88
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-009",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Solo planilla aprobada",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000010",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2025-004",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado sin acta",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 80000,
+   "fecha_inicio": "2025-03-01",
+   "fecha_fin_planificada": "2025-12-20",
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-007",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado sin pendientes",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 20000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000019",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2025-012",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Cancelado sin pendientes",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "cancelado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000021",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2023-014",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Cerrado sin acta ni pendientes",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000018",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-GER-2026-011",
+   "tipo": "gerencia",
+   "nombre": "ZZZ En ejecucion pero liquidado",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 15000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "liquidado",
+   "ubicacion": null,
+   "latitud": null,
+   "longitud": null
+  }
+ ],
+ "empresas": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "nombre": "ZZZ GESTORA",
+   "sigla": "ZZG"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000002",
+   "nombre": "ZZZ SEGUNDA",
+   "sigla": "ZZH"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000003",
+   "nombre": "ZZZ EMISOR",
+   "sigla": "ZZE"
+  }
+ ],
+ "rubros": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000024",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "codigo": "1",
+   "descripcion": "ZZZ Tablero",
+   "monto_contrato": 100000,
+   "total_produccion": 50000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "1.01",
+   "descripcion": "ZZZ Estructura",
+   "monto_contrato": 100000,
+   "total_produccion": 100000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "1.02",
+   "descripcion": "ZZZ Mampostería",
+   "monto_contrato": 200000,
+   "total_produccion": 150000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "3.01",
+   "descripcion": "ZZZ Instalaciones eléctricas",
+   "monto_contrato": 100000,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "OC-01",
+   "descripcion": "ZZZ Refuerzo adicional",
+   "monto_contrato": 28600,
+   "total_produccion": 14300,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.01",
+   "descripcion": "ZZZ Limpieza final",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.02",
+   "descripcion": "ZZZ Jardinería",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.03",
+   "descripcion": "ZZZ Pintura exterior",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000036",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.04",
+   "descripcion": "ZZZ Desencofrado",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000037",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.05",
+   "descripcion": "ZZZ Replanteo",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000038",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "codigo": "4.06",
+   "descripcion": "ZZZ Solo en línea base antigua",
+   "monto_contrato": 0,
+   "total_produccion": 0,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000053",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "codigo": "P-01",
+   "descripcion": "ZZZ Pilotes hincados",
+   "monto_contrato": 50000,
+   "total_produccion": 10000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000056",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000010",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 80000,
+   "total_produccion": 80000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000057",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000011",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 60000,
+   "total_produccion": 60000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000058",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 20000,
+   "total_produccion": 20000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000059",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000012",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 30000,
+   "total_produccion": 30000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000060",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 10000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000061",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 10000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000064",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 10000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000065",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000018",
+   "codigo": "1",
+   "descripcion": "ZZZ Gerencia",
+   "monto_contrato": 15000,
+   "total_produccion": 5000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000066",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000021",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 5000,
+   "total_produccion": 5000,
+   "estado": "terminado"
+  }
+ ],
+ "cronograma_rubros": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000024",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "fecha_inicio": "2026-11-01",
+   "fecha_fin": "2026-12-11",
+   "created_at": "2026-10-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000024",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "fecha_inicio": "2026-09-01",
+   "fecha_fin": "2026-10-31",
+   "created_at": "2026-08-01T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000041",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-08-03",
+   "fecha_fin": "2026-09-30",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000042",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin": "2026-11-30",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000043",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-11-24",
+   "fecha_fin": "2026-12-15",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000044",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-11-15",
+   "fecha_fin": "2026-11-28",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000045",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-12-06",
+   "fecha_fin": "2026-12-20",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000046",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-12-05",
+   "fecha_fin": "2026-12-18",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000047",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000036",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-11-10",
+   "fecha_fin": "2026-11-21",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000048",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000037",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "fecha_inicio": "2026-11-01",
+   "fecha_fin": "2026-11-20",
+   "created_at": "2026-09-25T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000049",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "fecha_inicio": "2026-08-03",
+   "fecha_fin": "2026-08-20",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000050",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "fecha_inicio": "2026-08-21",
+   "fecha_fin": "2026-09-30",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000051",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin": "2026-10-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000052",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000038",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "fecha_inicio": "2026-11-20",
+   "fecha_fin": "2026-11-30",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000055",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000053",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000054",
+   "fecha_inicio": "2026-09-01",
+   "fecha_fin": "2026-11-30",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000063",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000061",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000062",
+   "fecha_inicio": "2024-01-01",
+   "fecha_fin": "2024-06-30",
+   "created_at": "2023-12-15T15:00:00+00:00"
+  }
+ ],
+ "lineas_base": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "numero": 1,
+   "activa": false
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
+   "numero": 2,
+   "activa": false
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 2,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 1,
+   "activa": false
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000054",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000062",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "numero": 1,
+   "activa": true
+  }
+ ],
+ "planillas_pago": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 3,
+   "fecha_inicio": "2026-09-01",
+   "fecha_fin": "2026-09-30",
+   "estado": "aprobada",
+   "total_monto": 41000,
+   "total_liquido": 39100,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "2026-10-05T15:00:00+00:00",
+   "updated_at": "2026-10-05T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 4,
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin": "2026-10-31",
+   "estado": "en_revision",
+   "total_monto": 50000,
+   "total_liquido": 48250,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "2026-11-10T15:00:00+00:00",
+   "updated_at": "2026-11-10T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000069",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 5,
+   "fecha_inicio": "2026-11-01",
+   "fecha_fin": "2026-11-30",
+   "estado": "borrador",
+   "total_monto": 1000,
+   "total_liquido": null,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "2026-11-20T15:00:00+00:00",
+   "updated_at": "2026-11-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000070",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "numero": 1,
+   "fecha_inicio": "2026-09-01",
+   "fecha_fin": "2026-09-30",
+   "estado": "enviada",
+   "total_monto": 9000,
+   "total_liquido": null,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "fecha-corrupta",
+   "updated_at": "fecha-corrupta"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000071",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "numero": 1,
+   "fecha_inicio": "2024-01-01",
+   "fecha_fin": "2024-01-31",
+   "estado": "pagada",
+   "total_monto": 20000,
+   "total_liquido": 19000,
+   "fecha_aprobacion": null,
+   "fecha_pago": "2024-03-01",
+   "created_at": "2024-02-05T15:00:00+00:00",
+   "updated_at": "2024-02-05T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "numero": 7,
+   "fecha_inicio": "2024-06-01",
+   "fecha_fin": "2024-06-30",
+   "estado": "aprobada",
+   "total_monto": 10000,
+   "total_liquido": 9500,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "2026-09-01T15:00:00+00:00",
+   "updated_at": "2026-09-01T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000073",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "numero": 1,
+   "fecha_inicio": "2024-01-01",
+   "fecha_fin": "2024-01-31",
+   "estado": "pagada",
+   "total_monto": 10000,
+   "total_liquido": 9500,
+   "fecha_aprobacion": null,
+   "fecha_pago": "2024-03-01",
+   "created_at": "2024-02-05T15:00:00+00:00",
+   "updated_at": "2024-02-05T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000074",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000019",
+   "numero": 1,
+   "fecha_inicio": "2025-01-01",
+   "fecha_fin": "2025-01-31",
+   "estado": "rechazada",
+   "total_monto": 500,
+   "total_liquido": null,
+   "fecha_aprobacion": null,
+   "fecha_pago": null,
+   "created_at": "2025-02-05T15:00:00+00:00",
+   "updated_at": "2025-02-05T15:00:00+00:00"
+  }
+ ],
+ "planilla_historial": [
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "accion": "Planilla enviada a revisión",
+   "created_at": "2026-10-05T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "accion": "Planilla en revisión",
+   "created_at": "2026-10-10T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "accion": "Planilla aprobada por fiscalizador",
+   "created_at": "2026-11-01T02:30:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "accion": "Planilla guardada como borrador",
+   "created_at": "2026-11-10T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "accion": "Planilla enviada a revisión",
+   "created_at": "2026-11-12T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "accion": "Planilla en revisión",
+   "created_at": "2026-11-14T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000071",
+   "accion": "Planilla aprobada por fiscalizador",
+   "created_at": "2024-02-20T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "accion": "Planilla enviada a revisión",
+   "created_at": "2026-09-01T15:00:00+00:00"
+  },
+  {
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "accion": "Planilla aprobada por fiscalizador",
+   "created_at": "2026-09-15T15:00:00+00:00"
+  }
+ ],
+ "garantias": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "tipo": "fiel_cumplimiento",
+   "vigencia_hasta": "2026-11-25",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "tipo": "buen_uso_anticipo",
+   "vigencia_hasta": "2027-02-01",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "tipo": "todo_riesgo",
+   "vigencia_hasta": null,
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "tipo": "fiel_cumplimiento",
+   "vigencia_hasta": "2026-11-10",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000009",
+   "tipo": "otra",
+   "vigencia_hasta": "2026-12-07",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000010",
+   "tipo": "buena_calidad_materiales",
+   "vigencia_hasta": "2026-12-06",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "tipo": "fiel_cumplimiento",
+   "vigencia_hasta": "2027-06-30",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "tipo": "fiel_cumplimiento",
+   "vigencia_hasta": "2024-06-30",
+   "estado": "devuelta"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000019",
+   "tipo": "fiel_cumplimiento",
+   "vigencia_hasta": "2025-06-30",
+   "estado": "devuelta"
+  }
+ ],
+ "ordenes_cambio": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 1,
+   "titulo": "ZZZ Cambio de cubierta",
+   "estado": "aprobada",
+   "monto_total": 10000,
+   "created_at": "2026-09-01T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 2,
+   "titulo": "ZZZ Rampa de acceso",
+   "estado": "aprobada",
+   "monto_total": 8600,
+   "created_at": "2026-09-20T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 3,
+   "titulo": "ZZZ Refuerzo de losa",
+   "estado": "solicitada",
+   "monto_total": 12000,
+   "created_at": "2026-11-15T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 4,
+   "titulo": "ZZZ Descartada",
+   "estado": "rechazada",
+   "monto_total": 500,
+   "created_at": "2026-08-15T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "numero": 1,
+   "titulo": "ZZZ Ajuste final",
+   "estado": "aprobada",
+   "monto_total": 0,
+   "created_at": "2024-01-20T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000019",
+   "numero": 1,
+   "titulo": "ZZZ Borrador olvidado",
+   "estado": "borrador",
+   "monto_total": 100,
+   "created_at": "2025-01-20T15:00:00+00:00"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000020",
+   "numero": 2,
+   "titulo": "ZZZ Ajuste ref. bbbbbbbb-1111-4222-8333-444444444444",
+   "estado": "solicitada",
+   "monto_total": 3000,
+   "created_at": "2026-11-01T15:00:00+00:00"
+  }
+ ],
+ "libro_obra": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "ultimo_registro": "2026-11-19",
+   "pendientes_aprobacion": 2
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "ultimo_registro": "2026-11-21",
+   "pendientes_aprobacion": 0
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000010",
+   "ultimo_registro": "2025-12-20",
+   "pendientes_aprobacion": 0
+  }
+ ],
+ "observaciones": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 12,
+   "titulo": "ZZZ Curado deficiente",
+   "estado": "abierta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000004",
+   "created_at": "2026-10-18T15:00:00+00:00",
+   "con_antecedente": true
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 15,
+   "titulo": "ZZZ Acero expuesto",
+   "estado": "abierta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000004",
+   "created_at": "2026-11-11T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 16,
+   "titulo": "ZZZ Andamio sin anclaje",
+   "estado": "abierta",
+   "creado_por": null,
+   "created_at": "2026-11-18T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 14,
+   "titulo": "ZZZ Encofrado desalineado",
+   "estado": "en_proceso",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000005",
+   "created_at": "2026-11-01T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "numero": 9,
+   "titulo": "ZZZ Ya resuelta",
+   "estado": "resuelta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000004",
+   "created_at": "2026-08-20T15:00:00+00:00",
+   "con_antecedente": true
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000009",
+   "numero": 2,
+   "titulo": "ZZZ Drenaje obstruido",
+   "estado": "en_proceso",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000006",
+   "created_at": "2026-11-05T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000009",
+   "numero": 3,
+   "titulo": "ZZZ Señalética faltante",
+   "estado": "abierta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000006",
+   "created_at": "2026-11-06T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "numero": 1,
+   "titulo": "ZZZ Cerrada",
+   "estado": "resuelta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000004",
+   "created_at": "2024-01-10T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
+   "numero": 4,
+   "titulo": "ZZZ Sello de junta",
+   "estado": "en_proceso",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000006",
+   "created_at": "2026-11-16T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000019",
+   "numero": 1,
+   "titulo": "ZZZ Cerrada antes de cancelar",
+   "estado": "resuelta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000004",
+   "created_at": "2025-02-10T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000020",
+   "numero": 7,
+   "titulo": "ZZZ Avisar a zzz.residente@zzz-ejemplo.test",
+   "estado": "abierta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000005",
+   "created_at": "2026-10-12T15:00:00+00:00",
+   "con_antecedente": false
+  }
+ ],
+ "ensayos": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000075",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": false,
+   "resuelto": false,
+   "reensayo_de": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000076",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": false,
+   "resuelto": false,
+   "reensayo_de": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000078",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": false,
+   "resuelto": false,
+   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000076"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000077",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": false,
+   "resuelto": true,
+   "reensayo_de": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000079",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": true,
+   "resuelto": false,
+   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000077"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000080",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "cumple": true,
+   "resuelto": false,
+   "reensayo_de": null
+  }
+ ],
+ "sst_incidentes": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "estado": "cerrado"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "estado": "investigando"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "estado": "abierto"
+  }
+ ],
+ "solicitudes": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "estado": "pendiente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "estado": "en_revision"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "estado": "aprobada"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "estado": "correccion"
+  }
+ ],
+ "archivos": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "modulo": "general",
+   "cantidad": 4
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "modulo": "contratos",
+   "cantidad": 1
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "modulo": "libro_obra",
+   "cantidad": 12
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "modulo": "curva_s",
+   "cantidad": 2
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "modulo": "curvaS",
+   "cantidad": 1
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "modulo": "general",
+   "cantidad": 3
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "modulo": null,
+   "cantidad": 1
+  }
+ ],
+ "proyecto_miembros": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000004",
+   "perfil_id": null,
+   "rol": "fiscalizador"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000005",
+   "perfil_id": null,
+   "rol": "residente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
+   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000005",
+   "perfil_id": null,
+   "rol": "residente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "usuario_id": null,
+   "perfil_id": "aaaaaaaa-0000-4000-8000-000000000006",
+   "rol": "fiscalizador"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
+   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000081",
+   "perfil_id": null,
+   "rol": "residente"
+  }
+ ],
+ "perfiles": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000004",
+   "nombre": "Ana",
+   "apellido": "Zzzperez"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000005",
+   "nombre": "Luis",
+   "apellido": "Zzzmora"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000006",
+   "nombre": "Eva",
+   "apellido": "Zzzleon"
+  }
+ ],
+ "actas_recepcion": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000011",
+   "tipo": "provisional",
+   "fecha": "2026-04-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000011",
+   "tipo": "definitiva",
+   "fecha": "2026-11-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000012",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000012",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  }
+ ],
+ "liquidaciones": [
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000012"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000018"
+  }
+ ]
+}

@@ -1,9 +1,10 @@
-const CACHE_NAME = 'hidivo-v63';
+const CACHE_NAME = 'hidivo-v64';
 const ASSETS = [
   '/HidivoGdP/',
   '/HidivoGdP/index.html',
   '/HidivoGdP/styles.css',
   '/HidivoGdP/constantes.js',
+  '/HidivoGdP/cartera-nucleo.js',
   '/HidivoGdP/expediente.js',
   '/HidivoGdP/perfil-pilote.js',
   '/HidivoGdP/vendor/logo-hidivo.png',

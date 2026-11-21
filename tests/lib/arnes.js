@@ -67,6 +67,7 @@ function extraerConst(src, nombre){
 // .range().single().maybeSingle(), insert(fila), update(fila) y delete() con filtros, y
 // `await` / Promise.all sobre el builder.
 // Las filas salen del fixture {tabla: [filas]}. Devuelve {data, error:null}.
+// opciones.maxFilas (opcional): tope de filas por lectura, como el max-rows de PostgREST.
 const FK_POR_ALIAS = { perfil: 'generado_por', autor: 'autor_id', rubro: 'rubro_id', rubros: 'rubro_id', subcontratistas: 'subcontratista_id', plantilla: 'plantilla_id', libro_obra: 'registro_id', observaciones: 'observacion_id', planillas_pago: 'planilla_id' };
 
 function crearSb(fixture, opciones = {}){
@@ -135,6 +136,9 @@ function crearSb(fixture, opciones = {}){
           filas = filas.slice().sort((x, y) => (x[c] > y[c] ? 1 : x[c] < y[c] ? -1 : 0) * (asc ? 1 : -1));
         }
         if(b._rango) filas = filas.slice(b._rango[0], b._rango[1] + 1);
+        // opciones.maxFilas simula el max-rows de PostgREST: ninguna lectura devuelve más filas que ese tope,
+        // se pida o no un rango, y sin avisar. Por defecto no hay tope.
+        if(opciones.maxFilas > 0) filas = filas.slice(0, opciones.maxFilas);
         // Incrustaciones `alias:tabla(cols)`, `tabla!inner(cols)` y `tabla(cols)` (alias = tabla)
         const sel = String(b._select);
         const sinAliasNiInner = sel.replace(/(\w+):(\w+)\([^)]*\)/g, '').replace(/(\w+)!inner\([^)]*\)/g, '');

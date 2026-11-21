@@ -2543,6 +2543,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="constantes.js"></script>
+<script src="cartera-nucleo.js"></script>
 <script src="expediente.js"></script>
 <script src="perfil-pilote.js"></script>
 <script>
@@ -3365,7 +3366,23 @@ async function cargarNotificacionesGlobales(){
       }
     }catch(e){ /* la campana sigue funcionando sin el resumen */ }
 
-    notiDatos = { porProyecto, dmsPendientes, resumenHoy };
+    // Aviso de la exportación diaria del estado (solo admin global): la base lo deja en
+    // notificaciones con tipo 'exportacion_estado' cuando la corrida falló o no quedó registrada.
+    // Se muestra solo el de HOY (Ecuador); una corrida buena posterior lo borra en la base.
+    let avisoExport = null;
+    if(esAdminGlobal){
+      try{
+        const { data: ae } = await sb.from('notificaciones')
+          .select('titulo,mensaje,created_at').eq('perfil_id', currentUser.id)
+          .eq('tipo','exportacion_estado').order('created_at',{ascending:false}).limit(1);
+        if(ae?.length){
+          const fechaEc = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil'}).format(new Date(ae[0].created_at));
+          if(fechaEc === hoyEcuador()) avisoExport = ae[0];
+        }
+      }catch(e){ /* la campana sigue funcionando sin el aviso */ }
+    }
+
+    notiDatos = { porProyecto, dmsPendientes, resumenHoy, avisoExport };
     pintarBadgeNotificaciones();
     const panel = document.getElementById('panelNotificaciones');
     if(panel && panel.style.display==='block') renderPanelNotificaciones();
@@ -3375,6 +3392,7 @@ async function cargarNotificacionesGlobales(){
 function totalNotificaciones(){
   if(!notiDatos) return 0;
   let t = notiDatos.dmsPendientes.reduce((s,d)=>s+d.n, 0);
+  if(notiDatos.avisoExport) t += 1;
   Object.values(notiDatos.porProyecto).forEach(p=>{
     t += p.obs + p.sol + (p.gar||0) + (p.libro||0) + (p.libroObs||0) + p.canales.reduce((s,c)=>s+c.n, 0);
   });
@@ -3415,11 +3433,18 @@ function renderPanelNotificaciones(){
     .filter(pid=>{ const p = porProyecto[pid]; return p.canales.length||p.obs||p.sol||p.gar||p.libro||p.libroObs; })
     .sort((a,b)=>nombreProyectoNoti(a).localeCompare(nombreProyectoNoti(b)));
 
-  if(!pids.length && !dmsPendientes.length && !notiDatos.resumenHoy){
+  if(!pids.length && !dmsPendientes.length && !notiDatos.resumenHoy && !notiDatos.avisoExport){
     panel.innerHTML = '<div style="padding:18px;font-size:13px;color:#676879;text-align:center">✓ No tienes pendientes</div>';
     return;
   }
   let html = '';
+  if(notiDatos.avisoExport){
+    html += `<div class="noti-proyecto">Exportación diaria del estado</div>
+      <div class="noti-item" style="cursor:default;align-items:flex-start">
+        <div style="flex:1;min-width:0;white-space:normal">⚠️ ${escAttr(notiDatos.avisoExport.titulo||'La exportación diaria falló')}
+          <div style="font-size:11px;color:#676879;margin-top:2px;overflow-wrap:anywhere">${escAttr(notiDatos.avisoExport.mensaje||'')}</div>
+        </div></div>`;
+  }
   if(notiDatos.resumenHoy){
     html += `<div class="noti-proyecto">Resumen del día</div>
       <div class="noti-item" onclick="irAResumenCartera()">🌅 ${escAttr(notiDatos.resumenHoy.titulo||'Resumen de cartera')}</div>`;
@@ -6609,39 +6634,65 @@ async function cargarCartera(){
   const activos = todos.filter(p=>p.estado_cierre !== 'liquidado');
   const liquidados = todos.filter(p=>p.estado_cierre === 'liquidado');
   const ids = todos.map(p=>p.id);
-  const hoyStr = hoyEcuador();
-  const hoyMs = new Date(hoyStr+'T00:00:00').getTime();
+  const hoyStr = nucleoHoyEcuador();
 
-  // Consultas en lote para toda la cartera
-  const [rubR, cronR, planR, antR, garR, libR, obsR, solR] = await Promise.all([
-    sb.from('rubros').select('id,proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
-    sb.from('cronograma_rubros').select('proyecto_id,rubro_id,fecha_inicio,fecha_fin,linea_base_id').in('proyecto_id', ids),
-    sb.from('planillas_pago').select('proyecto_id,total_monto,total_liquido,amortizacion_anticipo,estado').in('proyecto_id', ids),
-    sb.from('contrato_anticipo').select('proyecto_id,monto').in('proyecto_id', ids),
-    sb.from('garantias').select('proyecto_id,vigencia_hasta').eq('estado','vigente').in('proyecto_id', ids),
-    sb.from('libro_obra').select('proyecto_id').eq('estado_aprobacion','pendiente').in('proyecto_id', ids),
-    sb.from('observaciones').select('proyecto_id').eq('estado','abierta').in('proyecto_id', ids),
-    sb.from('solicitudes').select('proyecto_id').in('estado',['pendiente','en_revision']).in('proyecto_id', ids)
-  ]);
-
-  // Filtrar cronograma a las líneas base activas
-  const { data: lbsActivas } = await sb.from('lineas_base').select('id').eq('activa',true).in('proyecto_id', ids);
-  const setLBs = new Set((lbsActivas||[]).map(l=>l.id));
-  if(cronR.data) cronR.data = cronR.data.filter(c=>!c.linea_base_id || setLBs.has(c.linea_base_id));
-
+  // Consultas en lote para toda la cartera. Todas paginadas (PostgREST corta en 1.000 filas sin
+  // avisar) y con orden estable. Si alguna lectura falla NO se pintan indicadores: con datos a
+  // medias el SPI y el color saldrían distintos de los reales (y de los de la exportación diaria).
+  const leerDeCartera = (tabla, cols, filtrar) => traerPaginado(()=>{
+    const q = sb.from(tabla).select(cols);
+    return (filtrar ? filtrar(q) : q).in('proyecto_id', ids).order('id');
+  }, 1000, true);
+  const agrupar = filas => { const m = {}; filas.forEach(f=>{ (m[f.proyecto_id] = m[f.proyecto_id] || []).push(f); }); return m; };
+  let rubros, lineasBase, planillas, anticipos, garantias, libro, observaciones, solicitudes, cronograma;
   const porP = {};
-  ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
-  const montoRubro = {};
-  (rubR.data||[]).forEach(r=>{ const p=porP[r.proyecto_id]; if(p){ p.vigente+=(r.monto_contrato||0); p.ejecutado+=(r.total_produccion||0); montoRubro[r.id]=(r.monto_contrato||0); } });
-  (cronR.data||[]).forEach(c=>{
-    const p = porP[c.proyecto_id]; if(!p||!c.fecha_inicio||!c.fecha_fin) return;
-    const ini = new Date(c.fecha_inicio+'T00:00:00').getTime(), fin = new Date(c.fecha_fin+'T00:00:00').getTime();
-    const frac = fin<=ini ? (hoyMs>=fin?1:0) : Math.max(0, Math.min(1, (hoyMs-ini)/(fin-ini)));
-    // Ponderación por costo del rubro vs. monto vigente del proyecto
-    const peso = p.vigente>0 ? ((montoRubro[c.rubro_id]||0)/p.vigente*100) : 0;
-    p.plan += peso * frac;
-  });
-  (planR.data||[]).forEach(pl=>{
+  try{
+    [rubros, lineasBase, planillas, anticipos, garantias, libro, observaciones, solicitudes] = await Promise.all([
+      leerDeCartera('rubros', 'id,proyecto_id,monto_contrato,total_produccion,estado'),
+      leerDeCartera('lineas_base', 'id,proyecto_id,numero,activa'),
+      leerDeCartera('planillas_pago', 'proyecto_id,total_monto,total_liquido,amortizacion_anticipo,estado'),
+      leerDeCartera('contrato_anticipo', 'proyecto_id,monto'),
+      leerDeCartera('garantias', 'proyecto_id,vigencia_hasta,estado', q=>q.eq('estado','vigente')),
+      leerDeCartera('libro_obra', 'proyecto_id', q=>q.eq('estado_aprobacion','pendiente')),
+      leerDeCartera('observaciones', 'proyecto_id', q=>q.eq('estado','abierta')),
+      leerDeCartera('solicitudes', 'proyecto_id', q=>q.in('estado',['pendiente','en_revision']))
+    ]);
+    // Cronograma: se pide por RUBRO (en lotes de 100) y se agrupa por el proyecto DEL RUBRO, igual
+    // que la exportación diaria: una fila con proyecto_id vacío o de otro proyecto cuenta si su
+    // rubro es del proyecto. El orden (creación, id) fija cuál es «la última» fila de cada rubro.
+    const lotesRubro = [];
+    for(let i=0; i<rubros.length; i+=100) lotesRubro.push(rubros.slice(i, i+100).map(r=>r.id));
+    cronograma = (await Promise.all(lotesRubro.map(lote=> traerPaginado(()=> sb.from('cronograma_rubros')
+      .select('id,rubro_id,fecha_inicio,fecha_fin,linea_base_id,created_at').in('rubro_id', lote).order('created_at').order('id'), 1000, true)))).flat();
+
+    // Línea base activa de CADA proyecto, elegida por el núcleo (si hay dos activas, la de mayor
+    // número): el núcleo cuenta solo las filas de cronograma de la línea base activa del propio proyecto.
+    const lbPorProyecto = {};
+    Object.entries(agrupar(lineasBase)).forEach(([pid, lbs])=>{ const lb = nucleoLineaBaseActiva(lbs); lbPorProyecto[pid] = lb ? lb.id : null; });
+    const proyectoDeRubro = {};
+    rubros.forEach(r=>{ proyectoDeRubro[r.id] = r.proyecto_id; });
+    const cronPorP = {};
+    cronograma.forEach(c=>{ const pid = proyectoDeRubro[c.rubro_id]; if(pid) (cronPorP[pid] = cronPorP[pid] || []).push(c); });
+    const rubrosPorP = agrupar(rubros), garPorP = agrupar(garantias);
+
+    ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
+    // Avance, plan, SPI y atraso: una sola regla para toda la plataforma (cartera-nucleo.js).
+    // El núcleo lanza ante una fecha mal formada: también eso se muestra como error.
+    ids.forEach(id=>{
+      const p = porP[id];
+      p.evm = nucleoEvmProyecto({ rubros: rubrosPorP[id]||[], cronograma: cronPorP[id]||[], lineaBaseActivaId: lbPorProyecto[id]||null, hoy: hoyStr });
+      p.vigente = p.evm.vigente; p.ejecutado = p.evm.ejecutado; p.plan = p.evm.planPct;
+      const g = nucleoGarantias(garPorP[id]||[], hoyStr);
+      p.gar = g; p.garVencidas = g.vencidas; p.garPorVencer = g.porVencer;
+    });
+  }catch(e){
+    console.error('cargarCartera', e);
+    cont.innerHTML = barraFiltroHtml + `<div class="empty-state" id="carteraError"><div class="empty-icon">⚠️</div><div class="empty-title">No se pudo leer la cartera</div>
+      <div class="empty-sub">No se muestran indicadores: con datos incompletos el SPI y el semáforo saldrían equivocados.<br>${escAttr((e && e.message) || String(e))}</div>
+      <button class="btn primary" style="margin-top:12px" onclick="cargarCartera()">Reintentar</button></div>`;
+    return;
+  }
+  planillas.forEach(pl=>{
     const p = porP[pl.proyecto_id]; if(!p) return;
     if(PLANILLAS_COMPROMETIDAS.includes(pl.estado)){
       p.planillado += (pl.total_monto||0);
@@ -6649,16 +6700,10 @@ async function cargarCartera(){
       if(pl.estado==='aprobada') p.liquidoPend += (pl.total_liquido ?? pl.total_monto ?? 0);
     }
   });
-  (antR.data||[]).forEach(a=>{ if(porP[a.proyecto_id]) porP[a.proyecto_id].anticipo = a.monto||0; });
-  const limite5 = hoyEcuador(5);
-  (garR.data||[]).forEach(g=>{
-    const p = porP[g.proyecto_id]; if(!p) return;
-    if(g.vigencia_hasta < hoyStr) p.garVencidas++;
-    else if(g.vigencia_hasta <= limite5) p.garPorVencer++;
-  });
-  (libR.data||[]).forEach(l=>{ if(porP[l.proyecto_id]) porP[l.proyecto_id].libro++; });
-  (obsR.data||[]).forEach(o=>{ if(porP[o.proyecto_id]) porP[o.proyecto_id].obs++; });
-  (solR.data||[]).forEach(s=>{ if(porP[s.proyecto_id]) porP[s.proyecto_id].sol++; });
+  anticipos.forEach(a=>{ if(porP[a.proyecto_id]) porP[a.proyecto_id].anticipo = a.monto||0; });
+  libro.forEach(l=>{ if(porP[l.proyecto_id]) porP[l.proyecto_id].libro++; });
+  observaciones.forEach(o=>{ if(porP[o.proyecto_id]) porP[o.proyecto_id].obs++; });
+  solicitudes.forEach(s=>{ if(porP[s.proyecto_id]) porP[s.proyecto_id].sol++; });
 
   const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtK = v => v>=1e6 ? '$'+(v/1e6).toFixed(2)+'M' : v>=1e3 ? '$'+(v/1e3).toFixed(1)+'K' : fmt(v);
@@ -6673,37 +6718,29 @@ async function cargarCartera(){
 
   const filas = activos.map(p=>{
     const d = porP[p.id];
-    const real = d.vigente>0 ? d.ejecutado/d.vigente*100 : 0;
-    const spi = d.plan>0.5 ? (real/d.plan) : null;
-    // Atraso proyectado aproximado: días transcurridos × (1/SPI − 1)
-    let atraso = 0;
-    if(spi && spi<1){
-      const crons = (cronR.data||[]).filter(c=>c.proyecto_id===p.id && c.fecha_inicio);
-      if(crons.length){
-        const iniMin = Math.min(...crons.map(c=>new Date(c.fecha_inicio+'T00:00:00').getTime()));
-        const diasTrans = Math.max(0,(hoyMs-iniMin)/86400000);
-        atraso = Math.round(diasTrans*(1/spi-1));
-      }
-    }
-    const pendientes = d.libro + d.obs + d.sol;
-    let color, emoji;
-    if((spi!==null && spi<0.85) || d.garVencidas>0 || atraso>30){ color='#e2445c'; emoji='🔴'; }
-    else if((spi!==null && spi<0.95) || d.garPorVencer>0 || pendientes>5){ color='#b8860b'; emoji='🟡'; }
-    else { color='#00854d'; emoji='🟢'; }
+    const real = d.evm.realPct;
+    const spi = d.evm.spi;
+    const atraso = d.evm.atrasoDias;
+    const sem = nucleoSemaforo({ evm: d.evm, garantias: d.gar, pendientes: d.libro + d.obs + d.sol });
+    const { color, emoji } = { rojo:{color:'#e2445c',emoji:'🔴'}, amarillo:{color:'#b8860b',emoji:'🟡'}, verde:{color:'#00854d',emoji:'🟢'} }[sem.color];
     d._sem = emoji;
-    const spiTxt = spi===null ? '—' : spi.toFixed(2);
-    const spiColor = spi===null ? '#676879' : spi<0.85 ? '#e2445c' : spi<0.95 ? '#b8860b' : '#00854d';
+    // SPI truncado a dos decimales por el núcleo, como en los motivos del semáforo: el número pintado nunca contradice su color
+    const spiTxt = spi===null ? '—' : nucleoSpiTruncado(spi).toFixed(2);
+    const pctEs = v => v.toFixed(1).replace('.', ',');
+    const spiTitulo = d.evm.sinCronograma ? 'Sin cronograma: no hay SPI'
+      : `Valor ganado ${pctEs(d.evm.evPct)} % sobre plan ${pctEs(d.evm.planPct)} % · solo rubros con cronograma`;
+    const spiColor = (spi===null || !d.evm.spiValido) ? '#676879' : spi<NUCLEO_CARTERA.SPI_ROJO ? '#e2445c' : spi<NUCLEO_CARTERA.SPI_AMARILLO ? '#b8860b' : '#00854d';
     const alertas = [
       d.libro ? `📖${d.libro}` : '', d.obs ? `📌${d.obs}` : '', d.sol ? `📨${d.sol}` : '',
       d.garPorVencer ? `🛡️${d.garPorVencer}` : '', d.garVencidas ? `<b style="color:#e2445c">🛡️!${d.garVencidas}</b>` : ''
     ].filter(Boolean).join(' ');
     const estadoTxt = {en_ejecucion:'En ejecución', recepcion_provisional:'R. provisional', recepcion_definitiva:'R. definitiva'}[p.estado_cierre]||'En ejecución';
     return `<tr style="cursor:pointer" onclick="irANotificacion('${p.id}','curvaS')" title="Ir a la Curva S del proyecto">
-      <td style="font-size:16px">${emoji}</td>
+      <td style="font-size:16px" title="${escAttr(sem.motivos.join(' · ') || 'Sin alertas')}">${emoji}</td>
       <td style="font-weight:600">${distintivoEmpresa(p)}${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${[escAttr(codigoTipoTexto(p)), estadoTxt, escAttr(p.contratante||'')].filter(Boolean).join(' · ')}</div></td>
       <td style="white-space:nowrap"><div style="font-size:13px;font-weight:600">${real.toFixed(1)}% <span style="color:#676879;font-weight:400">/ ${d.plan.toFixed(1)}%</span></div>
         <div style="background:#e6e9ef;border-radius:4px;height:6px;width:110px;margin-top:3px;position:relative"><div style="background:${color};border-radius:4px;height:6px;width:${Math.min(100,real)}%"></div><div style="position:absolute;top:-2px;left:${Math.min(100,d.plan)}%;width:2px;height:10px;background:#323338"></div></div></td>
-      <td style="text-align:center;font-weight:800;color:${spiColor}">${spiTxt}${atraso>0?`<div style="font-size:10px;color:#e2445c;font-weight:600">~${atraso}d atraso</div>`:''}</td>
+      <td title="${escAttr(spiTitulo)}" style="text-align:center;font-weight:800;color:${spiColor}">${spiTxt}${atraso>0?`<div style="font-size:10px;color:#e2445c;font-weight:600">~${atraso}d atraso</div>`:''}</td>
       <td style="text-align:right;white-space:nowrap">${fmtK(d.vigente)}<div style="font-size:11px;color:#676879">${d.vigente>0?(d.planillado/d.vigente*100).toFixed(0):0}% planillado</div></td>
       <td style="text-align:right;white-space:nowrap;font-weight:600;color:${d.liquidoPend>0?'#b8860b':'#676879'}">${d.liquidoPend>0?fmtK(d.liquidoPend):'—'}</td>
       <td style="text-align:right;white-space:nowrap;color:#676879">${d.anticipo>0?fmtK(Math.max(0,d.anticipo-d.amortizado)):'—'}</td>
@@ -6752,7 +6789,7 @@ async function cargarCartera(){
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">CARTERA CONTRATADA</div><div style="font-size:20px;font-weight:800;color:#0073ea">${fmtK(totVigente)}</div><div style="font-size:11px;color:#676879">${activos.length} proyecto(s) activo(s)</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">PLANILLADO ACUMULADO</div><div style="font-size:20px;font-weight:800;color:#00854d">${fmtK(totPlanillado)}</div><div style="font-size:11px;color:#676879">${totVigente>0?(totPlanillado/totVigente*100).toFixed(1):0}% de la cartera</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">LÍQUIDO POR PAGAR</div><div style="font-size:20px;font-weight:800;color:${totLiquidoPend>0?'#b8860b':'#676879'}">${fmtK(totLiquidoPend)}</div><div style="font-size:11px;color:#676879">planillas aprobadas sin pagar</div></div>
-    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div style="font-size:11px;color:#676879">SPI &lt; 0.85 ó garantía vencida = rojo</div></div>
+    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div style="font-size:11px;color:#676879">Rojo: SPI &lt; ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, garantía vencida o atraso &gt; ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días</div></div>
   </div>
   ${totalesEmpresaHtml}
   <div class="card">
