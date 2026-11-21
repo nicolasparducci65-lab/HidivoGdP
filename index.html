@@ -12116,10 +12116,10 @@ async function notificarFiscalizadorViaDM(titulo, detalle){
     let canalId;
     if(dms?.length){ canalId=dms[0].id; }
     else {
-      const { data: nuevoDM } = await sb.from('canales_chat').insert({
+      const { data: nuevoDM } = await crearCanalChat({
         nombre:`dm-${currentUser.id}-${f.id}`, tipo:'dm',
         dm_user1_id:currentUser.id, dm_user2_id:f.id
-      }).select().single();
+      });
       canalId=nuevoDM?.id;
     }
     if(!canalId) continue;
@@ -14379,17 +14379,29 @@ async function cargarDMsChat(){
   }).join('');
 }
 
+// Alta de un canal o de un mensaje directo. El id se genera aquí (nuevoUuid) y la fila NO se pide de vuelta:
+// con INSERT … RETURNING la base comprueba la política de lectura sobre una fila que su propia
+// función (chat_puede_ver_canal) todavía no encuentra, y rechazaba el alta a todos los roles.
+// Devuelve { data: {id, …fila} | null, error }, como el insert().select().single() que sustituye.
+async function crearCanalChat(fila){
+  const id = nuevoUuid();
+  const { error } = await sb.from('canales_chat').insert({ id, ...fila });
+  return error ? { data: null, error } : { data: { id, ...fila }, error: null };
+}
+
 async function iniciarDMCon(usuarioId, nombre){
   // Crear DM si no existe y abrirlo
-  const { data: dm } = await sb.from('canales_chat').insert({
+  const { data: dm } = await crearCanalChat({
     nombre: `dm-${currentUser.id}-${usuarioId}`,
     tipo: 'dm',
     dm_user1_id: currentUser.id,
     dm_user2_id: usuarioId
-  }).select().single();
+  });
   if(dm){
     abrirCanal(dm.id, nombre, 'dm', usuarioId, '');
     cargarDMsChat();
+  } else {
+    toast('No se pudo abrir el mensaje directo','error');
   }
 }
 
@@ -14423,10 +14435,13 @@ async function eliminarCanalActivo(){
   if(!confirm(`¿Eliminar el canal #${chatCanalActivo.nombre}? Se eliminarán todos los mensajes.`)) return;
   const { data: msgsArch } = await sb.from('mensajes_chat').select('archivo_url')
     .eq('canal_id', chatCanalActivo.id).not('archivo_url','is',null);
+  // Se borra el CANAL (miembros, mensajes y leídos caen en cascada) y se comprueba: un borrado que
+  // la base filtra no da error, devuelve 0 filas. Antes se quitaban primero los miembros y, en un
+  // canal privado, quien borraba dejaba de verlo y el canal quedaba huérfano. Los adjuntos del
+  // Storage se eliminan solo después de confirmar.
+  const { data: borrado, error: errCanal } = await sb.from('canales_chat').delete().eq('id', chatCanalActivo.id).select('id');
+  if(errCanal || !borrado?.length){ toast(errCanal ? 'Error: '+errCanal.message : 'No tienes permiso para eliminar este canal','error'); return; }
   await eliminarObjetosStorage((msgsArch||[]).map(m=>m.archivo_url));
-  await sb.from('canal_miembros').delete().eq('canal_id', chatCanalActivo.id);
-  await sb.from('mensajes_chat').delete().eq('canal_id', chatCanalActivo.id);
-  await sb.from('canales_chat').delete().eq('id', chatCanalActivo.id);
   chatCanalActivo = null;
   document.getElementById('chatCanalNombre').textContent = 'Selecciona un canal';
   document.getElementById('chatCanalDesc').textContent = '';
@@ -14741,20 +14756,30 @@ async function guardarNuevoCanal(){
   if(!nombre){ toast('Ingresa un nombre','error'); return; }
   const desc = document.getElementById('nuevoCanalDesc').value.trim();
   const privado = document.getElementById('nuevoCanalPrivado').checked;
-  // Un canal privado necesita que su creador se agregue como miembro, y eso la base solo se lo
-  // permite al administrador global (el admin de empresa no entra a privados por su cuenta).
+  // Un canal privado necesita que su creador se agregue como miembro. La base se lo permite al
+  // administrador global y al admin o fiscalizador del proyecto, pero no al admin de empresa
+  // (no entra a canales privados por su cuenta).
   if(privado && esAdminDeEmpresa()){ toast('Los canales privados los crea el administrador global. Crea el canal como público o pídeselo.','error'); return; }
-  const { data: canal, error } = await sb.from('canales_chat').insert({
+  const { data: canal, error } = await crearCanalChat({
     proyecto_id: currentProyecto,
     nombre: nombre.toLowerCase().replace(/\s+/g,'-'),
     tipo: 'canal',
     descripcion: desc||null,
     es_privado: privado
-  }).select().single();
+  });
   if(error){ toast('Error: '+error.message,'error'); return; }
-  // Si es privado, agregar al admin como miembro
+  // Si es privado, su creador entra como primer miembro. Si la base no lo permite, el canal se
+  // retira: un privado sin miembros no lo vería nadie salvo el administrador global.
   if(privado && canal){
-    await sb.from('canal_miembros').insert({canal_id: canal.id, usuario_id: currentUser.id});
+    const { error: errMiembro } = await sb.from('canal_miembros').insert({canal_id: canal.id, usuario_id: currentUser.id});
+    if(errMiembro){
+      // Solo el admin global (o el admin del proyecto, si lo ve) puede retirarlo: se comprueba
+      const { data: retirado } = await sb.from('canales_chat').delete().eq('id', canal.id).select('id');
+      toast(retirado?.length
+        ? 'No se pudo crear el canal privado: '+errMiembro.message
+        : 'El canal privado se creó pero no se te pudo agregar como miembro ('+errMiembro.message+'). Pide al administrador global que lo retire o te agregue.','error');
+      return;
+    }
   }
   toast('Canal creado ✓','success');
   cerrarModal('modalNuevoCanal');
@@ -14845,12 +14870,12 @@ async function abrirModalNuevoDM(){
     abrirCanal(existe[0].id, `${otro.nombre} ${otro.apellido}`, 'dm', otro.id, '');
     return;
   }
-  const { data: dm } = await sb.from('canales_chat').insert({
+  const { data: dm } = await crearCanalChat({
     nombre: `dm-${currentUser.id}-${otro.id}`,
     tipo: 'dm',
     dm_user1_id: currentUser.id,
     dm_user2_id: otro.id
-  }).select().single();
+  });
   if(dm) abrirCanal(dm.id, `${otro.nombre} ${otro.apellido}`, 'dm', otro.id, '');
   cargarDMsChat();
 }
@@ -14890,12 +14915,12 @@ async function notificarResidenteViaDM(tipo, titulo, detalle){
       canalId = dms[0].id;
     } else {
       // Crear DM si no existe
-      const { data: nuevoDM } = await sb.from('canales_chat').insert({
+      const { data: nuevoDM } = await crearCanalChat({
         nombre: `dm-${currentUser.id}-${residenteId}`,
         tipo: 'dm',
         dm_user1_id: currentUser.id,
         dm_user2_id: residenteId
-      }).select().single();
+      });
       canalId = nuevoDM?.id;
     }
 

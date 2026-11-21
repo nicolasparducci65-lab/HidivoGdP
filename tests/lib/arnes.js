@@ -101,6 +101,11 @@ function crearSb(fixture, opciones = {}){
       delete(){ b._delete = true; return b; },
       _ejecutar(){
         llamadas.push({ tabla, select: b._select, filtros: b._filtros.length, rango: b._rango });
+        // opciones.rechazarInsertConSelect: tablas donde un insert().select() falla como INSERT … RETURNING
+        // cuando la política de lectura aún no ve la fila nueva (caso real de canales_chat).
+        if(b._insert && b._pidioFilas && (opciones.rechazarInsertConSelect || []).includes(tabla)){
+          return { data: null, error: { code: '42501', message: 'new row violates row-level security policy for table "' + tabla + '"' } };
+        }
         if(b._insert){
           // insert(fila) o insert([filas]): cada fila recibe un id si no trae uno
           const lista = Array.isArray(b._insert) ? b._insert : [b._insert];
