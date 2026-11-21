@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Exportación diaria del estado: disparo del workflow desde la base.
--- NO se aplica sola. Requiere la migración 20261121_exportaciones_estado.sql y
+-- APLICADA en producción el 21-nov-2026 (disparo de prueba aceptado por GitHub: 204).
+-- Requiere la migración 20261121_exportaciones_estado.sql y
 -- que la versión de estado-diario.yml que declara el parámetro «origen» esté ya
 -- en la rama main del repositorio del workflow (si no, GitHub responde 422).
 --

@@ -1,4 +1,5 @@
 -- ============================================================================
+-- APLICADA en producción el 21-nov-2026.
 -- Exportación diaria del estado de proyectos: función de datos, versión 2
 -- (usuarios de prueba y columnas de autor).
 -- SIN APLICAR. No publica ni cambia nada más: solo reemplaza el cuerpo de
