@@ -6685,13 +6685,15 @@ async function cargarCartera(){
     ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
     // Fecha de inicio de cada proyecto (proyectos.fecha_inicio, ya viene en la lectura de proyectos):
     // el núcleo acota con ella el atraso a la fecha cuando es posterior al primer inicio programado.
-    const inicioPorProyecto = {};
-    todos.forEach(p=>{ inicioPorProyecto[p.id] = p.fecha_inicio ?? null; });
+    // Fin del plazo contractual (proyectos.fecha_fin_planificada): el núcleo decide con él si el plazo
+    // está vencido; aquí solo se le pasa (null si el proyecto no lo tiene: sin fecha no hay regla).
+    const inicioPorProyecto = {}, finContractualPorProyecto = {};
+    todos.forEach(p=>{ inicioPorProyecto[p.id] = p.fecha_inicio ?? null; finContractualPorProyecto[p.id] = p.fecha_fin_planificada ?? null; });
     // Avance, plan, SPI y atraso: una sola regla para toda la plataforma (cartera-nucleo.js).
     // El núcleo lanza ante una fecha mal formada: también eso se muestra como error.
     ids.forEach(id=>{
       const p = porP[id];
-      p.evm = nucleoEvmProyecto({ rubros: rubrosPorP[id]||[], cronograma: cronPorP[id]||[], lineaBaseActivaId: lbPorProyecto[id]||null, hoy: hoyStr, fechaInicioProyecto: inicioPorProyecto[id] });
+      p.evm = nucleoEvmProyecto({ rubros: rubrosPorP[id]||[], cronograma: cronPorP[id]||[], lineaBaseActivaId: lbPorProyecto[id]||null, hoy: hoyStr, fechaInicioProyecto: inicioPorProyecto[id], fechaFinContractual: finContractualPorProyecto[id] });
       p.vigente = p.evm.vigente; p.ejecutado = p.evm.ejecutado; p.plan = p.evm.planPct;
       const g = nucleoGarantias(garPorP[id]||[], hoyStr);
       p.gar = g; p.garVencidas = g.vencidas; p.garPorVencer = g.porVencer;
@@ -6834,7 +6836,7 @@ async function cargarCartera(){
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">CARTERA CONTRATADA</div><div style="font-size:20px;font-weight:800;color:#0073ea">${fmtK(totVigente)}</div><div style="font-size:11px;color:#676879">${activos.length} proyecto(s) activo(s)</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">PLANILLADO ACUMULADO</div><div style="font-size:20px;font-weight:800;color:#00854d">${fmtK(totPlanillado)}</div><div style="font-size:11px;color:#676879">${totVigente>0?(totPlanillado/totVigente*100).toFixed(1):0}% de la cartera</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">LÍQUIDO POR PAGAR</div><div style="font-size:20px;font-weight:800;color:${totLiquidoPend>0?'#b8860b':'#676879'}">${fmtK(totLiquidoPend)}</div><div style="font-size:11px;color:#676879">planillas aprobadas sin pagar</div></div>
-    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div id="carteraSaludConteo" style="font-size:11px;color:#676879">${nRojo+nAmarillo+nVerde} proyecto(s) ${txtConSemaforo} · ⚪ ${nSinSemaforo} sin semáforo</div><div style="font-size:11px;color:#676879">Rojo: SPI &lt; ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha &gt; ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días</div></div>
+    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div id="carteraSaludConteo" style="font-size:11px;color:#676879">${nRojo+nAmarillo+nVerde} proyecto(s) ${txtConSemaforo} · ⚪ ${nSinSemaforo} sin semáforo</div><div style="font-size:11px;color:#676879">Rojo: SPI &lt; ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, plazo contractual vencido con el avance sin completar, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha &gt; ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días · Sin cronograma nunca hay verde: amarillo como mínimo</div></div>
   </div>
   ${totalesEmpresaHtml}
   <div class="card">

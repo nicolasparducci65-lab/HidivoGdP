@@ -1,6 +1,7 @@
 // Núcleo de indicadores de cartera (cartera-nucleo.js): avance principal (valor ganado) y ejecutado
-// por cantidades, plan a una fecha, SPI, atraso a la fecha y atraso proyectado, «datos por
-// completar», garantías y semáforo (solo proyectos en ejecución). Carga el módulo REAL con require y prueba cada función con datos
+// por cantidades, plan a una fecha, SPI, atraso a la fecha y atraso proyectado, plazo contractual
+// vencido, «datos por completar» (también el monto vigente frente al contractual más las órdenes de
+// cambio), garantías y semáforo (solo proyectos en ejecución; sin cronograma nunca verde). Carga el módulo REAL con require y prueba cada función con datos
 // sintéticos (ningún dato de producción).
 //
 //   node cartera-nucleo.test.js
@@ -60,6 +61,7 @@ const SIN_GAR = G(0, 0);
     igual(NUCLEO_CARTERA.DIFERENCIA_AVANCE_PUNTOS, 10, 'DIFERENCIA_AVANCE_PUNTOS');
     igual(NUCLEO_CARTERA.OBRA_TERMINADA_PCT, 99.95, 'OBRA_TERMINADA_PCT');
     igual(NUCLEO_CARTERA.SPI_MINIMO_PROYECCION, 0.10, 'SPI_MINIMO_PROYECCION');
+    igual(NUCLEO_CARTERA.TOLERANCIA_MONTO, 1, 'TOLERANCIA_MONTO');
     igual(NUCLEO_CARTERA.ESTADO_CON_SEMAFORO, 'ejecucion', 'ESTADO_CON_SEMAFORO');
     igual(NUCLEO_CARTERA.ZONA, 'America/Guayaquil', 'ZONA');
     assert(Object.isFrozen(NUCLEO_CARTERA), 'NUCLEO_CARTERA está congelado');
@@ -287,6 +289,7 @@ const SIN_GAR = G(0, 0);
       igual(e.rubrosConCronograma, 0, 'rubrosConCronograma'); igual(e.rubrosSinCronograma, 0, 'rubrosSinCronograma'); igual(e.sinCronograma, true, 'sinCronograma');
       igual(e.sinLineaBase, true, 'sinLineaBase'); igual(e.primerInicio, null, 'primerInicio'); igual(e.ultimoFin, null, 'ultimoFin');
       igual(e.cronogramaVencido, false, 'cronogramaVencido');
+      igual(e.fechaFinContractual, null, 'fechaFinContractual'); igual(e.plazoContractualVencido, false, 'plazoContractualVencido'); igual(e.avanceCompleto, false, 'avanceCompleto');
     }
   });
 
@@ -311,7 +314,8 @@ const SIN_GAR = G(0, 0);
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 0, 300), rubro('r2', null, 0)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-06-01' });
     igual(e.vigente, 0, 'vigente'); igual(e.ejecutado, 300, 'ejecutado'); igual(e.realPct, 0, 'realPct');
     igual(e.planPct, 0, 'planPct'); igual(e.evPct, 0, 'evPct'); igual(e.spi, null, 'spi'); igual(e.spiValido, false, 'spiValido');
-    igual(e.atrasoDias, 0, 'atraso'); igual(e.rubrosConCronograma, 1, 'la fila sí cuenta como cronograma'); igual(e.sinCronograma, false, 'sinCronograma');
+    igual(e.atrasoDias, 0, 'atraso'); igual(e.rubrosConCronograma, 1, 'la fila existe'); igual(e.sinCronograma, true, 'pero un cronograma que no pesa nada (monto 0) no es cronograma útil');
+    igual(N.nucleoSemaforo({ estado: 'ejecucion', evm: e }).color, 'amarillo', 'en ejecución con un cronograma sin peso tampoco hay verde');
   });
 
   await prueba('EVM: caso base — pesos por monto, plan a la fecha, SPI y los dos atrasos', () => {
@@ -580,6 +584,72 @@ const SIN_GAR = G(0, 0);
       'proyecto sin estado registrado|el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos', 'sin estado + diferencia');
     // Sin estado no es «finalizado»: no arrastra los avisos de finalizado
     igual(nucleoDatosPorCompletar({ evm: nucleoEvmProyecto({ hoy: '2026-11-21' }), estado: null }).join('|'), 'proyecto sin estado registrado', 'sin estado y sin rubros');
+  });
+
+  // ── Monto vigente frente al contractual más las órdenes de cambio ─────────
+  const AVISO_MONTO = (vigente, esperado, dif) => `el monto vigente ($ ${vigente}) no cuadra con el contractual más las órdenes de cambio aprobadas ($ ${esperado}): diferencia de $ ${dif}`;
+  // Monto vigente 1.000 (600 + 400), avance 25 % en los dos avances: sin ningún otro aviso
+  const evmMil = () => nucleoEvmProyecto({ rubros: [rubro('r1', 600, 150), rubro('r2', 400, 100)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+  const montos = (montoContractual, montoOrdenesCambio, estado = 'ejecucion', evm = evmMil()) => nucleoDatosPorCompletar({ evm, estado, montoContractual, montoOrdenesCambio });
+
+  await prueba('nucleoDatosPorCompletar con montos: cuadra (tolerancia de 1,00 exacta, por arriba y por abajo)', () => {
+    igual(evmMil().vigente, 1000, 'monto vigente = Σ rubros'); igual(NUCLEO_CARTERA.TOLERANCIA_MONTO, 1, 'tolerancia de 1,00');
+    igual(montos(1000, 0).length, 0, 'contractual = vigente, sin órdenes de cambio');
+    igual(montos(1000).length, 0, 'sin pasar las órdenes de cambio (cuentan 0)'); igual(montos(1000, null).length, 0, 'órdenes de cambio null (cuentan 0)');
+    igual(montos(900, 100).length, 0, 'contractual 900 + órdenes de cambio 100');
+    igual(montos(1150, -150).length, 0, 'órdenes de cambio que restan (suma negativa)');
+    igual(montos('1000.00', '0.00').length, 0, 'numeric que llega como texto');
+    igual(montos(250.25, 749.75).length, 0, 'con céntimos');
+    // Tolerancia: una diferencia de 1,00 exacto NO avisa (en los dos sentidos); 1,01 sí
+    igual(montos(999, 0).length, 0, 'vigente 1,00 por encima: cuadra'); igual(montos(1001, 0).length, 0, 'vigente 1,00 por debajo: cuadra');
+    igual(montos(999.5, 0).length, 0, '0,50 por encima'); igual(montos(1000.5, 0).length, 0, '0,50 por debajo');
+    igual(montos(900, 99).length, 0, '1,00 exacto repartido entre contractual y órdenes de cambio');
+    igual(montos(998.99, 0).join('|'), AVISO_MONTO('1.000,00', '998,99', '1,01'), '1,01 por encima: avisa');
+    igual(montos(1001.01, 0).join('|'), AVISO_MONTO('1.000,00', '1.001,01', '-1,01'), '1,01 por debajo: avisa');
+    igual(montos(998, 0).length, 1, '2,00 por encima'); igual(montos(1002, 0).length, 1, '2,00 por debajo');
+  });
+
+  await prueba('nucleoDatosPorCompletar con montos: no cuadra por exceso y por defecto, con los tres importes en el aviso', () => {
+    // Por exceso: los rubros suman más que el contrato y sus órdenes de cambio aprobadas
+    igual(montos(800, 150).join('|'), AVISO_MONTO('1.000,00', '950,00', '50,00'), 'exceso de 50,00 (800 + 150 = 950)');
+    igual(montos(800).join('|'), AVISO_MONTO('1.000,00', '800,00', '200,00'), 'exceso de 200,00 sin órdenes de cambio');
+    // Por defecto: los rubros suman menos (diferencia negativa)
+    igual(montos(1200, 50.5).join('|'), AVISO_MONTO('1.000,00', '1.250,50', '-250,50'), 'defecto de 250,50 (1.200 + 50,50 = 1.250,50)');
+    igual(montos(1000, 300).join('|'), AVISO_MONTO('1.000,00', '1.300,00', '-300,00'), 'defecto: órdenes de cambio aprobadas que no están en los rubros');
+    igual(montos(1000, -300).join('|'), AVISO_MONTO('1.000,00', '700,00', '300,00'), 'exceso: orden de cambio que resta y no se descontó de los rubros');
+    // Importes grandes: separador de miles y coma decimal
+    const grande = nucleoEvmProyecto({ rubros: [rubro('r1', 1234567.89, 0)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(montos(1000000, 0, 'ejecucion', grande).join('|'), AVISO_MONTO('1.234.567,89', '1.000.000,00', '234.567,89'), 'miles con punto y decimales con coma');
+    // No depende del estado del proyecto
+    for(const estado of ['ejecucion', ...SIN_COLOR]) assert(montos(800, 150, estado).includes(AVISO_MONTO('1.000,00', '950,00', '50,00')), estado + ': avisa igual');
+    // Se suma a los demás avisos, en su sitio: después de la diferencia de avances y antes de los de finalizado
+    const marcados = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0, 'terminado')], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(montos(500, 0, 'finalizado', marcados).join('|'),
+      'el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos|' + AVISO_MONTO('1.000,00', '500,00', '500,00') + '|proyecto finalizado sin producción registrada', 'con los avisos de avance y de finalizado');
+    igual(montos(500, 0, null, marcados)[0], 'proyecto sin estado registrado', 'sin estado: ese aviso sigue primero');
+    // El aviso de montos no cambia el semáforo: es solo un dato por completar
+    igual(semEjec({ evm: { ...evmMil(), sinCronograma: false }, garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'el semáforo no mira los montos');
+  });
+
+  await prueba('nucleoDatosPorCompletar con montos: sin monto contractual no avisa; proyecto sin rubros no avisa', () => {
+    // Sin monto contractual registrado (null, undefined o sin pasar) no hay con qué comparar, haya o no órdenes de cambio
+    igual(montos(null, 0).length, 0, 'contractual null'); igual(montos(undefined, 0).length, 0, 'contractual undefined');
+    igual(montos(null, 5000).length, 0, 'contractual null con órdenes de cambio'); igual(montos(undefined, 5000).length, 0, 'contractual undefined con órdenes de cambio');
+    igual(nucleoDatosPorCompletar({ evm: evmMil(), estado: 'ejecucion' }).length, 0, 'sin pasar ningún monto (como hace el Panel Cartera)');
+    igual(nucleoDatosPorCompletar({ evm: evmMil(), estado: 'ejecucion', montoOrdenesCambio: 5000 }).length, 0, 'solo órdenes de cambio, sin contractual');
+    igual(montos('ZZZ no es un número', 0).length, 0, 'contractual que no es un número: no se compara');
+    // Proyecto sin rubros: el monto vigente es 0 porque aún no se cargó el presupuesto, no porque no cuadre
+    const vacio = nucleoEvmProyecto({ rubros: [], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(vacio.rubros, 0, 'EVM: 0 rubros'); igual(vacio.vigente, 0, 'EVM: vigente 0');
+    for(const estado of ['ejecucion', 'planificacion', 'pausado', 'cancelado']) igual(montos(5000, 250, estado, vacio).length, 0, estado + ' sin rubros: sin aviso de montos');
+    igual(montos(5000, 250, 'finalizado', vacio).join('|'), 'proyecto finalizado sin rubros', 'finalizado sin rubros: solo su aviso propio');
+    igual(nucleoDatosPorCompletar({ estado: 'ejecucion', montoContractual: 5000, montoOrdenesCambio: 250 }).length, 0, 'sin EVM: sin aviso');
+    // Contraprueba: con un solo rubro ya se compara
+    const uno = nucleoEvmProyecto({ rubros: [rubro('r1', 100, 0)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(montos(5000, 250, 'ejecucion', uno).join('|'), AVISO_MONTO('100,00', '5.250,00', '-5.150,00'), 'con un rubro: avisa');
+    // Un rubro de monto 0 es un rubro: se compara (vigente 0 frente a 5.250)
+    const rubroCero = nucleoEvmProyecto({ rubros: [rubro('r1', 0, 0)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(montos(5000, 250, 'ejecucion', rubroCero).join('|'), AVISO_MONTO('0,00', '5.250,00', '-5.250,00'), 'rubro de monto 0: avisa');
   });
 
   // ── Atraso a la fecha (cronograma ganado) ─────────────────────────────────
@@ -1178,8 +1248,9 @@ const SIN_GAR = G(0, 0);
     igual(noValido.color, 'verde', 'SPI 0,10 no válido'); igual(noValido.motivos.join('|'), 'plan a la fecha todavía menor al 0,5 %', 'motivo');
     const nulo = semEjec({ evm: evmDe({ spi: null, spiValido: false }), garantias: SIN_GAR, pendientes: 0 });
     igual(nulo.color, 'verde', 'SPI nulo'); igual(nulo.motivos.length, 0, 'con cronograma que aún no empieza: sin motivo');
+    // Sin cronograma el SPI tampoco decide, pero el proyecto en ejecución ya no sale verde: amarillo por no tener cronograma
     const sinCron = semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: SIN_GAR, pendientes: 0 });
-    igual(sinCron.color, 'verde', 'sin cronograma'); igual(sinCron.motivos.join('|'), 'sin cronograma: no hay SPI', 'motivo de sin cronograma');
+    igual(sinCron.color, 'amarillo', 'sin cronograma'); igual(sinCron.motivos.join('|'), 'sin cronograma', 'motivo de sin cronograma');
     // El SPI no válido tampoco estorba a las otras causas
     igual(semEjec({ evm: evmDe({ spi: 0.1, spiValido: false }), garantias: G(1, 0), pendientes: 0 }).color, 'rojo', 'garantía vencida con SPI no válido');
   });
@@ -1193,8 +1264,155 @@ const SIN_GAR = G(0, 0);
     igual(s3.color, 'amarillo', 'una por vencer'); igual(s3.motivos.join('|'), '1 garantía por vencer en 5 días o menos', 'singular');
     const s4 = semEjec({ evm: evmDe(), garantias: G(0, 3), pendientes: 0 });
     igual(s4.motivos.join('|'), '3 garantías por vencer en 5 días o menos', 'plural');
-    // Sin cronograma también pinta por garantías
-    igual(semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: G(0, 1), pendientes: 0 }).color, 'amarillo', 'sin cronograma y garantía por vencer');
+    // Sin cronograma también pinta por garantías: la por vencer se suma al «sin cronograma» y la vencida lo pasa a rojo
+    const s5 = semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: G(0, 1), pendientes: 0 });
+    igual(s5.color, 'amarillo', 'sin cronograma y garantía por vencer'); igual(s5.motivos.join('|'), 'sin cronograma|1 garantía por vencer en 5 días o menos', 'sin cronograma y garantía por vencer: motivos');
+    const s6 = semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: G(1, 0), pendientes: 0 });
+    igual(s6.color, 'rojo', 'sin cronograma y garantía vencida'); igual(s6.motivos.join('|'), '1 garantía vencida|sin cronograma', 'sin cronograma y garantía vencida: motivos');
+  });
+
+  // ── Plazo contractual vencido ─────────────────────────────────────────────
+  await prueba('semáforo: plazo contractual vencido con avance menor al 100 % → rojo con su motivo; el día del plazo todavía no; sin fecha no hay regla', () => {
+    // r1 vale todo el proyecto y lleva 40 %. Cronograma de 300 días desde el 1-nov: a 21-nov el plan es 6,67 % → SPI 6: sin el plazo, verde.
+    const con = (fechaFinContractual, prod = 400, estado = 'trabajando') => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod, estado)],
+      cronograma: [fila('r1', '2026-11-01', '2027-08-28')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-11-21', fechaFinContractual });
+    const sem = evm => semEjec({ evm, garantias: SIN_GAR, pendientes: 0 });
+    const vencido = con('2026-11-20');
+    igual(vencido.plazoContractualVencido, true, 'venció ayer'); igual(vencido.avanceCompleto, false, 'avance 40 %: incompleto'); igual(vencido.cronogramaVencido, false, 'el cronograma no ha vencido');
+    casi(vencido.avancePct, 40, 'avance 40 %'); assert(vencido.spi > 1 && vencido.atrasoFechaDias === 0, 'SPI en verde y sin atraso: el único motivo es el plazo');
+    const s = sem(vencido);
+    igual(s.color, 'rojo', 'vencido ayer con 40 %: rojo'); igual(s.motivos.join('|'), 'plazo contractual vencido el 2026-11-20 con 40,0 % de avance', 'motivo propio, con la fecha y el avance');
+    // Vencido hace mucho: mismo motivo, con su fecha
+    igual(sem(con('2025-06-30')).motivos.join('|'), 'plazo contractual vencido el 2025-06-30 con 40,0 % de avance', 'vencido hace más de un año');
+    // El plazo que vence HOY no está vencido; el de mañana, tampoco
+    for(const [que, f] of [['vence hoy', '2026-11-21'], ['vence mañana', '2026-11-22'], ['vence en un año', '2027-11-21']]){
+      const e = con(f);
+      igual(e.plazoContractualVencido, false, que + ': no vencido'); igual(e.fechaFinContractual, f, que + ': la fecha se conserva');
+      igual(sem(e).color, 'verde', que + ': verde'); igual(sem(e).motivos.length, 0, que + ': sin motivos');
+    }
+    // Sin fecha de fin contractual (undefined, null o texto vacío) no hay regla
+    for(const [que, f] of [['undefined', undefined], ['null', null], ['texto vacío', '']]){
+      const e = con(f);
+      igual(e.fechaFinContractual, null, 'plazo ' + que + ': fechaFinContractual null'); igual(e.plazoContractualVencido, false, 'plazo ' + que + ': no vencido');
+      igual(sem(e).color, 'verde', 'plazo ' + que + ': verde'); igual(sem(e).motivos.length, 0, 'plazo ' + que + ': sin motivos');
+    }
+    // Vencido con el avance COMPLETO no es rojo: por producción completa o por rubro marcado terminado
+    for(const [que, e] of [['producción completa', con('2026-11-20', 1000)], ['rubro terminado con 40 % de producción', con('2026-11-20', 400, 'terminado')], ['vencido hace años, completa', con('2020-01-01', 1000)]]){
+      igual(e.plazoContractualVencido, true, que + ': el plazo venció'); igual(e.avanceCompleto, true, que + ': avance completo');
+      igual(sem(e).color, 'verde', que + ': NO es rojo'); igual(sem(e).motivos.length, 0, que + ': sin motivos');
+    }
+    // Umbral de «avance completo» (OBRA_TERMINADA_PCT = 99,95 %), y el texto nunca dice 100 con el avance incompleto
+    const fino = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 100000, prod)], cronograma: [fila('r1', '2026-11-01', '2027-08-28')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-11-21', fechaFinContractual: '2026-11-20' });
+    igual(fino(99960).avanceCompleto, true, '99,96 %: completo'); igual(sem(fino(99960)).color, 'verde', '99,96 %: no es rojo');
+    igual(fino(99940).avanceCompleto, false, '99,94 %: incompleto');
+    igual(sem(fino(99940)).color, 'rojo', '99,94 %: rojo'); igual(sem(fino(99940)).motivos[0], 'plazo contractual vencido el 2026-11-20 con 99,9 % de avance', '99,94 %: el texto no dice 100');
+    // Fuera de ejecución el plazo vencido no pinta
+    for(const estado of [...SIN_COLOR, null, '']) igual(JSON.stringify(nucleoSemaforo({ estado, evm: vencido, garantias: SIN_GAR, pendientes: 0 })), '{"color":null,"motivos":[]}', String(estado) + ': plazo vencido sin color');
+  });
+
+  await prueba('semáforo: el plazo contractual mira el avance de TODOS los rubros (no solo lo programado) y va segundo entre los motivos de rojo', () => {
+    // r1 (50 %) programado del 1 al 11-ene y terminado; r2 (50 %) sin cronograma, al 20 %. Hoy 1-mar; el plazo venció el 15-feb.
+    const e = nucleoEvmProyecto({ rubros: [rubro('r1', 500, 300, 'terminado'), rubro('r2', 500, 100)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')],
+      lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01', fechaFinContractual: '2026-02-15' });
+    igual(e.obraProgramadaTerminada, true, 'lo programado está terminado'); igual(e.cronogramaVencido, true, 'el cronograma venció'); casi(e.avancePct, 60, 'avance de todos los rubros 60 %');
+    igual(e.avanceCompleto, false, 'avance incompleto: falta el rubro sin cronograma'); igual(e.plazoContractualVencido, true, 'plazo vencido');
+    const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+    igual(s.color, 'rojo', 'rojo por plazo (por cronograma vencido no lo sería)');
+    igual(s.motivos.join('|'), 'plazo contractual vencido el 2026-02-15 con 60,0 % de avance', 'un solo motivo, con el avance total (60 %), no el de lo programado (100 %)');
+    // Los dos vencimientos a la vez: cada uno con su fecha y su porcentaje
+    const dos = nucleoEvmProyecto({ rubros: [rubro('r1', 500, 450), rubro('r2', 500, 100)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')],
+      lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01', fechaFinContractual: '2026-02-15' });
+    igual(semEjec({ evm: dos, garantias: SIN_GAR, pendientes: 0 }).motivos.join('|'),
+      'plazo contractual vencido el 2026-02-15 con 55,0 % de avance|cronograma vencido el 2026-01-11 con 90,0 % de lo programado|atraso a la fecha de 50 días|SPI 0,90', 'plazo (55 % del total) y cronograma (90 % de lo programado)');
+    // Orden completo, con el EVM a mano: SPI, plazo, cronograma, garantía vencida, atraso; después los amarillos
+    const todo = semEjec({ evm: evmDe({ spi: 0.5, atrasoFechaDias: 44, cronogramaVencido: true, ultimoFin: '2026-06-30', evPct: 41.26,
+      plazoContractualVencido: true, fechaFinContractual: '2026-05-31', avancePct: 37.26, avanceCompleto: false }), garantias: G(1, 2), pendientes: 9 });
+    igual(todo.motivos.join('|'), 'SPI 0,50|plazo contractual vencido el 2026-05-31 con 37,3 % de avance|cronograma vencido el 2026-06-30 con 41,3 % de lo programado|1 garantía vencida|atraso a la fecha de 44 días|2 garantías por vencer en 5 días o menos|9 pendientes (libro, observaciones y solicitudes)', 'orden de los motivos');
+    // El semáforo se guía por plazoContractualVencido y avanceCompleto (no vuelve a comparar fechas ni porcentajes)
+    igual(semEjec({ evm: evmDe({ plazoContractualVencido: true, fechaFinContractual: '2026-05-31', avancePct: 10, avanceCompleto: true }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'avanceCompleto manda');
+    igual(semEjec({ evm: evmDe({ plazoContractualVencido: false, fechaFinContractual: '2020-01-01', avancePct: 10, avanceCompleto: false }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'plazoContractualVencido manda');
+    // Con el SPI amarillo, el plazo vencido lo pasa a rojo y el SPI queda de motivo secundario
+    igual(semEjec({ evm: evmDe({ spi: 0.9, plazoContractualVencido: true, fechaFinContractual: '2026-05-31', avancePct: 80 }), garantias: SIN_GAR, pendientes: 0 }).motivos.join('|'),
+      'plazo contractual vencido el 2026-05-31 con 80,0 % de avance|SPI 0,90', 'plazo + SPI amarillo');
+  });
+
+  await prueba('EVM: fechaFinContractual — se devuelve como día, no cambia ningún otro indicador y mal formada LANZA', () => {
+    const datos = { rubros: [rubro('r1', 600, 150), rubro('r2', 400, 0)], cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-11', '2026-01-21')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-06' };
+    const sin = nucleoEvmProyecto(datos);
+    igual(sin.fechaFinContractual, null, 'sin plazo: null'); igual(sin.plazoContractualVencido, false, 'sin plazo: no vencido'); igual(sin.avanceCompleto, false, 'avance 15 %: incompleto');
+    // Con plazo (vencido o no) todo lo demás es idéntico: el plazo solo añade sus dos campos
+    for(const f of ['2026-01-05', '2026-01-06', '2026-12-31']){
+      const con = nucleoEvmProyecto({ ...datos, fechaFinContractual: f });
+      igual(con.fechaFinContractual, f, f + ': fecha'); igual(con.plazoContractualVencido, f < '2026-01-06', f + ': vencido solo si es anterior a hoy');
+      igual(JSON.stringify({ ...con, fechaFinContractual: null, plazoContractualVencido: false }), JSON.stringify(sin), f + ': el resto de los indicadores no cambia');
+    }
+    // Con hora (timestamp como texto): cuenta el día
+    const conHora = nucleoEvmProyecto({ ...datos, fechaFinContractual: '2026-01-05T23:59:59-05:00' });
+    igual(conHora.fechaFinContractual, '2026-01-05', 'con hora: se guarda el día'); igual(conHora.plazoContractualVencido, true, 'con hora: vencido');
+    igual(nucleoEvmProyecto({ ...datos, hoy: '2026-01-05T08:00:00-05:00', fechaFinContractual: '2026-01-05' }).plazoContractualVencido, false, '«hoy» con hora el mismo día del plazo: no vencido');
+    // Cambio de año y de mes: se comparan días civiles
+    igual(nucleoEvmProyecto({ ...datos, hoy: '2027-01-01', fechaFinContractual: '2026-12-31' }).plazoContractualVencido, true, 'venció el 31-dic, hoy 1-ene');
+    igual(nucleoEvmProyecto({ ...datos, hoy: '2026-12-31', fechaFinContractual: '2027-01-01' }).plazoContractualVencido, false, 'vence el 1-ene, hoy 31-dic');
+    // avanceCompleto sin rubros o con monto 0: no hay avance que completar
+    igual(nucleoEvmProyecto({ hoy: '2026-01-06', fechaFinContractual: '2026-01-01' }).avanceCompleto, false, 'sin rubros: incompleto');
+    igual(nucleoEvmProyecto({ rubros: [rubro('r1', 0, 0, 'terminado')], hoy: '2026-01-06' }).avanceCompleto, false, 'monto 0: incompleto');
+    // Mal formada o inexistente: lanza (también con la cartera vacía), nunca se ignora
+    const malas = { 'Date': new Date('2026-01-05T00:00:00Z'), 'número (ms)': Date.UTC(2026, 0, 5), 'dd/mm/aaaa': '05/01/2026', 'aaaa/mm/dd': '2026/01/05', '30 de febrero': '2026-02-30',
+      'mes 13': '2026-13-01', 'sin ceros': '2026-1-5', 'con espacio delante': ' 2026-01-05', 'un objeto': { fecha: '2026-01-05' }, 'false': false, 'cero': 0 };
+    for(const [que, v] of Object.entries(malas)){
+      lanza(() => nucleoEvmProyecto({ ...datos, fechaFinContractual: v }), 'fin contractual ' + que, /^Fecha (no válida|inexistente)/);
+      lanza(() => nucleoEvmProyecto({ hoy: '2026-01-06', fechaFinContractual: v }), 'fin contractual ' + que + ', sin rubros', /^Fecha (no válida|inexistente)/);
+    }
+  });
+
+  // ── En ejecución y sin cronograma ─────────────────────────────────────────
+  await prueba('semáforo: en ejecución SIN cronograma nunca es verde — amarillo «sin cronograma», y rojo si además venció el plazo; fuera de ejecución sigue sin color', () => {
+    const HOY_SC = '2026-11-21';
+    const sinCron = (extra = {}) => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 250)], cronograma: [], lineaBaseActivaId: null, hoy: HOY_SC, ...extra });
+    const sem = (evm, garantias = SIN_GAR, pendientes = 0) => semEjec({ evm, garantias, pendientes });
+    const e = sinCron();
+    igual(e.sinCronograma, true, 'sin cronograma'); igual(e.spi, null, 'sin SPI'); igual(e.atrasoFechaDias, null, 'sin atraso medible');
+    igual(sem(e).color, 'amarillo', 'amarillo'); igual(sem(e).motivos.join('|'), 'sin cronograma', 'motivo «sin cronograma»');
+    // Todas las formas de no tener cronograma
+    const formas = {
+      'sin rubros': nucleoEvmProyecto({ rubros: [], cronograma: [], lineaBaseActivaId: null, hoy: HOY_SC }),
+      'línea base activa sin filas': nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 250)], cronograma: [fila('r1', '2026-01-01', '2026-12-31', 'zzz-lb-vieja')], lineaBaseActivaId: 'zzz-lb-nueva', hoy: HOY_SC }),
+      'filas solo de rubros ajenos': nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 250)], cronograma: [fila('zzz-ajeno', '2026-01-01', '2026-12-31')], lineaBaseActivaId: 'zzz-lb', hoy: HOY_SC }),
+      'filas sin fechas': nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 250)], cronograma: [fila('r1', null, null)], lineaBaseActivaId: 'zzz-lb', hoy: HOY_SC }),
+      'con todo ejecutado': sinCron({ rubros: [rubro('r1', 1000, 1000)] }),
+      'con todo terminado': sinCron({ rubros: [rubro('r1', 1000, 0, 'terminado')] })
+    };
+    for(const [que, evm] of Object.entries(formas)){
+      igual(evm.sinCronograma, true, que + ': sinCronograma'); igual(sem(evm).color, 'amarillo', que + ': amarillo, no verde'); igual(sem(evm).motivos.join('|'), 'sin cronograma', que + ': motivo');
+    }
+    // Basta una fila que cuente para que ya no sea «sin cronograma» (los demás rubros sin programar no lo ponen amarillo)
+    const parcial = nucleoEvmProyecto({ rubros: [rubro('r1', 500, 500), rubro('r2', 500, 0)], cronograma: [fila('r1', '2026-11-01', '2026-11-11')], lineaBaseActivaId: 'zzz-lb', hoy: HOY_SC });
+    igual(parcial.sinCronograma, false, 'un rubro programado: tiene cronograma'); igual(parcial.rubrosSinCronograma, 1, 'y un rubro sin programar');
+    igual(sem(parcial).color, 'verde', 'cronograma parcial y al día: verde'); igual(sem(parcial).motivos.length, 0, 'cronograma parcial: sin motivos');
+    // Se suma a los otros amarillos, en su orden (después del SPI, antes de garantías y pendientes)
+    igual(sem(e, G(0, 2), 6).motivos.join('|'), 'sin cronograma|2 garantías por vencer en 5 días o menos|6 pendientes (libro, observaciones y solicitudes)', 'con garantías por vencer y pendientes');
+    igual(sem(e, SIN_GAR, 5).motivos.join('|'), 'sin cronograma', 'con 5 pendientes: solo «sin cronograma»');
+    // Rojo si además venció el plazo contractual (el día del plazo todavía no)
+    const vencido = sinCron({ fechaFinContractual: '2026-11-20' });
+    igual(sem(vencido).color, 'rojo', 'sin cronograma y plazo vencido: rojo');
+    igual(sem(vencido).motivos.join('|'), 'plazo contractual vencido el 2026-11-20 con 25,0 % de avance|sin cronograma', 'motivos: primero el plazo, que es el que decide');
+    const venceHoy = sinCron({ fechaFinContractual: HOY_SC });
+    igual(sem(venceHoy).color, 'amarillo', 'plazo que vence hoy: sigue amarillo'); igual(sem(venceHoy).motivos.join('|'), 'sin cronograma', 'plazo que vence hoy: solo «sin cronograma»');
+    igual(sem(sinCron({ fechaFinContractual: '2027-06-30' })).color, 'amarillo', 'plazo futuro: amarillo');
+    // Sin rubros y con el plazo vencido: rojo con 0,0 % de avance
+    igual(sem(nucleoEvmProyecto({ hoy: HOY_SC, fechaFinContractual: '2026-11-20' })).motivos.join('|'), 'plazo contractual vencido el 2026-11-20 con 0,0 % de avance|sin cronograma', 'sin rubros, plazo vencido');
+    // Plazo vencido con el avance completo: no es rojo, pero tampoco verde (sigue sin cronograma)
+    const completo = sinCron({ rubros: [rubro('r1', 1000, 1000)], fechaFinContractual: '2026-11-20' });
+    igual(completo.avanceCompleto, true, 'avance completo'); igual(sem(completo).color, 'amarillo', 'plazo vencido con avance completo y sin cronograma: amarillo');
+    igual(sem(completo).motivos.join('|'), 'sin cronograma', 'avance completo: solo «sin cronograma»');
+    // Los otros rojos también lo pasan a rojo, con «sin cronograma» de motivo secundario
+    igual(sem(e, G(1, 0)).motivos.join('|'), '1 garantía vencida|sin cronograma', 'garantía vencida + sin cronograma');
+    // Fuera de ejecución sigue sin color: ni amarillo por no tener cronograma ni rojo por el plazo
+    for(const estado of [...SIN_COLOR, null, '', 'ZZZ otro']){
+      for(const [que, evm] of [['sin cronograma', e], ['sin cronograma y plazo vencido', vencido]]){
+        igual(JSON.stringify(nucleoSemaforo({ estado, evm, garantias: G(1, 1), pendientes: 9 })), '{"color":null,"motivos":[]}', `${String(estado)}, ${que}: sin color ni motivos`);
+      }
+    }
   });
 
   await prueba('semáforo: pendientes — 5 sigue verde, 6 es amarillo', () => {

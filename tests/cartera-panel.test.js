@@ -3,7 +3,8 @@
 // uno de los otros estados: planificación, pausado, finalizado y cancelado), y comprueba que lo
 // pintado (semáforo solo en ejecución, avance por valor ganado de todos los rubros / plan, SPI de los
 // rubros con cronograma, atraso a la fecha solo en los proyectos con semáforo y acotado por la fecha de
-// inicio del proyecto, marca de «datos por completar») es exactamente lo que da el núcleo llamado
+// inicio del proyecto, plazo contractual vencido con proyectos.fecha_fin_planificada, amarillo en
+// ejecución sin cronograma, marca de «datos por completar») es exactamente lo que da el núcleo llamado
 // directamente con los mismos datos. También comprueba que las lecturas van paginadas (tope de
 // filas de PostgREST), que un error de lectura se muestra en vez de pintar indicadores y, leyendo
 // el fuente, que cargarCartera ya no trae fórmulas propias.
@@ -36,13 +37,15 @@ const FIXTURE = () => ({
   proyectos: [
     // fecha_inicio (proyectos.fecha_inicio): la del rojo es ANTERIOR a su primer inicio programado (1-nov) y no
     // cambia nada; el amarillo no la tiene (null); los demás ni traen el campo.
-    { id: 'zzz-pr', nombre: 'ZZZ Rojo por SPI', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: 'en_ejecucion', fecha_inicio: '2026-10-15' },
-    { id: 'zzz-pa', nombre: 'ZZZ Amarillo por garantia', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: 'en_ejecucion', fecha_inicio: null },
+    // fecha_fin_planificada (fin del plazo contractual): la del rojo es FUTURA (31-mar-2027) y no pinta; el amarillo
+    // la tiene en null; el pausado la tiene VENCIDA (31-oct) y, al no llevar semáforo, tampoco pinta; los demás ni traen el campo.
+    { id: 'zzz-pr', nombre: 'ZZZ Rojo por SPI', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: 'en_ejecucion', fecha_inicio: '2026-10-15', fecha_fin_planificada: '2027-03-31' },
+    { id: 'zzz-pa', nombre: 'ZZZ Amarillo por garantia', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: 'en_ejecucion', fecha_inicio: null, fecha_fin_planificada: null },
     { id: 'zzz-pv', nombre: 'ZZZ Verde', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: 'recepcion_provisional' },
     { id: 'zzz-po', nombre: 'ZZZ Filas ajenas', contratante: 'ZZZ Cliente', estado: 'ejecucion', estado_cierre: null },
     // Uno por cada estado que NO lleva semáforo
     { id: 'zzz-pp', nombre: 'ZZZ En planificacion', contratante: 'ZZZ Cliente', estado: 'planificacion', estado_cierre: null },
-    { id: 'zzz-pz', nombre: 'ZZZ Pausado', contratante: 'ZZZ Cliente', estado: 'pausado', estado_cierre: 'en_ejecucion', fecha_inicio: '2026-07-01' },
+    { id: 'zzz-pz', nombre: 'ZZZ Pausado', contratante: 'ZZZ Cliente', estado: 'pausado', estado_cierre: 'en_ejecucion', fecha_inicio: '2026-07-01', fecha_fin_planificada: '2026-10-31' },
     { id: 'zzz-pf', nombre: 'ZZZ Finalizado', contratante: 'ZZZ Cliente', estado: 'finalizado', estado_cierre: 'recepcion_definitiva' },
     { id: 'zzz-pc', nombre: 'ZZZ Cancelado', contratante: 'ZZZ Cliente', estado: 'cancelado', estado_cierre: null },
     { id: 'zzz-pl', nombre: 'ZZZ Liquidado', contratante: 'ZZZ Cliente', estado: 'finalizado', estado_cierre: 'liquidado' }
@@ -74,7 +77,7 @@ const FIXTURE = () => ({
     { id: 'zzz-rl1', proyecto_id: 'zzz-pl', monto_contrato: 100, total_produccion: 100, estado: 'terminado' },
     // Planificación: nada ejecutado y el cronograma empieza en 2027
     { id: 'zzz-rp1', proyecto_id: 'zzz-pp', monto_contrato: 1000, total_produccion: 0, estado: 'planificado' },
-    // Pausado: 20 % hecho con el cronograma vencido el 1-oct (SPI 0,20): en ejecución sería rojo por tres motivos
+    // Pausado: 20 % hecho con el cronograma vencido el 1-oct (SPI 0,20) y el plazo contractual vencido el 31-oct: en ejecución sería rojo
     { id: 'zzz-rz1', proyecto_id: 'zzz-pz', monto_contrato: 1000, total_produccion: 200, estado: 'suspendido' },
     // Finalizado: rubro marcado terminado sin producción registrada → «datos por completar»
     { id: 'zzz-rf1', proyecto_id: 'zzz-pf', monto_contrato: 1000, total_produccion: 0, estado: 'terminado' },
@@ -147,7 +150,8 @@ function esperado(fx, pid, opciones = {}){
   const evm = nucleoEvmProyecto({
     rubros,
     cronograma: fx.cronograma_rubros.filter(c => idsRubro.has(c.rubro_id)),
-    lineaBaseActivaId: lb ? lb.id : null, hoy: opciones.hoy || HOY, fechaInicioProyecto: proyecto.fecha_inicio ?? null
+    lineaBaseActivaId: lb ? lb.id : null, hoy: opciones.hoy || HOY, fechaInicioProyecto: proyecto.fecha_inicio ?? null,
+    fechaFinContractual: proyecto.fecha_fin_planificada ?? null
   });
   const hoy = opciones.hoy || HOY;
   const gar = nucleoGarantias(fx.garantias.filter(g => g.proyecto_id === pid), hoy);
@@ -347,13 +351,112 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     t.cerrar();
   });
 
-  await prueba('proyecto sin cronograma: SPI «—», verde, y el título lo explica', async () => {
+  await prueba('proyecto en ejecución sin cronograma: SPI «—» y 🟡 «sin cronograma» (nunca verde); 🔴 si además venció el plazo contractual', async () => {
     const fx = FIXTURE();
     fx.cronograma_rubros = fx.cronograma_rubros.filter(c => c.proyecto_id !== 'zzz-pr');
-    const t = await montar(fx), f = t.filas['zzz-pr'];
-    igual(f.spi, '—', 'SPI'); igual(f.emoji, '🟢', 'emoji'); igual(f.avance, '17.5% / 0.0%', 'avance'); igual(f.atraso, '', 'atraso');
-    igual(f.motivos, 'sin cronograma: no hay SPI', 'título'); igual(f.spiTitulo, 'Sin cronograma: no hay SPI', 'título de la celda del SPI (sin «no estimable»: no hay SPI válido)');
+    const t = await montar(fx), f = t.filas['zzz-pr'], e = esperado(fx, 'zzz-pr');
+    igual(e.evm.sinCronograma, true, 'núcleo: sin cronograma'); igual(e.sem.color, 'amarillo', 'núcleo: amarillo');
+    igual(f.spi, '—', 'SPI'); igual(f.emoji, '🟡', 'emoji: amarillo, no verde'); igual(f.avance, '17.5% / 0.0%', 'avance'); igual(f.atraso, '', 'atraso');
+    igual(f.motivos, 'sin cronograma', 'título'); igual(f.spiTitulo, 'Sin cronograma: no hay SPI', 'título de la celda del SPI (sin «no estimable»: no hay SPI válido)');
     igual(f.avanceTitulo, 'Avance por valor ganado 17,5 % frente a plan a hoy 0,0 % · ejecutado por cantidades 17,5 % · sin cronograma: no hay plan ni SPI', 'título de la barra');
+    assert(/background:\s*#b8860b/.test(f.barra), 'la barra de avance va en amarillo: ' + f.barra); assert(/color:\s*#676879/.test(f.spiEstilo), 'el «—» del SPI va en gris');
+    assert(t.cont.textContent.includes('🔴0 🟡2 🟢2'), 'salud de la cartera: el rojo pasa a amarillo (🔴0 🟡2 🟢2)');
+    // Su plazo contractual (31-mar-2027) no ha vencido. Si venció ayer: rojo, con el plazo como primer motivo
+    fx.proyectos.find(p => p.id === 'zzz-pr').fecha_fin_planificada = '2026-11-20';
+    const t2 = await montar(fx), f2 = t2.filas['zzz-pr'];
+    igual(f2.emoji, '🔴', 'sin cronograma y plazo vencido: rojo'); igual(f2.motivos, 'plazo contractual vencido el 2026-11-20 con 17,5 % de avance · sin cronograma', 'motivos: el plazo y «sin cronograma»');
+    igual(f2.emoji, esperado(fx, 'zzz-pr').emoji, 'coincide con el núcleo'); igual(f2.spi, '—', 'sigue sin SPI'); igual(f2.atraso, '', 'sin cronograma no hay atraso a la fecha que pintar');
+    // El plazo que vence hoy todavía no está vencido: sigue amarillo
+    fx.proyectos.find(p => p.id === 'zzz-pr').fecha_fin_planificada = HOY;
+    const t3 = await montar(fx);
+    igual(t3.filas['zzz-pr'].emoji, '🟡', 'plazo que vence hoy: amarillo'); igual(t3.filas['zzz-pr'].motivos, 'sin cronograma', 'plazo que vence hoy: solo «sin cronograma»');
+    // Fuera de ejecución, sin cronograma sigue sin color: el cancelado del fixture no tiene cronograma
+    igual(esperado(t.fx, 'zzz-pc').evm.sinCronograma, true, 'núcleo: el cancelado no tiene cronograma'); igual(t.filas['zzz-pc'].emoji, '⚪', 'cancelado sin cronograma: sin color');
+    t.cerrar(); t2.cerrar(); t3.cerrar();
+  });
+
+  // ── Plazo contractual (proyectos.fecha_fin_planificada) ───────────────────
+  await prueba('cargarCartera pasa proyectos.fecha_fin_planificada al núcleo como fechaFinContractual (espía), o null si el proyecto no la tiene', async () => {
+    const llamadas = [];
+    const t = await montar(FIXTURE(), { antes: w => { const real = w.nucleoEvmProyecto; w.nucleoEvmProyecto = datos => { const e = real(datos); llamadas.push({ datos, evm: e }); return e; }; } });
+    igual(llamadas.length, 9, 'una llamada al núcleo por proyecto (los ocho activos y el liquidado)');
+    const de = Object.fromEntries(llamadas.map(l => [l.datos.rubros[0].proyecto_id, l]));
+    igual(de['zzz-pr'].datos.fechaFinContractual, '2027-03-31', 'pasa proyectos.fecha_fin_planificada como fechaFinContractual');
+    igual(de['zzz-pr'].datos.fechaInicioProyecto, '2026-10-15', 'y no la confunde con la fecha de inicio');
+    igual(de['zzz-pz'].datos.fechaFinContractual, '2026-10-31', 'también en los proyectos sin semáforo');
+    igual(de['zzz-pa'].datos.fechaFinContractual, null, 'fecha_fin_planificada null → null');
+    igual(de['zzz-pv'].datos.fechaFinContractual, null, 'proyecto sin el campo → null (no undefined ni texto vacío)');
+    assert(llamadas.every(l => 'fechaFinContractual' in l.datos), 'todas las llamadas llevan fechaFinContractual');
+    // Lo que el núcleo devuelve con ese dato
+    igual(de['zzz-pr'].evm.fechaFinContractual, '2027-03-31', 'núcleo: fecha del rojo'); igual(de['zzz-pr'].evm.plazoContractualVencido, false, 'núcleo: plazo futuro, no vencido');
+    igual(de['zzz-pz'].evm.plazoContractualVencido, true, 'núcleo: el plazo del pausado está vencido'); igual(t.filas['zzz-pz'].emoji, '⚪', 'y aun así el pausado va sin color');
+    igual(de['zzz-pv'].evm.fechaFinContractual, null, 'núcleo: sin plazo'); igual(de['zzz-pv'].evm.plazoContractualVencido, false, 'núcleo: sin plazo no hay vencimiento');
+    t.cerrar();
+  });
+
+  await prueba('plazo contractual vencido con avance menor al 100 %: 🔴 con su motivo aunque el SPI esté en verde; el día del plazo todavía no; con avance completo, no', async () => {
+    const fx = FIXTURE();
+    fx.garantias = [];                                                   // sin la garantía por vencer: el amarillo quedaría verde
+    const pa = fx.proyectos.find(p => p.id === 'zzz-pa');
+    const base = await montar(fx);
+    igual(base.filas['zzz-pa'].emoji, '🟢', 'sin plazo (null): verde'); igual(base.filas['zzz-pa'].motivos, 'Sin alertas', 'sin plazo: sin motivos');
+    assert(base.cont.textContent.includes('🔴1 🟡0 🟢3'), 'sin plazo: 🔴1 🟡0 🟢3');
+    // Venció ayer con 60 % de avance y SPI 1,20
+    pa.fecha_fin_planificada = '2026-11-20';
+    const t = await montar(fx), f = t.filas['zzz-pa'], e = esperado(fx, 'zzz-pa');
+    igual(e.evm.plazoContractualVencido, true, 'núcleo: plazo vencido'); igual(e.evm.avanceCompleto, false, 'núcleo: avance incompleto'); igual(e.sem.color, 'rojo', 'núcleo: rojo');
+    igual(f.emoji, '🔴', 'rojo'); igual(f.motivos, 'plazo contractual vencido el 2026-11-20 con 60,0 % de avance', 'motivo en el title del semáforo');
+    igual(f.spi, '1.20', 'el SPI no cambia'); assert(/color:\s*#00854d/.test(f.spiEstilo), 'y sigue pintado en verde: el rojo es por el plazo'); igual(f.atraso, '', 'sin atraso a la fecha');
+    igual(f.avance, '60.0% / 50.0%', 'avance'); assert(/background:\s*#e2445c/.test(f.barra), 'la barra de avance va en rojo');
+    assert(t.cont.textContent.includes('🔴2 🟡0 🟢2'), 'salud de la cartera: un rojo más (🔴2 🟡0 🟢2)');
+    igual(t.orden.slice(0, 2).sort().join(','), 'zzz-pa,zzz-pr', 'sube con los rojos al principio de la tabla');
+    // Con hora (timestamp como texto): cuenta el día
+    pa.fecha_fin_planificada = '2026-11-20T00:00:00+00:00';
+    const tHora = await montar(fx);
+    igual(tHora.filas['zzz-pa'].motivos, 'plazo contractual vencido el 2026-11-20 con 60,0 % de avance', 'fecha con hora: el motivo escribe solo el día');
+    // El plazo vence HOY: no está vencido
+    pa.fecha_fin_planificada = HOY;
+    const tHoy = await montar(fx);
+    igual(tHoy.filas['zzz-pa'].emoji, '🟢', 'vence hoy: verde'); igual(tHoy.filas['zzz-pa'].motivos, 'Sin alertas', 'vence hoy: sin motivos');
+    // «Hoy» es el día de Ecuador: a las 00:30 UTC del 22 todavía es 21 (no vencido); a las 05:00 UTC ya es 22 (vencido)
+    const tAntes = await montar(fx, { ahora: Date.UTC(2026, 10, 22, 0, 30, 0) });
+    igual(tAntes.filas['zzz-pa'].emoji, '🟢', '00:30 UTC del 22: en Ecuador sigue siendo el día del plazo');
+    const tDespues = await montar(fx, { ahora: Date.UTC(2026, 10, 22, 5, 0, 0) });
+    igual(tDespues.filas['zzz-pa'].emoji, '🔴', '05:00 UTC del 22: ya venció'); igual(tDespues.filas['zzz-pa'].motivos, 'plazo contractual vencido el 2026-11-21 con 60,0 % de avance', 'motivo con la fecha del plazo');
+    // Vencido con el avance completo (el verde: valor ganado 100 %): no es rojo
+    const fx2 = FIXTURE();
+    fx2.proyectos.find(p => p.id === 'zzz-pv').fecha_fin_planificada = '2026-10-15';
+    const t2 = await montar(fx2), e2 = esperado(fx2, 'zzz-pv');
+    igual(e2.evm.plazoContractualVencido, true, 'núcleo: el plazo del verde venció'); igual(e2.evm.avanceCompleto, true, 'núcleo: avance completo');
+    igual(t2.filas['zzz-pv'].emoji, '🟢', 'plazo vencido con avance completo: verde'); igual(t2.filas['zzz-pv'].motivos, 'Sin alertas', 'sin motivos');
+    // …y deja de serlo en cuanto el avance baja del 100 %: un rubro más, sin cronograma y sin producción (avance 66,7 %)
+    fx2.rubros.push({ id: 'zzz-rv3', proyecto_id: 'zzz-pv', monto_contrato: 500, total_produccion: 0, estado: 'planificado' });
+    const t3 = await montar(fx2), f3 = t3.filas['zzz-pv'];
+    igual(f3.emoji, '🔴', 'plazo vencido con 66,7 %: rojo'); igual(f3.motivos, 'plazo contractual vencido el 2026-10-15 con 66,7 % de avance', 'motivo: el avance es el de todos los rubros (lo programado está al 100 %)');
+    igual(f3.emoji, esperado(fx2, 'zzz-pv').emoji, 'coincide con el núcleo');
+    // Fuera de ejecución el plazo vencido no pinta ni se menciona
+    const fx4 = FIXTURE();
+    fx4.proyectos.find(p => p.id === 'zzz-pa').estado = 'planificacion'; fx4.proyectos.find(p => p.id === 'zzz-pa').fecha_fin_planificada = '2026-11-20';
+    const t4 = await montar(fx4);
+    igual(t4.filas['zzz-pa'].emoji, '⚪', 'en planificación con el plazo vencido: sin color'); assert(!/plazo/i.test(t4.filas['zzz-pa'].motivos), 'y su title no habla del plazo: ' + t4.filas['zzz-pa'].motivos);
+    for(const x of [base, t, tHora, tHoy, tAntes, tDespues, t2, t3, t4]) x.cerrar();
+  });
+
+  await prueba('fecha de fin contractual mal formada: se muestra como error (el núcleo lanza), no se ignora', async () => {
+    for(const [que, valor, patron] of [['dd/mm/aaaa', '31/03/2027', /Fecha no válida/], ['fecha inexistente', '2027-02-30', /Fecha inexistente/]]){
+      const fx = FIXTURE();
+      fx.proyectos.find(p => p.id === 'zzz-pr').fecha_fin_planificada = valor;
+      const t = await montar(fx, { fallan: {} });
+      const caja = t.cont.querySelector('#carteraError');
+      assert(caja && patron.test(caja.textContent), que + ': el error del núcleo llega al panel');
+      igual(Object.keys(t.filas).length, 0, que + ': ninguna fila de proyecto'); igual(t.erroresConsola.length, 1, que + ': el error queda en la consola');
+      t.cerrar();
+    }
+    // También en un proyecto que no lleva semáforo (el pausado): la fecha mala no se calla
+    const fx = FIXTURE();
+    fx.proyectos.find(p => p.id === 'zzz-pz').fecha_fin_planificada = '31/10/2026';
+    const t = await montar(fx, { fallan: {} });
+    assert(t.cont.querySelector('#carteraError'), 'pausado con la fecha mala: error'); igual(Object.keys(t.filas).length, 0, 'pausado con la fecha mala: ninguna fila');
     t.cerrar();
   });
 
@@ -506,9 +609,9 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
 
   await prueba('sin color no significa sin datos: salen su avance, su SPI en gris y sus pendientes; NO se pintan atrasos ni «cronograma vencido»', async () => {
     const t = await montar();
-    // Pausado: SPI 0,20, cronograma vencido, garantía vencida y una observación; en ejecución sería rojo
+    // Pausado: SPI 0,20, cronograma y plazo contractual vencidos, garantía vencida y una observación; en ejecución sería rojo
     const z = t.filas['zzz-pz'], ez = esperado(t.fx, 'zzz-pz');
-    igual(ez.gar.vencidas, 1, 'núcleo: la garantía vencida del pausado se cuenta'); igual(ez.evm.cronogramaVencido, true, 'núcleo: cronograma vencido');
+    igual(ez.gar.vencidas, 1, 'núcleo: la garantía vencida del pausado se cuenta'); igual(ez.evm.cronogramaVencido, true, 'núcleo: cronograma vencido'); igual(ez.evm.plazoContractualVencido, true, 'núcleo: plazo contractual vencido');
     igual(ez.evm.atrasoFechaDias, 100, 'núcleo: tiene 100 días de atraso a la fecha'); igual(ez.evm.atrasoProyectadoDias, 244, 'núcleo: y 244 proyectados');
     igual(z.emoji, '⚪', 'pausado: sin color'); igual(z.spi, '0.20', 'pausado: SPI'); igual(z.avance, '20.0% / 100.0%', 'pausado: avance');
     assert(/color:\s*#676879/.test(z.spiEstilo), 'pausado: SPI en gris');
@@ -517,7 +620,7 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     for(const pid of Object.keys(SIN_SEMAFORO)){
       const tr = t.cont.querySelector(`tr[onclick^="irANotificacion('${pid}'"]`);
       assert(!/atraso|vencido/i.test(tr.textContent), pid + ': sin «atraso» ni «vencido» en el texto de la fila: ' + tr.textContent.replace(/\s+/g, ' '));
-      for(const td of tr.querySelectorAll('[title]')) assert(!/atraso|cronograma vencido/i.test(td.getAttribute('title')), pid + ': sin atrasos ni cronograma vencido en los title: ' + td.getAttribute('title'));
+      for(const td of tr.querySelectorAll('[title]')) assert(!/atraso|cronograma vencido|plazo/i.test(td.getAttribute('title')), pid + ': sin atrasos, cronograma vencido ni plazo en los title: ' + td.getAttribute('title'));
     }
     assert(z.alertas.includes('🛡️!1') && z.alertas.includes('📌1'), 'pausado: garantía vencida y observación como pendientes: ' + z.alertas);
     // Finalizado: una garantía vencida y otra por vencer, como pendientes
@@ -532,10 +635,11 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     fx.proyectos.find(p => p.id === 'zzz-pc').estado = 'ejecucion';
     const t2 = await montar(fx);
     igual(t2.filas['zzz-pz'].emoji, '🔴', 'contraprueba: pausado → en ejecución es rojo');
-    igual(t2.filas['zzz-pz'].motivos, 'SPI 0,20 · cronograma vencido el 2026-10-01 con 20,0 % de lo programado · 1 garantía vencida · atraso a la fecha de 100 días', 'contraprueba: los cuatro motivos, con el cronograma vencido como motivo propio');
+    igual(t2.filas['zzz-pz'].motivos, 'SPI 0,20 · plazo contractual vencido el 2026-10-31 con 20,0 % de avance · cronograma vencido el 2026-10-01 con 20,0 % de lo programado · 1 garantía vencida · atraso a la fecha de 100 días', 'contraprueba: los cinco motivos, con el plazo contractual y el cronograma vencidos como motivos propios');
     igual(t2.filas['zzz-pz'].atraso, '100d atraso a la fecha', 'contraprueba: ahora sí se pinta el atraso'); assert(/color:\s*#e2445c/.test(t2.filas['zzz-pz'].atrasoEstilo), 'contraprueba: atraso en rojo');
     igual(t2.filas['zzz-pz'].spiTitulo, 'Valor ganado 20,0 % sobre plan 100,0 % · solo rubros con cronograma · atraso a la fecha: 100 días (el plan preveía este valor ganado el 2026-08-13) · atraso proyectado al final: 244 días', 'contraprueba: y los dos atrasos en el title');
-    igual(t2.filas['zzz-pc'].emoji, '🟡', 'contraprueba: cancelado → en ejecución es amarillo por pendientes');
+    igual(t2.filas['zzz-pc'].emoji, '🟡', 'contraprueba: cancelado → en ejecución es amarillo');
+    igual(t2.filas['zzz-pc'].motivos, 'sin cronograma · 7 pendientes (libro, observaciones y solicitudes)', 'contraprueba: por no tener cronograma y por sus 7 pendientes');
     t.cerrar(); t2.cerrar();
   });
 
@@ -801,12 +905,13 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     t.cerrar();
   });
 
-  await prueba('leyenda de «SALUD DE LA CARTERA»: sale de NUCLEO_CARTERA y menciona el cronograma vencido y el atraso a la fecha', async () => {
+  await prueba('leyenda de «SALUD DE LA CARTERA»: sale de NUCLEO_CARTERA y menciona el plazo contractual vencido, el cronograma vencido, el atraso a la fecha y que sin cronograma no hay verde', async () => {
     const t = await montar();
     const tarjeta = [...t.cont.querySelectorAll('.card')].find(c => /SALUD DE LA CARTERA/.test(c.textContent));
     const leyenda = tarjeta.lastElementChild.textContent;
-    igual(leyenda, `Rojo: SPI < ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha > ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días`, 'leyenda');
-    igual(leyenda, 'Rojo: SPI < 0.85, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha > 30 días', 'leyenda con los umbrales vigentes');
+    igual(leyenda, `Rojo: SPI < ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, plazo contractual vencido con el avance sin completar, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha > ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días · Sin cronograma nunca hay verde: amarillo como mínimo`, 'leyenda');
+    igual(leyenda, 'Rojo: SPI < 0.85, plazo contractual vencido con el avance sin completar, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha > 30 días · Sin cronograma nunca hay verde: amarillo como mínimo', 'leyenda con los umbrales vigentes');
+    assert(/plazo contractual vencido/.test(leyenda) && /Sin cronograma nunca hay verde/.test(leyenda), 'menciona el plazo contractual vencido y que sin cronograma no hay verde');
     assert(/⚪ sin semáforo: solo llevan color los proyectos en ejecución/.test(t.cont.textContent), 'la leyenda de la tabla explica el ⚪');
     assert(/barra: avance por valor ganado/.test(t.cont.textContent) && /Avance \(valor ganado\) \/ plan/.test(t.cont.textContent), 'la tabla dice que el avance es el valor ganado');
     t.cerrar();
@@ -887,6 +992,8 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     assert(/nucleoSemaforo\(\{\s*estado:\s*p\.estado \?\? null,/.test(codigoCartera), 'pasa el estado del proyecto al semáforo, o null si no tiene (nunca undefined)');
     assert(!/sin_estado/.test(cuerpo), 'sin el valor de reserva «sin_estado»: el núcleo acepta null');
     assert(/fechaInicioProyecto:\s*inicioPorProyecto\[id\]/.test(codigoCartera) && /inicioPorProyecto\[p\.id\] = p\.fecha_inicio \?\? null/.test(codigoCartera), 'pasa proyectos.fecha_inicio al núcleo como fechaInicioProyecto');
+    assert(/fechaFinContractual:\s*finContractualPorProyecto\[id\]/.test(codigoCartera) && /finContractualPorProyecto\[p\.id\] = p\.fecha_fin_planificada \?\? null/.test(codigoCartera), 'pasa proyectos.fecha_fin_planificada al núcleo como fechaFinContractual');
+    igual((codigoCartera.match(/fecha_fin_planificada/g) || []).length, 1, 'fecha_fin_planificada solo se lee para pasarla al núcleo');
     assert(/conColor && atraso>0/.test(codigoCartera) && !/[^&]\s+atraso>0\s*\?/.test(codigoCartera.replace(/conColor && atraso>0/g, '')), 'el atraso solo se pinta con semáforo (conColor)');
     assert(/evm\.evPct/.test(codigoCartera) && /evm\.planPct/.test(codigoCartera) && /evm\.rubrosSinCronograma/.test(codigoCartera), 'los title usan evPct / planPct y avisan de los rubros sin cronograma');
     assert(/NUCLEO_CARTERA\.SPI_MINIMO_PROYECCION/.test(codigoCartera) && /proyectado===null && evm\.spiValido/.test(codigoCartera), '«no estimable» solo con SPI válido, y el mínimo sale de NUCLEO_CARTERA');
@@ -941,6 +1048,11 @@ function igual(real, esp, que){ assert(real === esp, `${que}: se esperaba ${JSON
     assert(!/ejecutado\s*\/\s*d\.vigente/.test(codigoCartera), 'sin el avance real calculado a mano');
     assert(!/DIFERENCIA_AVANCE_PUNTOS|OBRA_TERMINADA_PCT/.test(codigoCartera) && !/diferenciaAvancePuntos\s*>/.test(codigoCartera), 'sin decidir a mano «datos por completar» ni «obra terminada»');
     assert(!/cronogramaVencido/.test(codigoCartera), 'sin regla propia de cronograma vencido (es un motivo del núcleo)');
+    assert(!/plazoContractualVencido|avanceCompleto|evm\.fechaFinContractual|fecha_fin_planificada\s*[<>]|[<>]=?\s*hoyStr/.test(codigoCartera), 'sin regla propia de plazo contractual vencido (es un motivo del núcleo)');
+    // «Sin cronograma no es verde» también es del núcleo: el color sale solo de sem.color, y sinCronograma solo redacta textos
+    igual((codigoCartera.match(/d\.clave = /g) || []).length, 1, 'el color se asigna una sola vez'); assert(/d\.clave = d\.sem\.color \|\| 'sin';/.test(codigoCartera), 'y sale de sem.color');
+    assert(!/sinCronograma[^\n]*(amarillo|verde|rojo)/.test(codigoCartera), 'sin elegir color a mano por no tener cronograma');
+    assert(!/TOLERANCIA_MONTO|montoContractual|monto_contrato\s*[-+<>]/.test(codigoCartera.replace(/'id,proyecto_id,monto_contrato,total_produccion,estado'/, '')), 'sin comparación propia de montos');
     // El color del SPI se decide con las constantes del núcleo
     assert(/NUCLEO_CARTERA\.SPI_ROJO/.test(codigoCartera) && /NUCLEO_CARTERA\.SPI_AMARILLO/.test(codigoCartera), 'el color del SPI usa NUCLEO_CARTERA');
   });

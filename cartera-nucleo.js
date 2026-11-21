@@ -24,8 +24,9 @@
 //   · Ejecutado por cantidades = Σ producción / Σ monto de TODOS los rubros, sin
 //     tope. Se informa aparte. Si difiere del avance principal en más de 10
 //     puntos, el proyecto queda marcado «datos por completar»; también un
-//     proyecto finalizado sin producción registrada o sin rubros, y uno sin
-//     estado.
+//     proyecto finalizado sin producción registrada o sin rubros, uno sin
+//     estado, y uno cuyo monto vigente no cuadra con el contractual más las
+//     órdenes de cambio aprobadas (diferencia mayor que 1,00).
 //   · SPI = valor ganado en cronograma / plan a la fecha (BCWP / BCWS).
 //   · ATRASO A LA FECHA (cronograma ganado): se busca el ÚLTIMO día en que el
 //     plan no superaba el valor ganado que hoy se tiene; el atraso son los días
@@ -40,11 +41,14 @@
 //     todavía insignificante o con SPI menor que 0,10.
 //   · SEMÁFORO: solo para proyectos en estado «ejecucion». Planificación,
 //     pausado, finalizado, cancelado y sin estado no llevan color (color = null).
-//     Rojo si SPI < 0,85, el cronograma está vencido sin haber terminado lo
+//     Rojo si SPI < 0,85, el plazo contractual está vencido con el avance por
+//     debajo del 100 %, el cronograma está vencido sin haber terminado lo
 //     programado, hay una garantía vencida o el atraso a la fecha pasa de 30
-//     días; amarillo si SPI < 0,95, hay una garantía por vencer o hay más de 5
-//     pendientes; verde en lo demás. El SPI no cuenta mientras el plan a la
-//     fecha no llegue a 0,5 % del proyecto (arranque de obra).
+//     días; amarillo si SPI < 0,95, no tiene cronograma, hay una garantía por
+//     vencer o hay más de 5 pendientes; verde en lo demás. Un proyecto en
+//     ejecución sin cronograma nunca sale verde. El SPI no cuenta mientras el
+//     plan a la fecha no llegue a 0,5 % del proyecto (arranque de obra).
+//     Plazo contractual = proyectos.fecha_fin_planificada (si no está, no hay regla).
 //     El semáforo solo admite garantías contadas con el aviso oficial de 5 días.
 //   · Un hito (inicio = fin) cuenta como programado desde su propio día. Una
 //     fila con el fin anterior al inicio se toma con las fechas intercambiadas.
@@ -66,6 +70,7 @@ const NUCLEO_CARTERA = Object.freeze({
   DIFERENCIA_AVANCE_PUNTOS: 10,
   OBRA_TERMINADA_PCT: 99.95,
   SPI_MINIMO_PROYECCION: 0.10,
+  TOLERANCIA_MONTO: 1,
   ESTADO_CON_SEMAFORO: 'ejecucion',
   ZONA: 'America/Guayaquil'
 });
@@ -145,9 +150,11 @@ function nucleoAvanceRubro(rubro){
 //   lineaBaseActivaId: id de su línea base activa, o null
 //   hoy: AAAA-MM-DD (Ecuador); obligatorio y válido (lanza si no)
 //   fechaInicioProyecto: AAAA-MM-DD opcional (proyectos.fecha_inicio); acota el atraso a la fecha
-function nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId, hoy, fechaInicioProyecto } = {}){
+//   fechaFinContractual: AAAA-MM-DD opcional (proyectos.fecha_fin_planificada); plazo del contrato
+function nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId, hoy, fechaInicioProyecto, fechaFinContractual } = {}){
   hoy = nucleoDiaDe(hoy);
   const inicioProyecto = fechaInicioProyecto === null || fechaInicioProyecto === undefined || fechaInicioProyecto === '' ? null : nucleoDiaDe(fechaInicioProyecto);
+  const finContractual = fechaFinContractual === null || fechaFinContractual === undefined || fechaFinContractual === '' ? null : nucleoDiaDe(fechaFinContractual);
   const porId = new Map();
   let vigente = 0, ejecutado = 0;
   // Orden fijo (por id): la suma en coma flotante no depende del orden de llegada.
@@ -178,7 +185,8 @@ function nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId, hoy, fechaIn
     if(!primerInicio || x.ini < primerInicio) primerInicio = x.ini;
     if(!ultimoFin || x.fin > ultimoFin) ultimoFin = x.fin;
   });
-  const sinCronograma = filas.length === 0;
+  // Sin filas, o con filas que no pesan nada (rubros de monto 0): no hay cronograma útil.
+  const sinCronograma = filas.length === 0 || !(planFinal > 0);
   const bcws = planA(hoy);
   const spi = bcws > 0 ? bcwp / bcws : null;
   // El SPI entra a los atrasos y al semáforo solo con un plan significativo a la fecha.
@@ -230,7 +238,10 @@ function nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId, hoy, fechaIn
     filasCronogramaInvertidas: filasInvertidas,
     sinCronograma,
     sinLineaBase: !lineaBaseActivaId,
-    primerInicio, ultimoFin, cronogramaVencido, obraProgramadaTerminada
+    primerInicio, ultimoFin, cronogramaVencido, obraProgramadaTerminada,
+    fechaFinContractual: finContractual,
+    plazoContractualVencido: finContractual !== null && hoy > finContractual,
+    avanceCompleto: ganadoTotal >= NUCLEO_CARTERA.OBRA_TERMINADA_PCT
   };
 }
 
@@ -238,13 +249,24 @@ function nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId, hoy, fechaIn
 // el valor ganado y el ejecutado por cantidades difieren en más de DIFERENCIA_AVANCE_PUNTOS,
 // el proyecto está finalizado sin producción registrada (o sin rubros), no tiene estado, o su
 // cronograma trae filas con las fechas invertidas.
-function nucleoDatosPorCompletar({ evm, estado } = {}){
+//   montoContractual y montoOrdenesCambio (opcionales): monto registrado del contrato y suma de
+//   las órdenes de cambio aprobadas; si se pasan, se compara su suma con el monto vigente (Σ rubros).
+function nucleoDatosPorCompletar({ evm, estado, montoContractual, montoOrdenesCambio } = {}){
   const N = NUCLEO_CARTERA, e = evm || {}, avisos = [];
+  const dinero = v => (Math.round(v * 100) / 100).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const pct = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
   if(!estado) avisos.push('proyecto sin estado registrado');
   if(e.filasCronogramaInvertidas > 0) avisos.push(`${e.filasCronogramaInvertidas} fila${e.filasCronogramaInvertidas > 1 ? 's' : ''} de cronograma con la fecha de fin anterior a la de inicio`);
   if((e.diferenciaAvancePuntos || 0) > N.DIFERENCIA_AVANCE_PUNTOS){
     avisos.push(`el valor ganado (${pct(e.avancePct)} %) y el ejecutado por cantidades (${pct(e.realPct)} %) difieren en más de ${N.DIFERENCIA_AVANCE_PUNTOS} puntos`);
+  }
+  // Un monto contractual nulo, vacío o 0 es «sin monto registrado»: no se compara.
+  if(montoContractual !== null && montoContractual !== undefined && Number(montoContractual) > 0 && e.rubros > 0){
+    const esperado = Number(montoContractual) + (Number(montoOrdenesCambio) || 0);
+    const dif = (e.vigente || 0) - esperado;
+    if(Math.abs(Math.round(dif * 100)) > Math.round(N.TOLERANCIA_MONTO * 100)){   // en céntimos: sin ruido de coma flotante
+      avisos.push(`el monto vigente ($ ${dinero(e.vigente || 0)}) no cuadra con el contractual más las órdenes de cambio aprobadas ($ ${dinero(esperado)}): diferencia de $ ${dinero(dif)}`);
+    }
   }
   if(estado === 'finalizado'){
     if(!e.rubros) avisos.push('proyecto finalizado sin rubros');
@@ -304,17 +326,18 @@ function nucleoSemaforo({ estado, evm, garantias, pendientes } = {}){
   const pct = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
   const rojo = [], amarillo = [];
   if(e.spiValido && e.spi < N.SPI_ROJO) rojo.push(`SPI ${spiTxt}`);
+  if(e.plazoContractualVencido && !e.avanceCompleto) rojo.push(`plazo contractual vencido el ${e.fechaFinContractual} con ${pct(e.avancePct || 0)} % de avance`);
   if(e.cronogramaVencido && !e.obraProgramadaTerminada) rojo.push(`cronograma vencido el ${e.ultimoFin} con ${pct(e.planFinalPct > 0 ? (e.evPct || 0) / e.planFinalPct * 100 : 0)} % de lo programado`);
   if(g.vencidas > 0) rojo.push(`${g.vencidas} garantía${g.vencidas > 1 ? 's' : ''} vencida${g.vencidas > 1 ? 's' : ''}`);
   if(e.atrasoFechaDias > N.ATRASO_ROJO_DIAS) rojo.push(`atraso a la fecha de ${e.atrasoFechaDias} días`);
   if(e.spiValido && e.spi >= N.SPI_ROJO && e.spi < N.SPI_AMARILLO) amarillo.push(`SPI ${spiTxt}`);
+  if(e.sinCronograma) amarillo.push('sin cronograma');
   if(g.porVencer > 0) amarillo.push(`${g.porVencer} garantía${g.porVencer > 1 ? 's' : ''} por vencer en ${g.diasAviso} días o menos`);
   if(pend > N.PENDIENTES_AMARILLO) amarillo.push(`${pend} pendientes (libro, observaciones y solicitudes)`);
   if(rojo.length) return { color: 'rojo', motivos: rojo.concat(amarillo) };
   if(amarillo.length) return { color: 'amarillo', motivos: amarillo };
   const verde = [];
-  if(e.sinCronograma) verde.push('sin cronograma: no hay SPI');
-  else if(e.spi !== null && e.spi !== undefined && !e.spiValido) verde.push('plan a la fecha todavía menor al 0,5 %');
+  if(e.spi !== null && e.spi !== undefined && !e.spiValido) verde.push('plan a la fecha todavía menor al 0,5 %');
   return { color: 'verde', motivos: verde };
 }
 

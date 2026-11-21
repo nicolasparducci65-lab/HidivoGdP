@@ -5,8 +5,15 @@
 // estructura que la base; datos sintéticos, prefijo ZZZ). Nunca toca producción
 // ni la red.
 //
-// Además comprueba que el cuerpo de exportacion_estado_datos() en la migración es
-// el mismo texto que exportacion/consulta.sql: si se cambia uno sin el otro, falla.
+// Encima se aplica 20261123_exportacion_estado_datos_v2.sql, que reemplaza el cuerpo
+// de exportacion_estado_datos() (usuarios de prueba y columnas de autor). La
+// 20261122_exportacion_estado_disparo.sql no toca esa función (aquí se comprueba) y
+// necesita dobles de pg_net y Vault: tiene su propia prueba y no se monta en esta.
+//
+// Además comprueba que el cuerpo de exportacion_estado_datos() tal como queda tras
+// aplicar TODAS las migraciones (el de la 20261123) es el mismo texto que
+// exportacion/consulta.sql: si se cambia uno sin el otro, falla. Y que el generador
+// vale con las dos funciones: la nueva y la de la 20261121, que sigue en producción.
 //
 //   node exportaciones-estado-migracion.test.js
 //
@@ -34,10 +41,12 @@ catch{
 }
 
 const MIGRACION = leer(path.join(RAIZ, 'supabase', 'migrations', '20261121_exportaciones_estado.sql'));
+const MIGRACION_22 = leer(path.join(RAIZ, 'supabase', 'migrations', '20261122_exportacion_estado_disparo.sql'));
+const MIGRACION_V2 = leer(path.join(RAIZ, 'supabase', 'migrations', '20261123_exportacion_estado_datos_v2.sql'));
 const CONSULTA = leer(path.join(RAIZ, 'exportacion', 'consulta.sql'));
 // Las claves que el generador exige en los datos (cada una, un arreglo) y el generador mismo.
 const { TABLAS, desenvolver } = require(path.join(RAIZ, 'exportacion', 'exportar.js'));
-const { construirEstado } = require(path.join(RAIZ, 'exportacion', 'estado-proyectos.js'));
+const { construirEstado, estadoAMarkdown } = require(path.join(RAIZ, 'exportacion', 'estado-proyectos.js'));
 const EMPRESA = '00000000-0000-4000-8000-0000000000e1';
 const PROY_1 = '00000000-0000-4000-8000-0000000000c1';
 const PROY_2 = '00000000-0000-4000-8000-0000000000c2';
@@ -50,11 +59,58 @@ const FUNCIONES = [
 // y sin el punto y coma final.
 const normalizar = sql => sql.replace(/\r/g, '').split('\n').filter(l => !/^\s*--/.test(l)).join(' ')
   .replace(/\s+/g, ' ').trim().replace(/;$/, '').trim();
-function cuerpoDeDatosEnLaMigracion(){
-  const m = /create or replace function public\.exportacion_estado_datos\(\)([\s\S]*?)as \$datos\$\n([\s\S]*?)\n\$datos\$;/.exec(MIGRACION);
+// La función de datos en una migración: su cabecera (atributos) y su cuerpo entre $datos$.
+// Se busca al principio de una línea: la copia comentada de la reversión no cuenta.
+function cuerpoDeDatosEn(migracion){
+  const m = /^create or replace function public\.exportacion_estado_datos\(\)([\s\S]*?)as \$datos\$\r?\n([\s\S]*?)\r?\n\$datos\$;/m.exec(migracion);
   assert(m, 'no se encontró exportacion_estado_datos() con su cuerpo entre $datos$ en la migración');
   return { cabecera: m[1], cuerpo: m[2] };
 }
+// La reversión que la 20261123 anota al pie, lista para ejecutar: las líneas comentadas desde
+// su «begin;» hasta su «commit;», sin el prefijo «--   ».
+function reversionDeLaV2(){
+  const pie = MIGRACION_V2.slice(MIGRACION_V2.indexOf('-- ── Reversión'));
+  const lineas = pie.split(/\r?\n/).filter(l => /^--   /.test(l) || l === '--').map(l => l.replace(/^--(   )?/, ''));
+  const sql = lineas.join('\n');
+  assert(/^begin;\ncreate or replace function public\.exportacion_estado_datos\(\)/.test(sql) && /\ncommit;$/.test(sql.trim()), 'la reversión de la 20261123 no tiene la forma esperada');
+  return sql;
+}
+// Usuarios de prueba y lo que crean, para las pruebas de la función nueva (todo inventado).
+const PRUEBA_1 = '00000000-0000-4000-8000-0000000000f1';   // de prueba por su nombre
+const PRUEBA_2 = '00000000-0000-4000-8000-0000000000f2';   // de prueba por su nombre (minúsculas, espacios delante y sin correo)
+const PRUEBA_3 = '00000000-0000-4000-8000-0000000000f3';   // de prueba por su correo (con «+» antes de la arroba)
+const NO_PRUEBA_1 = '00000000-0000-4000-8000-0000000000f4'; // «Aprueba…»: el nombre no EMPIEZA por «Prueba»
+const NO_PRUEBA_2 = '00000000-0000-4000-8000-0000000000f5'; // el «+» va después de la arroba
+const DATOS_DE_PRUEBA = `
+  insert into public.perfiles (id, nombre, apellido, rol, email) values
+    ('${PRUEBA_1}', 'Prueba Uno', 'ZZZ Residente', 'usuario', 'zzz.pruebauno@example.invalid'),
+    ('${PRUEBA_2}', '  pRUEBA dos', 'ZZZ Fiscal', 'usuario', null),
+    ('${PRUEBA_3}', 'ZZZ Tercera', 'ZZZ ConMas', 'usuario', 'zzz.tercera+obra@example.invalid'),
+    ('${NO_PRUEBA_1}', 'ZZZ Aprueba', 'ZZZ Planillas', 'usuario', 'zzz.aprueba@example.invalid'),
+    ('${NO_PRUEBA_2}', 'ZZZ Cuarta', 'ZZZ Dominio', 'usuario', 'zzz.cuarta@sub+dominio.example.invalid');
+  insert into public.proyecto_miembros (proyecto_id, perfil_id, usuario_id, rol) values
+    ('${PROY_1}', '${PRUEBA_1}', '${PRUEBA_1}', 'residente'), ('${PROY_1}', '${NO_PRUEBA_1}', '${NO_PRUEBA_1}', 'residente');
+  insert into public.libro_obra (proyecto_id, fecha, numero_registro, novedades, estado_aprobacion, created_by) values
+    ('${PROY_1}', current_date, 90, 'ZZZ registro de prueba', 'pendiente', '${PRUEBA_1}'),
+    ('${PROY_1}', current_date - 4, 91, 'ZZZ registro real', 'aprobado', '${NO_PRUEBA_1}'),
+    ('${PROY_2}', current_date, 1, 'ZZZ registro de prueba', 'pendiente', '${PRUEBA_2}');
+  insert into public.archivos (proyecto_id, modulo, nombre, url, subido_por) values
+    ('${PROY_1}', 'general', 'ZZZ prueba.pdf', 'zzz/prueba.pdf', '${PRUEBA_3}'),
+    ('${PROY_1}', 'rubros', 'ZZZ prueba-rubros.pdf', 'zzz/prueba-rubros.pdf', '${PRUEBA_1}'),
+    ('${PROY_1}', 'contratos', 'ZZZ adenda.pdf', 'zzz/adenda.pdf', '${NO_PRUEBA_2}');
+  insert into public.observaciones (proyecto_id, numero, titulo, descripcion, estado, creado_por, created_at) values
+    ('${PROY_1}', 90, 'ZZZ Observación de prueba', 'ZZZ texto. Antecedente: ZZZ', 'abierta', '${PRUEBA_1}', now() - interval '60 days');
+  insert into public.solicitudes (proyecto_id, tipo, titulo, estado, numero, creado_por) values
+    ('${PROY_1}', 'documentacion', 'ZZZ Solicitud de prueba', 'pendiente', 90, '${PRUEBA_2}');
+  insert into public.ordenes_cambio (proyecto_id, numero, titulo, estado, monto_total, creado_por, created_at) values
+    ('${PROY_1}', 90, 'ZZZ Orden de prueba', 'solicitada', 999, '${PRUEBA_3}', now() - interval '60 days');
+  insert into public.planillas_pago (proyecto_id, numero, fecha_inicio, fecha_fin, estado, total_monto, total_liquido, creado_por) values
+    ('${PROY_1}', 90, current_date - 30, current_date - 1, 'en_revision', 777, 700, '${PRUEBA_1}');
+  insert into public.ensayos (proyecto_id, especificacion_id, numero, fecha, valor, cumple, resuelto, creado_por) values
+    ('${PROY_1}', gen_random_uuid(), 90, current_date - 2, 1.5, false, false, '${PRUEBA_2}');
+  insert into public.sst_incidentes (proyecto_id, trabajador_nombre, descripcion, estado, created_by) values
+    ('${PROY_1}', 'ZZZ Trabajador de prueba', 'ZZZ relato de prueba', 'abierto', '${PRUEBA_3}');
+`;
 const ADMIN_1 = '00000000-0000-4000-8000-0000000000a1';
 const ADMIN_2 = '00000000-0000-4000-8000-0000000000a2';
 const USUARIO = '00000000-0000-4000-8000-0000000000b1';
@@ -131,15 +187,15 @@ const ESQUEMA = `
     creado_por uuid, created_at timestamptz default now());
   create table public.libro_obra (id uuid default gen_random_uuid() primary key, proyecto_id uuid, fecha date not null, numero_registro integer,
     actividades_ejecutadas text, novedades text, residente_nombre text, residente_email text, created_at timestamptz default now(),
-    estado_aprobacion text default 'pendiente' not null);
+    estado_aprobacion text default 'pendiente' not null, created_by uuid);
   create table public.observaciones (id uuid default gen_random_uuid() primary key, proyecto_id uuid, plano_id uuid, titulo text not null,
     descripcion text, estado text default 'abierta', pin_x numeric, pin_y numeric, creado_por uuid, created_at timestamptz default now(), numero integer);
   create table public.ensayos (id uuid default gen_random_uuid() primary key, proyecto_id uuid not null, especificacion_id uuid not null,
     numero integer not null, fecha date not null, valor numeric not null, detalle text, cumple boolean not null, resuelto boolean default false not null,
-    reensayo_de uuid, created_at timestamptz default now());
+    reensayo_de uuid, created_at timestamptz default now(), creado_por uuid);
   create table public.sst_incidentes (id uuid default gen_random_uuid() primary key, proyecto_id uuid not null, tipo text default 'incidente' not null,
     fecha_hora timestamptz default now() not null, trabajador_nombre text, trabajador_cedula text, descripcion text, causas text,
-    estado text default 'abierto', created_at timestamptz default now());
+    estado text default 'abierto', created_at timestamptz default now(), created_by uuid);
   create table public.solicitudes (id uuid default gen_random_uuid() primary key, proyecto_id uuid, tipo text not null, titulo text not null,
     descripcion text, estado text default 'pendiente', creado_por uuid, created_at timestamptz default now(), numero integer);
   create table public.archivos (id uuid default gen_random_uuid() primary key, proyecto_id uuid, modulo text, referencia_id uuid, nombre text not null,
@@ -194,13 +250,22 @@ const ESQUEMA = `
   insert into public.liquidaciones (proyecto_id, datos, observaciones) values ('${PROY_2}', '{"zzz": true}', 'ZZZ nota');
 `;
 
-async function nueva(){
+// Base con SOLO la 20261121: la función de datos anterior, la que sigue aplicada en producción.
+async function nuevaSoloLa21(){
   const db = new PGlite();
   await db.exec(BASE);
   await db.exec(ESQUEMA);
   await db.exec(MIGRACION);
   return db;
 }
+// Base con todas las migraciones de la exportación que tocan lo que aquí se prueba: 20261121 y 20261123.
+async function nueva(){
+  const db = await nuevaSoloLa21();
+  await db.exec(MIGRACION_V2);
+  return db;
+}
+// Lo que devuelve la función de datos, llamada como la llama el workflow (service_role).
+const datosDe = async db => (await como(db, 'service_role', '', () => uno(db, `select public.exportacion_estado_datos() as d`))).d;
 const uno = async (db, sql, params) => (await db.query(sql, params)).rows[0];
 const HOY_EC = `(now() at time zone 'America/Guayaquil')::date`;
 // Ejecuta fn con el rol y el usuario indicados, y vuelve siempre al rol dueño.
@@ -492,15 +557,18 @@ async function falla(fn){ try{ await fn(); return null; }catch(e){ return e; } }
     assert(JSON.stringify(arch) === JSON.stringify(['contratos:1', 'general:2']), 'archivos agregados: ' + arch);
     const obs = d.observaciones.slice().sort((a, b) => a.numero - b.numero);
     assert(obs.length === 2 && obs[0].con_antecedente === true && obs[1].con_antecedente === false && !('descripcion' in obs[0]), 'observaciones: ' + JSON.stringify(obs));
-    assert(JSON.stringify(Object.keys(d.perfiles[0]).sort()) === JSON.stringify(['apellido', 'id', 'nombre']), 'perfiles trae de más: ' + Object.keys(d.perfiles[0]));
-    assert(JSON.stringify(Object.keys(d.sst_incidentes[0]).sort()) === JSON.stringify(['estado', 'proyecto_id']), 'sst trae de más: ' + Object.keys(d.sst_incidentes[0]));
+    assert(JSON.stringify(Object.keys(d.perfiles[0]).sort()) === JSON.stringify(['apellido', 'es_prueba', 'id', 'nombre']), 'perfiles trae de más (o le falta es_prueba): ' + Object.keys(d.perfiles[0]));
+    assert(d.perfiles.every(p => p.es_prueba === false), 'ningún perfil del montaje base es de prueba');
+    assert(JSON.stringify(Object.keys(d.sst_incidentes[0]).sort()) === JSON.stringify(['created_by', 'estado', 'proyecto_id']), 'sst trae de más: ' + Object.keys(d.sst_incidentes[0]));
+    assert(Number(d.libro_obra[0].excluidos_prueba) === 0 && d.archivos.every(a => Number(a.excluidos_prueba) === 0), 'sin usuarios de prueba no se excluye nada de los agregados');
     const texto = JSON.stringify(d);
     for(const prohibido of ['example.invalid', '0000000000001', 'ZZZ relato del incidente', 'ZZZ Trabajador', 'ZZZ nota interna', 'ZZZ comentario', 'ZZZ texto de la observación', 'ZZZ asistentes', '-78.123456']){
       assert(!texto.includes(prohibido), 'la exportación trae un dato que no debía salir: ' + prohibido);
     }
     // El generador real lo acepta y calcula sin bloques fallidos
     const estado = construirEstado(desenvolver(d), { versionApp: 'zzz-prueba' });
-    assert(estado.formato === 2, 'formato: ' + estado.formato);
+    assert(estado.formato === 3, 'formato: ' + estado.formato);
+    assert(estado.usuarios_de_prueba === 0 && estado.excluidos_de_prueba.length === 0, 'usuarios de prueba: ' + estado.usuarios_de_prueba + ' / ' + JSON.stringify(estado.excluidos_de_prueba));
     assert(estado.proyectos_total === 2 && estado.proyectos.length >= 1, 'proyectos en el estado: ' + estado.proyectos.length + ' de ' + estado.proyectos_total);
     assert(estado.bloques_fallidos.length === 0, 'bloques fallidos: ' + JSON.stringify(estado.bloques_fallidos));
   });
@@ -525,31 +593,183 @@ async function falla(fn){ try{ await fn(); return null; }catch(e){ return e; } }
     await db.exec(`begin transaction read only; select public.exportacion_estado_datos(); rollback;`);
   });
 
-  await prueba('el cuerpo de exportacion_estado_datos() en la migración es idéntico a exportacion/consulta.sql', async () => {
-    const { cabecera, cuerpo } = cuerpoDeDatosEnLaMigracion();
+  await prueba('el cuerpo de exportacion_estado_datos() tras aplicar TODAS las migraciones (el de la 20261123) es idéntico a exportacion/consulta.sql', async () => {
+    // La 20261122 no define ni reemplaza la función de datos: por eso no hace falta montarla aquí.
+    assert(!/function\s+public\.exportacion_estado_datos/i.test(MIGRACION_22), 'la 20261122 ahora toca exportacion_estado_datos(): hay que montarla en esta prueba');
+    const { cabecera, cuerpo } = cuerpoDeDatosEn(MIGRACION_V2);
     assert(/returns json\b/.test(cabecera) && !/setof|returns table/i.test(cabecera), 'la función no devuelve un json simple: ' + cabecera.trim());
     assert(/language sql\b/.test(cabecera) && /\bstable\b/.test(cabecera) && /security definer/.test(cabecera) && /set search_path to /.test(cabecera), 'cabecera de la función: ' + cabecera.trim());
+    // Mismos atributos, letra por letra, que en la 20261121.
+    assert(normalizar(cabecera) === normalizar(cuerpoDeDatosEn(MIGRACION).cabecera), 'la cabecera de la función cambió respecto de la 20261121: ' + cabecera.trim());
     const a = normalizar(cuerpo), b = normalizar(CONSULTA);
-    assert(b.startsWith('select json_build_object(') && b.endsWith(') as datos'), 'consulta.sql no tiene la forma esperada');
+    assert(b.startsWith('select json_build_object(') && b.endsWith(') prueba'), 'consulta.sql no tiene la forma esperada');
     if(a !== b){
       let i = 0; while(i < a.length && a[i] === b[i]) i++;
-      assert(false, 'la migración y exportacion/consulta.sql difieren desde el carácter ' + i + ':\n      migración: …' + a.slice(Math.max(0, i - 30), i + 50) + '…\n      consulta:  …' + b.slice(Math.max(0, i - 30), i + 50) + '…');
+      assert(false, 'la migración 20261123 y exportacion/consulta.sql difieren desde el carácter ' + i + ':\n      migración: …' + a.slice(Math.max(0, i - 30), i + 50) + '…\n      consulta:  …' + b.slice(Math.max(0, i - 30), i + 50) + '…');
     }
     // consulta.sql sigue siendo incrustable: un único punto y coma, sin signo de dólar ni comentarios de bloque
     const sentencia = CONSULTA.split(/\r?\n/).filter(l => !/^\s*--/.test(l)).join('\n').trim();
     assert(sentencia.split(';').length === 2 && sentencia.endsWith(';'), 'consulta.sql debe tener un único punto y coma, al final');
     assert(!sentencia.includes('$') && !sentencia.includes('/*') && !sentencia.includes('--'), 'consulta.sql no puede llevar $, /* ni -- dentro de la sentencia');
-    // Y lo que quedó instalado en la base es ese mismo texto
+    // Y lo que quedó instalado en la base, con todas las migraciones aplicadas, es ese mismo texto
     const db = await nueva();
     const src = (await uno(db, `select prosrc from pg_proc where proname = 'exportacion_estado_datos'`)).prosrc;
     assert(normalizar(src) === b, 'el cuerpo instalado en la base no es el de consulta.sql');
-    // La consulta suelta y la función dan lo mismo
+    assert((await uno(db, `select count(*)::int as n from pg_proc where proname = 'exportacion_estado_datos'`)).n === 1, 'quedó más de una función de datos');
+    // La consulta suelta, la consulta incrustada en «select ( … )» y la función dan lo mismo
     const suelta = (await uno(db, CONSULTA)).datos;
+    const incrustada = (await uno(db, 'select (' + sentencia.replace(/;$/, '') + ') as d')).d;
     const funcion = (await uno(db, `select public.exportacion_estado_datos() as d`)).d;
-    assert(JSON.stringify(suelta) === JSON.stringify(funcion), 'la consulta suelta y la función no devuelven lo mismo');
+    assert(JSON.stringify(suelta) === JSON.stringify(funcion) && JSON.stringify(incrustada) === JSON.stringify(funcion), 'la consulta suelta, la incrustada y la función no devuelven lo mismo');
+    // Con solo la 20261121 lo instalado es el cuerpo ANTERIOR (el de esa migración, que no se toca)
+    const dbVieja = await nuevaSoloLa21();
+    const srcViejo = (await uno(dbVieja, `select prosrc from pg_proc where proname = 'exportacion_estado_datos'`)).prosrc;
+    assert(normalizar(srcViejo) === normalizar(cuerpoDeDatosEn(MIGRACION).cuerpo) && normalizar(srcViejo) !== b && normalizar(srcViejo).endsWith(') as datos'), 'la 20261121 ya no instala el cuerpo anterior');
   });
 
-  await prueba('la migración PRUEBA los permisos al aplicarse: si anon o authenticated pueden ejecutar una función, aborta y no aplica nada', async () => {
+  await prueba('20261123: se aplica dos veces sin error, conserva atributos y permisos, y no toca nada más', async () => {
+    const db = await nuevaSoloLa21();
+    const foto = () => uno(db, `select
+      (select count(*)::int from pg_proc where proname like 'exportacion\\_estado\\_%') as funciones, (select count(*)::int from cron.job) as tareas,
+      (select count(*)::int from public.exportaciones_estado) as filas, (select count(*)::int from public.notificaciones) as avisos,
+      (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r') as tablas`);
+    const antes = await foto();
+    await db.exec(MIGRACION_V2);
+    await db.exec(MIGRACION_V2);
+    assert(JSON.stringify(await foto()) === JSON.stringify(antes), 'la 20261123 creó o borró algo más que el cuerpo de la función: ' + JSON.stringify(antes) + ' → ' + JSON.stringify(await foto()));
+    const def = await uno(db, `select prorettype::regtype::text as devuelve, proretset, prosecdef, provolatile, proconfig, lanname
+                                from pg_proc p join pg_language l on l.oid = p.prolang where proname = 'exportacion_estado_datos'`);
+    assert(def.devuelve === 'json' && def.proretset === false && def.prosecdef === true && def.provolatile === 's' && def.lanname === 'sql', 'atributos: ' + JSON.stringify(def));
+    assert(Array.isArray(def.proconfig) && def.proconfig.some(c => /^search_path=/.test(c)), 'sin search_path fijo: ' + JSON.stringify(def.proconfig));
+    const p = await uno(db, `select has_function_privilege('authenticated', 'public.exportacion_estado_datos()', 'execute') as a,
+      has_function_privilege('anon', 'public.exportacion_estado_datos()', 'execute') as n, has_function_privilege('public', 'public.exportacion_estado_datos()', 'execute') as p,
+      has_function_privilege('service_role', 'public.exportacion_estado_datos()', 'execute') as s, current_user = session_user as mismo`);
+    assert(!p.a && !p.n && !p.p && p.s && p.mismo, 'permisos tras la 20261123 (o el rol quedó cambiado): ' + JSON.stringify(p));
+    for(const rol of ['anon', 'authenticated']){
+      const e = await como(db, rol, rol === 'authenticated' ? ADMIN_1 : '', () => falla(() => db.query(`select public.exportacion_estado_datos()`)));
+      assert(e && e.code === '42501' && /permission denied for function exportacion_estado_datos/.test(e.message), rol + ' pudo ejecutar la función de datos nueva: ' + (e && e.message));
+      const e2 = await como(db, rol, rol === 'authenticated' ? ADMIN_1 : '', () => falla(() => db.query(`select * from public.exportacion_estado_datos()`)));
+      assert(e2 && e2.code === '42501', rol + ' pudo ejecutarla con «select * from»');
+    }
+    assert(JSON.stringify(Object.keys(await datosDe(db)).sort()) === JSON.stringify(TABLAS.slice().sort()), 'service_role no obtiene las claves esperadas');
+    // Reaplicar la 20261121 vuelve al cuerpo anterior (lo avisa la cabecera de la 20261123): hay que aplicar esta otra vez.
+    await db.exec(MIGRACION);
+    assert(!('es_prueba' in (await datosDe(db)).perfiles[0]), 'reaplicar la 20261121 debía volver al cuerpo anterior');
+    assert(/20261121_exportaciones_estado\.sql vuelve a instalar el cuerpo ANTERIOR/.test(MIGRACION_V2), 'la cabecera de la 20261123 ya no avisa de ese efecto');
+    await db.exec(MIGRACION_V2);
+    assert('es_prueba' in (await datosDe(db)).perfiles[0], 'y la 20261123 lo repone');
+  });
+
+  await prueba('20261123 PRUEBA los permisos al aplicarse: si anon o authenticated pueden ejecutar la función, o service_role no, aborta y no aplica nada', async () => {
+    assert(/do \$prueba\$[\s\S]*set local role %I[\s\S]*insufficient_privilege[\s\S]*end \$prueba\$;\s*commit;/.test(MIGRACION_V2), 'la 20261123 no trae la prueba de permisos antes del commit');
+    const REVOKE = 'revoke all on function public.exportacion_estado_datos() from public, anon, authenticated;';
+    const GRANT = 'grant execute on function public.exportacion_estado_datos() to service_role;';
+    // Solo cuenta el texto ejecutable (la reversión comentada del pie repite las dos líneas).
+    const ejecutable = MIGRACION_V2.split(/\r?\n/).filter(l => !/^\s*--/.test(l)).join('\n');
+    assert(ejecutable.split(REVOKE).length === 2 && ejecutable.split(GRANT).length === 2, 'no se encontró el revoke o el grant en la 20261123');
+    // Sobre una base en la que la función todavía no existe (Supabase le daría EXECUTE a todos al crearla):
+    // sin el REVOKE, o quitándoselo solo a PUBLIC, la migración tiene que abortar entera.
+    for(const mala of ['', REVOKE.replace('from public, anon, authenticated', 'from public')]){
+      const db = new PGlite();
+      await db.exec(BASE); await db.exec(ESQUEMA);
+      const e = await falla(() => db.exec(ejecutable.replace(REVOKE, mala)));
+      assert(e && e.code === '42501' && /Permisos mal puestos/.test(e.message), 'la 20261123 mal hecha se aplicó (' + (mala || 'sin revoke') + '): ' + (e && e.message));
+      await db.exec('rollback;');
+      assert((await uno(db, `select count(*)::int as n from pg_proc where proname = 'exportacion_estado_datos'`)).n === 0, 'la 20261123 abortada dejó la función creada');
+    }
+    // Y sobre la base real (función ya creada por la 20261121): si service_role se queda sin permiso, aborta y queda el cuerpo anterior.
+    const db = await nuevaSoloLa21();
+    const e = await falla(() => db.exec(ejecutable.replace(GRANT, 'revoke all on function public.exportacion_estado_datos() from service_role;')));
+    assert(e && e.code === '42501' && /service_role no puede ejecutar/.test(e.message), 'la 20261123 se aplicó sin el permiso de service_role: ' + (e && e.message));
+    await db.exec('rollback;');
+    const queda = await uno(db, `select prosrc, has_function_privilege('service_role', 'public.exportacion_estado_datos()', 'execute') as s, current_user = session_user as mismo from pg_proc where proname = 'exportacion_estado_datos'`);
+    assert(normalizar(queda.prosrc) === normalizar(cuerpoDeDatosEn(MIGRACION).cuerpo) && queda.s && queda.mismo, 'la 20261123 abortada cambió la función o los permisos');
+    // Bien aplicada, no deja el rol cambiado ni escribe nada.
+    await db.exec(MIGRACION_V2);
+    const r = await uno(db, `select current_user = session_user as mismo, (select count(*)::int from public.exportaciones_estado) as filas, (select count(*)::int from public.notificaciones) as avisos`);
+    assert(r.mismo === true && r.filas === 0 && r.avisos === 0, JSON.stringify(r));
+  });
+
+  await prueba('20261123, usuarios de prueba: es_prueba por nombre o por «+» en el correo (que no sale), agregados sin lo de prueba y columnas de autor', async () => {
+    const db = await nueva();
+    const antes = await datosDe(db);
+    await db.exec(DATOS_DE_PRUEBA);
+    const d = await datosDe(db);
+    const marca = id => d.perfiles.find(p => p.id === id).es_prueba;
+    assert(marca(PRUEBA_1) === true && marca(PRUEBA_2) === true && marca(PRUEBA_3) === true, 'los tres perfiles de prueba no salen marcados: ' + JSON.stringify(d.perfiles.filter(p => p.es_prueba).map(p => p.nombre)));
+    assert(marca(NO_PRUEBA_1) === false && marca(NO_PRUEBA_2) === false && marca(ADMIN_1) === false && marca(USUARIO) === false, 'se marcó de prueba a quien no lo es: ' + JSON.stringify(d.perfiles.filter(p => p.es_prueba).map(p => p.nombre)));
+    assert(d.perfiles.every(p => JSON.stringify(Object.keys(p).sort()) === JSON.stringify(['apellido', 'es_prueba', 'id', 'nombre']) && typeof p.es_prueba === 'boolean'), 'un perfil trae otra cosa');
+    const texto = JSON.stringify(d);
+    assert(!texto.includes('example.invalid') && !texto.includes('@') && !/"(email|correo)"/.test(texto), 'la función devuelve algún correo');
+    // Agregados: lo de prueba no cuenta y se dice aparte cuánto se dejó fuera. Un autor que no es de prueba, o nulo, cuenta.
+    const libro = id => d.libro_obra.find(x => x.proyecto_id === id);
+    const hoy = (await uno(db, `select current_date::text as h, (current_date - 1)::text as ayer`));
+    assert(libro(PROY_1).ultimo_registro === hoy.ayer && Number(libro(PROY_1).pendientes_aprobacion) === 2 && Number(libro(PROY_1).excluidos_prueba) === 1, 'libro del proyecto 1 (el registro de prueba de hoy no cuenta): ' + JSON.stringify(libro(PROY_1)));
+    assert(libro(PROY_2).ultimo_registro === null && Number(libro(PROY_2).pendientes_aprobacion) === 0 && Number(libro(PROY_2).excluidos_prueba) === 1, 'libro del proyecto 2 (solo tiene un registro de prueba): ' + JSON.stringify(libro(PROY_2)));
+    const arch = d.archivos.filter(a => a.proyecto_id === PROY_1).map(a => a.modulo + ':' + a.cantidad + ':' + a.excluidos_prueba).sort();
+    assert(JSON.stringify(arch) === JSON.stringify(['contratos:2:0', 'general:2:1', 'rubros:0:1']), 'archivos agregados: ' + arch);
+    // Columnas de autor en las tablas que el generador filtra.
+    const autor = (tabla, columna, filtro) => d[tabla].filter(filtro).map(x => x[columna]);
+    assert(JSON.stringify([autor('observaciones', 'creado_por', x => x.numero === 90), autor('solicitudes', 'creado_por', x => x.creado_por !== null), autor('ordenes_cambio', 'creado_por', x => x.numero === 90),
+      autor('planillas_pago', 'creado_por', x => x.numero === 90), autor('ensayos', 'creado_por', x => x.creado_por !== null), autor('sst_incidentes', 'created_by', x => x.created_by !== null)])
+      === JSON.stringify([[PRUEBA_1], [PRUEBA_2], [PRUEBA_3], [PRUEBA_1], [PRUEBA_2], [PRUEBA_3]]), 'columnas de autor');
+    assert(!texto.includes('ZZZ relato de prueba') && !texto.includes('ZZZ Trabajador de prueba') && !texto.includes('ZZZ registro de prueba'), 'la exportación trae un texto que no debía salir');
+
+    // El generador real: lo de prueba no cambia NADA de ningún proyecto y la cabecera dice qué se dejó fuera.
+    const ahora = new Date().toISOString();
+    const sin = construirEstado(desenvolver(antes), { versionApp: 'zzz-prueba', ahora }), con = construirEstado(desenvolver(d), { versionApp: 'zzz-prueba', ahora });
+    assert(con.bloques_fallidos.length === 0, 'bloques fallidos: ' + JSON.stringify(con.bloques_fallidos));
+    assert(sin.usuarios_de_prueba === 0 && con.usuarios_de_prueba === 3, 'usuarios de prueba: ' + sin.usuarios_de_prueba + ' → ' + con.usuarios_de_prueba);
+    assert(JSON.stringify(con.excluidos_de_prueba) === JSON.stringify([
+      { proyecto: 'ZZZ-FIS-2026-001', elementos: { miembros_equipo: 1, observaciones: 1, registros_libro: 1, solicitudes: 1, ordenes_cambio: 1, planillas: 1, ensayos: 1, incidentes_sst: 1, archivos: 2 } },
+      { proyecto: 'ZZZ-CON-2026-002', elementos: { registros_libro: 1 } }]), 'excluidos de prueba: ' + JSON.stringify(con.excluidos_de_prueba));
+    // Lo único que cambia entre los dos estados es lo que añadieron los usuarios que NO son de prueba: un miembro,
+    // un registro del libro (más antiguo que el último) y un archivo de contratos.
+    const p1 = e => e.proyectos.find(p => p.identidad.codigo === 'ZZZ-FIS-2026-001');
+    assert(JSON.stringify(p1(con).equipo.map(m => m.nombre)) === JSON.stringify(['ZZZ Usuario Tres', 'ZZZ Aprueba ZZZ Planillas']), 'equipo: ' + JSON.stringify(p1(con).equipo));
+    assert(JSON.stringify(Object.entries(p1(con).documentos.por_modulo).sort()) === JSON.stringify([['contratos', 2], ['general', 2]]), 'documentos (el módulo con solo archivos de prueba no se lista): ' + JSON.stringify(p1(con).documentos));
+    for(const bloque of ['avance', 'proximos_14_dias', 'planillas', 'garantias', 'ordenes_cambio', 'libro', 'observaciones', 'calidad_seguridad']){
+      assert(JSON.stringify(p1(con)[bloque]) === JSON.stringify(p1(sin)[bloque]), 'lo de prueba cambió el bloque ' + bloque + ': ' + JSON.stringify(p1(sin)[bloque]) + ' → ' + JSON.stringify(p1(con)[bloque]));
+    }
+    assert(JSON.stringify(con.resumen) === JSON.stringify(sin.resumen), 'lo de prueba cambió el resumen (semáforo, «Esperan decisión»…)');
+    const md = estadoAMarkdown(con);
+    assert(!/Prueba Uno|pRUEBA dos|ZZZ Tercera|de prueba»|Orden de prueba/.test(JSON.stringify(con.proyectos) + JSON.stringify(con.resumen)), 'un nombre o un título de prueba llegó a la salida');
+    assert(md.split('\n')[3].startsWith('Elementos de prueba — usuarios de prueba: 3; se dejó fuera lo suyo: ZZZ-FIS-2026-001 (1 miembro del equipo, 1 observación, 1 registro del libro, '), 'cabecera del .md: ' + md.split('\n')[3]);
+  });
+
+  await prueba('COMPATIBILIDAD: con la función ANTERIOR (solo la 20261121) el generador nuevo funciona, no excluye nada y lo dice', async () => {
+    const db = await nuevaSoloLa21();
+    await db.exec(DATOS_DE_PRUEBA);
+    const d = await datosDe(db);
+    assert(JSON.stringify(Object.keys(d.perfiles[0]).sort()) === JSON.stringify(['apellido', 'id', 'nombre']) && !('creado_por' in d.planillas_pago[0]) && !('excluidos_prueba' in d.libro_obra[0]), 'la función anterior no es la que se esperaba');
+    const estado = construirEstado(desenvolver(d), { versionApp: 'zzz-prueba' });
+    assert(estado.formato === 3 && estado.bloques_fallidos.length === 0, 'formato ' + estado.formato + ', bloques fallidos: ' + JSON.stringify(estado.bloques_fallidos));
+    assert(estado.usuarios_de_prueba === null && estado.excluidos_de_prueba.length === 0, 'no debía identificar usuarios de prueba: ' + estado.usuarios_de_prueba);
+    const p1 = estado.proyectos.find(p => p.identidad.codigo === 'ZZZ-FIS-2026-001');
+    assert(p1.equipo.some(m => m.nombre === 'Prueba Uno ZZZ Residente') && p1.observaciones.abiertas === 2 && p1.documentos.por_modulo.rubros === 1, 'con la función anterior lo de prueba sí sale: ' + JSON.stringify([p1.equipo, p1.observaciones, p1.documentos]));
+    const md = estadoAMarkdown(estado);
+    assert(md.split('\n')[3] === 'Elementos de prueba — usuarios de prueba: no se pudieron identificar (función de datos anterior); no se dejó nada fuera', 'cabecera del .md: ' + md.split('\n')[3]);
+    assert(md.endsWith('\n— fin del archivo (2 proyectos) —\n') && !/[\uD800-\uDFFF]/.test(md), 'final del .md');
+  });
+
+  await prueba('REVERSIÓN de la 20261123 (la que anota al pie): vuelve al cuerpo de la 20261121 con los mismos permisos', async () => {
+    const db = await nueva();
+    await db.exec(reversionDeLaV2());
+    const src = (await uno(db, `select prosrc from pg_proc where proname = 'exportacion_estado_datos'`)).prosrc;
+    assert(normalizar(src) === normalizar(cuerpoDeDatosEn(MIGRACION).cuerpo), 'la reversión no deja el cuerpo de la 20261121');
+    const p = await uno(db, `select has_function_privilege('authenticated', 'public.exportacion_estado_datos()', 'execute') as a,
+      has_function_privilege('anon', 'public.exportacion_estado_datos()', 'execute') as n, has_function_privilege('public', 'public.exportacion_estado_datos()', 'execute') as p,
+      has_function_privilege('service_role', 'public.exportacion_estado_datos()', 'execute') as s,
+      (select count(*)::int from pg_proc where proname like 'exportacion\\_estado\\_%') as funciones`);
+    assert(!p.a && !p.n && !p.p && p.s && p.funciones === 3, 'permisos o funciones tras la reversión: ' + JSON.stringify(p));
+    const d = await datosDe(db);
+    assert(!('es_prueba' in d.perfiles[0]) && construirEstado(desenvolver(d), {}).usuarios_de_prueba === null, 'tras la reversión los datos son los de la función anterior');
+    // Y se puede volver a aplicar la 20261123 encima.
+    await db.exec(MIGRACION_V2);
+    assert('es_prueba' in (await datosDe(db)).perfiles[0], 'la 20261123 no se pudo reaplicar tras la reversión');
+  });
+
+  await prueba('20261121: la migración PRUEBA los permisos al aplicarse: si anon o authenticated pueden ejecutar una función, aborta y no aplica nada', async () => {
     assert(/do \$prueba\$[\s\S]*set local role %I[\s\S]*insufficient_privilege[\s\S]*end \$prueba\$;\s*commit;/.test(MIGRACION), 'la migración no trae la prueba de permisos antes del commit');
     const REVOKES = [
       'revoke all on function public.exportacion_estado_datos() from public, anon, authenticated;',

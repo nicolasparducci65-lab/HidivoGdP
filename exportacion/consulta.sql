@@ -19,8 +19,22 @@
 --
 -- Las columnas empresa_id / emisor_empresa_id / tipo / codigo de proyectos y la
 -- sigla de empresas vienen de las migraciones 20261120_multiempresa_*.
--- libro_obra y archivos llegan AGREGADOS (una fila por proyecto, o por proyecto
--- y módulo) para no traer miles de filas.
+--
+-- Usuarios de prueba (decisión del 21-nov-2026). Un perfil es de prueba si su
+-- nombre empieza por «Prueba» (sin distinguir mayúsculas) o si su correo lleva
+-- un «+» antes de la arroba. La regla está escrita UNA sola vez, al pie: la
+-- subconsulta «prueba» devuelve una fila con el arreglo de sus id. El correo se
+-- lee solo ahí y NO se devuelve: de cada perfil sale el booleano es_prueba.
+--   · Las tablas que llegan fila a fila traen su columna de autor (creado_por,
+--     created_by) y es el generador quien deja fuera lo creado por un usuario de
+--     prueba.
+--   · libro_obra y archivos llegan AGREGADOS (una fila por proyecto, o por
+--     proyecto y módulo) para no traer miles de filas: el agregado ya NO cuenta
+--     lo creado o subido por usuarios de prueba y devuelve aparte cuántos dejó
+--     fuera (excluidos_prueba). Una fila puede venir con cantidad 0, o sin
+--     ultimo_registro, si todo lo que tenía era de prueba.
+-- Las claves y columnas de la versión anterior (migración 20261121) siguen todas:
+-- esta solo añade.
 --
 -- Orden: donde el orden de las filas decide el resultado, el json_agg lleva su
 -- ORDER BY (no basta el de una subconsulta):
@@ -63,7 +77,7 @@ select json_build_object(
   'planillas_pago', (
     select coalesce(json_agg(t order by t.proyecto_id, t.numero, t.created_at, t.id), '[]'::json) from (
       select id, proyecto_id, numero, fecha_inicio, fecha_fin, estado, total_monto, total_liquido,
-             fecha_aprobacion, fecha_pago, created_at, updated_at
+             fecha_aprobacion, fecha_pago, created_at, updated_at, creado_por
         from public.planillas_pago
     ) t),
   'planilla_historial', (
@@ -78,14 +92,15 @@ select json_build_object(
     ) t),
   'ordenes_cambio', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select proyecto_id, numero, titulo, estado, monto_total, created_at
+      select proyecto_id, numero, titulo, estado, monto_total, created_at, creado_por
         from public.ordenes_cambio
     ) t),
   'libro_obra', (
     select coalesce(json_agg(t), '[]'::json) from (
       select proyecto_id,
-             max(fecha) as ultimo_registro,
-             count(*) filter (where estado_aprobacion = 'pendiente') as pendientes_aprobacion
+             max(fecha) filter (where not coalesce(created_by = any(prueba.ids), false)) as ultimo_registro,
+             count(*) filter (where estado_aprobacion = 'pendiente' and not coalesce(created_by = any(prueba.ids), false)) as pendientes_aprobacion,
+             count(*) filter (where coalesce(created_by = any(prueba.ids), false)) as excluidos_prueba
         from public.libro_obra
        group by proyecto_id
     ) t),
@@ -97,22 +112,24 @@ select json_build_object(
     ) t),
   'ensayos', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select id, proyecto_id, cumple, resuelto, reensayo_de
+      select id, proyecto_id, cumple, resuelto, reensayo_de, creado_por
         from public.ensayos
     ) t),
   'sst_incidentes', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select proyecto_id, estado
+      select proyecto_id, estado, created_by
         from public.sst_incidentes
     ) t),
   'solicitudes', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select proyecto_id, estado
+      select proyecto_id, estado, creado_por
         from public.solicitudes
     ) t),
   'archivos', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select proyecto_id, modulo, count(*) as cantidad
+      select proyecto_id, modulo,
+             count(*) filter (where not coalesce(subido_por = any(prueba.ids), false)) as cantidad,
+             count(*) filter (where coalesce(subido_por = any(prueba.ids), false)) as excluidos_prueba
         from public.archivos
        group by proyecto_id, modulo
     ) t),
@@ -123,7 +140,7 @@ select json_build_object(
     ) t),
   'perfiles', (
     select coalesce(json_agg(t), '[]'::json) from (
-      select id, nombre, apellido
+      select id, nombre, apellido, (id = any(prueba.ids)) as es_prueba
         from public.perfiles
     ) t),
   'actas_recepcion', (
@@ -136,4 +153,10 @@ select json_build_object(
       select proyecto_id
         from public.liquidaciones
     ) t)
-) as datos;
+) as datos
+  from (
+    select coalesce(array_agg(id), '{}'::uuid[]) as ids
+      from public.perfiles
+     where btrim(nombre) ilike 'prueba%'
+        or position('+' in split_part(coalesce(email, ''), '@', 1)) > 0
+  ) prueba;

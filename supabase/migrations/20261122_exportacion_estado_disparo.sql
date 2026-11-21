@@ -447,6 +447,8 @@ commit;
 -- ── Reversión ───────────────────────────────────────────────────────────────
 -- 1) Aplicar de nuevo, entero, 20261121_exportaciones_estado.sql: es idempotente y
 --    devuelve el vigilante y el registro a su versión anterior.
+--    OJO: eso también devuelve exportacion_estado_datos() a su primer cuerpo; si la migración
+--    20261123_exportacion_estado_datos_v2.sql estaba aplicada, hay que aplicarla otra vez después.
 -- 2) Después:
 -- begin;
 --   select cron.unschedule(jobname) from cron.job where jobname in

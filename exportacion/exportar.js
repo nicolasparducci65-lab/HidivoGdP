@@ -22,7 +22,9 @@
 //   RESULTADO proyectos=N fallidos=M resumen=ok|parcial|null
 // La segunda es para máquinas: «resumen» dice si las seis partes del resumen
 // se calcularon (ok), solo algunas (parcial) o ninguna (null).
-// El .json sale en «formato: 2» (lo describe la cabecera de estado-proyectos.js).
+// El .json sale en «formato: 3» (lo describe la cabecera de estado-proyectos.js).
+// Vale con los datos de la función anterior (migración 20261121, sin la marca de
+// usuarios de prueba): entonces no se excluye nada y la cabecera lo dice.
 //
 // Código de salida:
 //   0  todo bien: archivos escritos y ningún bloque fallido
