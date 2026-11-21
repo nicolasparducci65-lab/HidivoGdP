@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Exportación diaria del estado de proyectos: datos, registro de corridas y
 -- vigilante.
+-- APLICADA en producción el 21-nov-2026 (con la app v65 publicada).
 -- NO se aplica sola. Se aplica DESPUÉS de publicar la app que muestra el aviso
 -- en la campana y ANTES de subir el workflow estado-diario.yml al repo privado
 -- HidivoBackups (el workflow llama por la API a exportacion_estado_datos y a
