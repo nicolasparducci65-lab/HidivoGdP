@@ -45,6 +45,22 @@ function empresaPorId(id){ return id ? (_empresasCatalogo.find(x => x.id === id)
 function fijarHistorialEmisor(proyectoId, filas){
   _emisorHistorial = { proyectoId: proyectoId || null, filas: Array.isArray(filas) ? filas : [] };
 }
+// Emisores anteriores del proyecto (los del historial cargado), sin repetir: para incrustar sus
+// logos en un documento que reúne piezas de varias fechas (el expediente).
+function emisoresHistoricos(proy){
+  if(!proy || _emisorHistorial.proyectoId !== proy.id) return [];
+  const vistos = new Set();
+  return _emisorHistorial.filas.map(h => empresaPorId(h.empresa_id)).filter(e => e && !vistos.has(e.id) && vistos.add(e.id)).map(emisorDesdeEmpresa);
+}
+// Fecha (YYYY-MM-DD) en Ecuador de un instante guardado en UTC (created_at, fecha_hora): es la que
+// se compara con la fecha de corte del emisor. Un registro de las 20:00 del día 19 en Ecuador es
+// día 20 en UTC y, sin esto, caería del lado equivocado del corte.
+function fechaEcuadorDe(instante){
+  if(!instante) return '';
+  const d = new Date(instante);
+  if(isNaN(d)) return String(instante).slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(d);
+}
 
 // Empresa (fila de public.empresas) → emisor listo para imprimir. El logo es el
 // data URI guardado; la empresa de la plataforma sin logo cargado usa el logo
@@ -935,10 +951,12 @@ function expedienteGenerarHTML(datos, seleccion, meta){
     const resumen = `<table class="tabla"><thead><tr><th>N°</th><th>Título</th><th>Fecha</th><th>Estado</th><th class="num">Monto neto</th></tr></thead><tbody>${
       ocs.map(o => `<tr><td>OC-${String(o.numero).padStart(2, '0')}</td><td>${e(o.titulo)}</td><td>${expFmtFecha(o.fecha_aprobacion || o.created_at)}</td><td>${e(ESTADOS_OC[o.estado]?.label || o.estado)}</td><td class="num">${f(o.monto_total)}</td></tr>`).join('')
     }</tbody><tfoot><tr><th colspan="4">Aprobadas: ${calc.ocsAprobadas.length} · monto neto</th><th class="num">${f(calc.montoOCs)}</th></tr></tfoot></table>`;
-    const docs = ocs.map((o, k) => `<section class="sub oc-doc" id="oc-${o.id}">
+    // Cada orden de cambio lleva el emisor de SU fecha de aprobación (igual que impresa suelta): en un
+    // proyecto que cambió de emisor, las anteriores al corte conservan el de entonces.
+    const docs = ocs.map((o, k) => { const emOC = emisorDeProyecto(proy, o.fecha_aprobacion); const mismo = emOC.id === emisor.id; return `<section class="sub oc-doc" id="oc-${o.id}">
       ${sub('ordenes_cambio', k + 1, `Orden de cambio OC-${String(o.numero).padStart(2, '0')} — ${o.titulo}`)}
-      ${ocCuerpoHTML({ oc: o, items: o.items || [], rubrosMap, perfMap: datos.perfiles || {}, proy, montoContrato: calc.sumaRubros, fechaTexto, logoUrl: logo, emisor })}
-    </section>`).join('');
+      ${ocCuerpoHTML({ oc: o, items: o.items || [], rubrosMap, perfMap: datos.perfiles || {}, proy, montoContrato: calc.sumaRubros, fechaTexto, logoUrl: mismo ? logo : ((meta.logosEmisor || {})[emOC.id] || emOC.logo), emisor: mismo ? emisor : emOC })}
+    </section>`; }).join('');
     return `<section class="sec" id="sec-ordenes_cambio">${titulo('ordenes_cambio', 'Órdenes de cambio')}${resumen}</section>${docs}`;
   };
 

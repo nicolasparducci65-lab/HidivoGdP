@@ -118,6 +118,37 @@ const cierreHtml = (ctx, proy, emisor) => ctx.docCierreHTML('ACTA DE PRUEBA', pr
     assert(de('2026-02-15') === 'e-c', 'con el historial limpio vuelve al vigente');
   });
 
+  await prueba('corte por fecha en el expediente, los formatos de calidad y el incidente SST', () => {
+    const ctx = contexto();
+    ctx.fijarEmpresas(EMPRESAS);
+    const proy = PROY({ emisor_empresa_id: 'e-c' });
+    ctx.fijarHistorialEmisor('p1', [{ empresa_id: 'e-b', hasta: '2026-11-20', creado_en: '2026-11-20T15:00:00Z' }, { empresa_id: 'e-b', hasta: '2026-11-20', creado_en: '2026-11-20T15:00:01Z' }]);
+    const hist = ctx.emisoresHistoricos(proy);
+    assert(hist.length === 1 && hist[0].id === 'e-b' && hist[0].logo === LOGO_B, 'emisores anteriores, sin repetir: ' + JSON.stringify(hist.map(h => h.id)));
+    assert(ctx.emisoresHistoricos({ ...proy, id: 'otro' }).length === 0, 'el historial de un proyecto no sirve a otro');
+    // 19-nov 20:30 en Ecuador = 20-nov 01:30 UTC: cuenta como día 19 (antes del corte)
+    assert(ctx.fechaEcuadorDe('2026-11-20T01:30:00+00:00') === '2026-11-19', ctx.fechaEcuadorDe('2026-11-20T01:30:00+00:00'));
+    assert(ctx.fechaEcuadorDe('2026-11-20T05:00:00+00:00') === '2026-11-20' && ctx.fechaEcuadorDe('') === '' && ctx.fechaEcuadorDe(null) === '', 'borde y vacíos');
+    assert(ctx.emisorDeProyecto(proy, ctx.fechaEcuadorDe('2026-11-20T01:30:00+00:00')).id === 'e-b', 'la víspera por la noche sigue siendo del emisor anterior');
+    assert(ctx.emisorDeProyecto(proy, ctx.fechaEcuadorDe('2026-11-20T05:00:00+00:00')).id === 'e-c', 'el día del corte ya rige el nuevo');
+    const fuenteExp = require('fs').readFileSync(path.join(RAIZ, 'expediente.js'), 'utf8');
+    assert(/const emOC = emisorDeProyecto\(proy, o\.fecha_aprobacion\)/.test(fuenteExp) && /emisor: mismo \? emisor : emOC/.test(fuenteExp), 'cada OC del expediente usa el emisor de su fecha de aprobación');
+    assert(/emisorDeProyecto\(proyActual, _respuestaLlenadoFecha\)/.test(src) && /_respuestaLlenadoFecha = fechaEcuadorDe\(resp\.created_at\)/.test(src), 'el formato de calidad usa la fecha en que se llenó');
+    assert(/emisorDeProyecto\(proy, fechaEcuadorDe\(x\.fecha_hora\)\)/.test(src), 'el incidente usa su fecha en hora de Ecuador');
+    assert(/meta\.logosEmisor\[em\.id\] = await obtenerLogoDataUri\(em\.logo\)/.test(src), 'el expediente incrusta los logos de los emisores anteriores');
+  });
+
+  await prueba('redactar-comunicado: el emisor documental solo firma en proyectos de fiscalización', () => {
+    const fn = require('fs').readFileSync(path.join(RAIZ, 'supabase', 'functions', 'redactar-comunicado', 'index.ts'), 'utf8');
+    const m = fn.match(/const esFiscalizacion = (.*);\s*const emisorId = (.*);/);
+    assert(m, 'regla presente');
+    const regla = new Function('proyecto', 'const esFiscalizacion = ' + m[1] + '; return ' + m[2] + ';');
+    assert(regla({ tipo: 'fiscalizacion', emisor_empresa_id: 'e-c', empresa_id: 'e-b' }) === 'e-c', 'fiscalización con emisor: firma el emisor');
+    assert(regla({ tipo: null, emisor_empresa_id: 'e-c', empresa_id: 'e-b' }) === 'e-c', 'sin tipo (proyecto antiguo): como fiscalización');
+    assert(regla({ tipo: 'pilotes', emisor_empresa_id: 'e-c', empresa_id: 'e-b' }) === 'e-b', 'obra propia: firma la gestora, no el emisor (que es el contratista)');
+    assert(regla({ tipo: 'fiscalizacion', emisor_empresa_id: null, empresa_id: 'e-b' }) === 'e-b', 'sin emisor: la gestora');
+  });
+
   await prueba('imprimirActa (real): el acta sale con el emisor de la fecha del acta', async () => {
     const proy = PROY({ emisor_empresa_id: 'e-c' });
     const ctx = contexto({ proyectos: [proy], actas_recepcion: [{ id: 'a1', proyecto_id: 'p1', tipo: 'provisional', fecha: '2026-05-10', observaciones: '' }] });

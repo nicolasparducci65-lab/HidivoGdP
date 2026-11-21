@@ -163,7 +163,11 @@ Deno.serve(async (req) => {
     // ── Emisor documental: a nombre de quién firma la carta ──
     // Tolerante a una base sin migrar (sin columnas de empresa): cae en el emisor por defecto.
     let emisorNombre = EMISOR_POR_DEFECTO;
-    const emisorId = proyecto.emisor_empresa_id || proyecto.empresa_id;
+    // El comunicado es una carta de la FISCALIZACIÓN al contratista. El emisor documental solo la
+    // firma en proyectos de fiscalización; en los demás tipos (obra propia: pilotes, puentes…) el
+    // emisor suele ser el propio contratista, así que firma la gestora, como antes de multiempresa.
+    const esFiscalizacion = !proyecto.tipo || proyecto.tipo === 'fiscalizacion';
+    const emisorId = (esFiscalizacion && proyecto.emisor_empresa_id) || proyecto.empresa_id;
     if (emisorId) {
       const { data: emp } = await sb.from('empresas').select('nombre,razon_social').eq('id', emisorId).maybeSingle();
       emisorNombre = emp?.razon_social || emp?.nombre || EMISOR_POR_DEFECTO;

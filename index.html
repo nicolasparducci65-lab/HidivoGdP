@@ -2970,8 +2970,14 @@ async function cargarEmpresas(){
 async function cargarHistorialEmisor(proyectoId){
   try{
     const { data, error } = await sb.from('proyecto_emisor_historial').select('empresa_id,hasta,creado_en').eq('proyecto_id', proyectoId);
-    if(currentProyecto === proyectoId) fijarHistorialEmisor(proyectoId, error ? [] : (data||[]));
-  }catch(_){ if(currentProyecto === proyectoId) fijarHistorialEmisor(null, []); }
+    if(error) throw error;
+    if(currentProyecto === proyectoId) fijarHistorialEmisor(proyectoId, data||[]);
+  }catch(_){
+    if(currentProyecto !== proyectoId) return;
+    fijarHistorialEmisor(null, []);
+    // Sin historial, un documento anterior a un cambio de emisor saldría con el emisor actual: se avisa.
+    if(multiempresaActiva() || empresasCatalogo().some(e=>e.activa && !e.es_gestora)) toast('No se pudo leer el historial del emisor de este proyecto: un documento antiguo podría salir con el membrete actual. Vuelve a abrir el proyecto antes de imprimir.','error');
+  }
 }
 
 async function login(){
@@ -4376,7 +4382,7 @@ function limpiarEstadoProyecto(){
   // Órdenes de cambio
   _ocItems = []; _ocEditando = null; _ocRubros = []; _planImportOC = null; _ocNumeroPrevisto = null;
   // Formatos de calidad (editor de plantilla y llenado)
-  _camposPlantillaActual = []; _plantillaLlenadoActual = null; _respuestaLlenadoId = null; _valoresLlenado = {}; _fotosLlenadoNuevas = {};
+  _camposPlantillaActual = []; _plantillaLlenadoActual = null; _respuestaLlenadoId = null; _respuestaLlenadoFecha = ''; _valoresLlenado = {}; _fotosLlenadoNuevas = {};
   window._fotosLlenadoExistentes = []; window._residenteLlenadoNombre = null;
   // Materiales
   window._editStockId = null;
@@ -10956,6 +10962,7 @@ function eliminarRespuestaDesdeModal(){
 // ── Llenado de Formatos de Calidad (residente) ──
 let _plantillaLlenadoActual = null;
 let _respuestaLlenadoId = null;
+let _respuestaLlenadoFecha = '';   // fecha (Ecuador) en que se llenó el formato abierto: decide el emisor del PDF
 let _valoresLlenado = {};
 let _fotosLlenadoNuevas = {}; // { campoId: File }
 let _soloLecturaLlenado = false;
@@ -10967,6 +10974,7 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
 
   _plantillaLlenadoActual = plantilla;
   _respuestaLlenadoId = respuestaId;
+  _respuestaLlenadoFecha = '';
   _valoresLlenado = {};
   _fotosLlenadoNuevas = {};
   _soloLecturaLlenado = false;
@@ -10978,6 +10986,7 @@ async function abrirModalLlenarFormato(plantillaId, respuestaId=null, modoCorrec
     const { data: resp } = await sb.from('formatos_calidad_respuestas').select('*, perfiles:residente_id(nombre,apellido)').eq('id',respuestaId).single();
     if(resp){
       _valoresLlenado = resp.respuestas||{};
+      _respuestaLlenadoFecha = fechaEcuadorDe(resp.created_at);
       estadoActual = resp.estado;
       _soloLecturaLlenado = modoCorreccion ? false : (resp.estado!=='borrador');
       _residenteLlenadoNombre = resp.perfiles ? `${resp.perfiles.nombre||''} ${resp.perfiles.apellido||''}`.trim() : '';
@@ -11266,7 +11275,8 @@ function exportarPdfFormato(){
 
   const proyActual = proyectos.find(p=>p.id===currentProyecto) || null;
   const proyectoNombre = proyActual?.nombre || '';
-  const emisor = emisorDeProyecto(proyActual);
+  // El formato lleva el emisor de la fecha en que se llenó; uno nuevo, el vigente.
+  const emisor = emisorDeProyecto(proyActual, _respuestaLlenadoFecha);
   const emisorLegal = emisorLineaLegal(emisor);
   const campos = plantilla.campos||[];
   const fotos = window._fotosLlenadoExistentes||[];
@@ -12861,6 +12871,9 @@ async function generarExpediente(){
       rol: currentPerfil?.rol || '', emisor: emisorDeProyecto(datos.proyecto)
     };
     meta.logoDataUri = await obtenerLogoDataUri(meta.emisor.logo);
+    // Logos de los emisores anteriores: las órdenes de cambio previas a un cambio de emisor salen con el de entonces.
+    meta.logosEmisor = {};
+    for(const em of emisoresHistoricos(datos.proyecto)) meta.logosEmisor[em.id] = await obtenerLogoDataUri(em.logo);
     window._expedienteGenerado = { datos, sel: { ...sel, filtros: filtrosGuardados }, meta, plan, proyectoId: currentProyecto };
     if(plan.length <= 1){
       meta.nombreArchivo = expedienteNombreArchivo(datos.proyecto, fila.version, hoy);
@@ -18996,7 +19009,7 @@ async function imprimirInformeIncidente(id){
     ['','Responsable de SST'],
     ['','Representante del empleador'],
     [x.trabajador_nombre||'','Trabajador afectado']
-  ], { emisor: emisorDeProyecto(proy, x.fecha_hora) });
+  ], { emisor: emisorDeProyecto(proy, fechaEcuadorDe(x.fecha_hora)) });
 }
 
 async function imprimirPTE(id){
