@@ -10,7 +10,7 @@ const { RAIZ, leer, scriptPrincipal, extraerFuncion, extraerBloque, extraerConst
 
 const src = scriptPrincipal();
 const FUNCIONES = ['cargarEmpresas', 'multiempresaActiva', 'gestorasActivas', 'gestoraPorDefecto', 'prepararEmpresaProyecto', 'siguienteCodigoProyecto',
-  'sugerirCodigoProyecto', 'leerEmpresaProyecto', 'mensajeErrorProyecto', 'filtrarPorEmpresaTipo', 'opcionesEmpresaTipo', 'barraFiltroEmpresaTipo',
+  'sugerirCodigoProyecto', 'refrescarCodigoSugerido', 'leerEmpresaProyecto', 'mensajeErrorProyecto', 'filtrarPorEmpresaTipo', 'opcionesEmpresaTipo', 'barraFiltroEmpresaTipo',
   'colorEmpresa', 'distintivoEmpresa', 'bordeEmpresa', 'codigoTipoTexto', 'aplicarFiltroProyectos', 'poblarSelectsFiltro', 'leerFiltrosDeSelects',
   'textoBusquedaProyecto', 'estadoLabel', 'hoyEcuador', 'cargarEmpresasAdmin', 'renderEmpresasAdmin', 'abrirFormEmpresa', 'cerrarFormEmpresa',
   'renderFormEmpresa', 'guardarEmpresa'];
@@ -95,7 +95,33 @@ const pausa = () => new Promise(r => setTimeout(r, 5));
     assert(await t.w.leerEmpresaProyecto('') === null && /tipo de proyecto/.test(t.toasts().at(-1).msg), 'sin tipo no guarda');
     t.el('pTipo').value = 'pilotes'; t.el('pFechaInicio').value = '2027-03-01'; t.el('pEmisor').value = 'e-c';
     const cols = await t.w.leerEmpresaProyecto('');
-    assert(JSON.stringify(cols) === JSON.stringify({ tipo: 'pilotes', emisor_empresa_id: 'e-c', codigo: 'BET-PIL-2027-007', empresa_id: 'e-b' }), JSON.stringify(cols));
+    assert(JSON.stringify(cols) === JSON.stringify({ tipo: 'pilotes', emisor_empresa_id: 'e-c', codigo: 'GAM-PIL-2027-007', empresa_id: 'e-b' }), 'con emisor, el código lleva la sigla del EMISOR: ' + JSON.stringify(cols));
+    t.el('pEmisor').value = '';
+    assert((await t.w.leerEmpresaProyecto('')).codigo === 'BET-PIL-2027-007', 'sin emisor, la sigla de la gestora');
+    t.el('pEmisor').value = 'e-c'; t.el('pCodigo').value = '';
+    await t.w.sugerirCodigoProyecto();
+    assert(t.el('pCodigo').value === 'GAM-PIL-2027-007', '«Sugerir» también usa el emisor: ' + t.el('pCodigo').value);
+    assert(/sigla del emisor/.test(t.w.mensajeErrorProyecto({ message: 'El código HDV-PIL-2027-001 no corresponde al emisor del proyecto (sigla GAM).' })), 'mensaje claro si la base rechaza el prefijo');
+    const viejo = t.w.mensajeErrorProyecto({ message: 'El código GAM-PIL-2027-001 no corresponde a la empresa gestora del proyecto (sigla BET).' });
+    assert(!/Sugerir/.test(viejo) && /sigla BET/.test(viejo) && /administrador/.test(viejo), 'con la regla anterior en la base no manda a «Sugerir»: ' + viejo);
+    // Sugerir y DESPUÉS cambiar el emisor: el código sugerido se vuelve a pedir
+    t.el('pEmisor').value = ''; t.el('pCodigo').value = '';
+    await t.w.sugerirCodigoProyecto();
+    assert(t.el('pCodigo').value === 'BET-PIL-2027-007', 'sugerido con la gestora');
+    t.el('pEmisor').value = 'e-c'; await t.w.refrescarCodigoSugerido();
+    assert(t.el('pCodigo').value === 'GAM-PIL-2027-007', 'al cambiar el emisor, el sugerido pasa a su sigla: ' + t.el('pCodigo').value);
+    t.el('pCodigo').value = 'GAM-PIL-2027-123'; t.el('pEmisor').value = ''; await t.w.refrescarCodigoSugerido();
+    assert(t.el('pCodigo').value === 'GAM-PIL-2027-123', 'un código escrito a mano no se toca');
+    // Prefijo que no es el del emisor ni el de la gestora: el no admin se detiene; el admin global confirma
+    const nConf = t.w._confirmaciones.length, PERF = rol => ({ id: 'u1', rol, rolGlobal: rol, empresa_id: 'e-b' });
+    t.w._fijar(PERF('fiscalizador'), t.fixture.proyectos); t.w._toasts.length = 0;
+    assert((await t.w.leerEmpresaProyecto('')) === null && /debe empezar por BET/.test(JSON.stringify(t.w._toasts)), 'no admin con prefijo ajeno: se detiene con aviso: ' + JSON.stringify(t.w._toasts));
+    assert(t.w._confirmaciones.length === nConf, 'al no admin no se le pregunta');
+    t.w._fijar(PERF('admin'), t.fixture.proyectos);
+    const colsAdm = await t.w.leerEmpresaProyecto('');
+    assert(t.w._confirmaciones.length === nConf + 1 && /no empieza por BET/.test(t.w._confirmaciones[nConf]), 'al admin global se le pide confirmación');
+    assert(colsAdm && colsAdm.codigo === 'GAM-PIL-2027-123', 'y si confirma, se guarda');
+
     assert(t.w._rpc.at(-1)[1].p_anio === 2027, 'el año del código es el de la fecha de inicio');
     t.cerrar();
   });
@@ -142,6 +168,24 @@ const pausa = () => new Promise(r => setTimeout(r, 5));
     assert(cols.empresa_id === 'e-a', 'al confirmar envía la gestora nueva');
     assert(/conservan a Beta/.test(si.w._confirmaciones[0]), 'sin emisor propio avisa del cambio de membrete: ' + si.w._confirmaciones[0]);
     si.cerrar();
+  });
+
+  await prueba('edición: el código es una etiqueta congelada; cambiar el emisor avisa y corregirlo admite el prefijo que ya tenía', async () => {
+    const t = montar({ perfil: { id: 'u2', rol: 'fiscalizador', rolGlobal: 'fiscalizador', empresa_id: 'e-b' }, confirmar: true });
+    t.el('editProyectoId').value = 'p3';
+    t.w.prepararEmpresaProyecto(t.fixture.proyectos[2]);
+    let cols = await t.w.leerEmpresaProyecto('p3');
+    assert(cols && cols.codigo === 'BET-PUE-2026-001' && t.w._confirmaciones.length === 0, 'sin cambios no pregunta nada');
+    t.el('pEmisor').value = 'e-c';
+    cols = await t.w.leerEmpresaProyecto('p3');
+    assert(cols && cols.codigo === 'BET-PUE-2026-001' && cols.emisor_empresa_id === 'e-c', 'el código no sigue al emisor');
+    assert(t.w._confirmaciones.length === 1 && /no cambia al cambiar el emisor/.test(t.w._confirmaciones[0]) && /sigla BET/.test(t.w._confirmaciones[0]), 'pero avisa: ' + t.w._confirmaciones[0]);
+    t.el('pCodigo').value = 'BET-PUE-2025-001';
+    cols = await t.w.leerEmpresaProyecto('p3');
+    assert(cols && cols.codigo === 'BET-PUE-2025-001' && t.w._confirmaciones.length === 1, 'corregir el año conservando el prefijo que ya tenía: sin preguntas');
+    t.el('pCodigo').value = 'ALF-PUE-2025-001'; t.w._toasts.length = 0;
+    assert(await t.w.leerEmpresaProyecto('p3') === null && /debe empezar por GAM/.test(JSON.stringify(t.w._toasts)), 'otro prefijo que no es el del emisor ni el previo: se detiene');
+    t.cerrar();
   });
 
   await prueba('reasignar la gestora es solo del admin global; código con documentos emitidos queda de solo lectura', async () => {

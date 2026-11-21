@@ -7,7 +7,7 @@
 -- Qué hace: trigger BEFORE INSERT en proyectos (corre después de
 -- trg_proyectos_a_gestora, por orden alfabético):
 --   · sin tipo, rechaza el alta;
---   · sin código, lo asigna con proyecto_siguiente_codigo(gestora, tipo, año),
+--   · sin código, lo asigna con proyecto_siguiente_codigo(emisor o, si no tiene, gestora, tipo, año),
 --     donde año = el de fecha_inicio o, si falta, el año en curso en Ecuador.
 -- Los proyectos existentes no se tocan: pueden seguir sin código hasta que se
 -- les asigne con el CSV revisado.
@@ -26,9 +26,9 @@ begin
   end if;
   if new.codigo is null then
     v_anio := extract(year from coalesce(new.fecha_inicio, (now() at time zone 'America/Guayaquil')::date))::integer;
-    new.codigo := proyecto_siguiente_codigo(new.empresa_id, new.tipo, v_anio);
+    new.codigo := proyecto_siguiente_codigo(coalesce(new.emisor_empresa_id, new.empresa_id), new.tipo, v_anio);
     if new.codigo is null then
-      raise exception 'No se pudo asignar el código del proyecto: la empresa gestora no tiene sigla.'
+      raise exception 'No se pudo asignar el código del proyecto: la empresa emisora (o la gestora) no tiene sigla.'
         using errcode = '23502';
     end if;
   end if;
@@ -47,7 +47,7 @@ commit;
 --   rollback;
 --   begin;
 --     insert into public.proyectos (nombre, tipo, fecha_inicio) values ('zz con tipo', 'pilotes', '2027-03-01')
---       returning codigo;                                                                   -- HDV-PIL-2027-001
+--       returning codigo;                                                                   -- HDV-PIL-2027-00N (el siguiente libre de HDV en 2027)
 --   rollback;
 
 -- ── Reversión ───────────────────────────────────────────────────────────────

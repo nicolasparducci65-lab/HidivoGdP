@@ -88,7 +88,7 @@ const EXPORT = JSON.stringify({ rows: [
     assert(/EJECUTAR ENTERO/.test(sql) && sql.includes(`from public.proyecto_emisor_historial where proyecto_id::text in ('${ID(2)}')`), 'avisa de ejecutarlo entero y comprueba que no haya historial previo');
     assert((sql.match(/proyecto_emisor_historial set hasta/g) || []).length === 1, 'sin emisor_desde no se toca la fecha de corte');
     assert(sql.includes("array['CIP', 'HDV']::text[]") && sql.includes('n <> 3'), 'comprobaciones previas: siglas activas y número de proyectos');
-    assert(sql.includes("coalesce(nullif(v.emisor, ''), g.sigla)") && sql.includes(`('${ID(2)}', 'CIP-PIL-2026-001', 'CIP')`), 'comprueba que el prefijo sea el del emisor o la gestora');
+    assert(sql.includes("coalesce(nullif(v.emisor, ''), e.sigla, g.sigla)") && sql.includes('left join public.empresas e on e.id = p.emisor_empresa_id') && sql.includes(`('${ID(2)}', 'CIP-PIL-2026-001', 'CIP')`), 'comprueba que el prefijo sea el del emisor o la gestora');
     assert(/^begin;/m.test(sql) && /^commit;/m.test(sql) && sql.includes('Reversión') && sql.includes('delete from public.proyecto_emisor_historial'), 'transacción y reversión');
     assert(!/Remodelación|Cliente Uno/.test(sql), 'el SQL no lleva nombres de proyectos');
   });

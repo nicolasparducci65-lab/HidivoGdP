@@ -1,4 +1,8 @@
 -- ============================================================================
+-- NOTA (21-nov-2026): la regla del prefijo cambió después de esta migración. El
+-- código lleva la sigla del EMISOR documental y, si el proyecto no tiene, la de la
+-- gestora. proyectos_guard_codigo se redefine aparte (no en este archivo, que queda
+-- tal como se aplicó); la app y la migración 3 ya siguen la regla nueva.
 -- Multiempresa 2/3: código de proyecto e historial del emisor documental.
 -- NO ejecutar automáticamente: revisar y aplicar a mano en el SQL Editor,
 -- DESPUÉS de 20261120_multiempresa_1_empresas.sql.

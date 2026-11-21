@@ -651,17 +651,17 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Empresa gestora *</label>
-            <select class="form-control" id="pEmpresa"></select>
+            <select class="form-control" id="pEmpresa" onchange="refrescarCodigoSugerido()"></select>
           </div>
           <div class="form-group">
             <label class="form-label">Tipo de proyecto *</label>
-            <select class="form-control" id="pTipo"></select>
+            <select class="form-control" id="pTipo" onchange="refrescarCodigoSugerido()"></select>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Emisor de documentos</label>
-            <select class="form-control" id="pEmisor"></select>
+            <select class="form-control" id="pEmisor" onchange="refrescarCodigoSugerido()"></select>
             <div style="font-size:11px;color:#676879;margin-top:4px">Membrete, razón social y RUC de los PDF. Si cambia, los documentos con fecha anterior conservan el emisor de entonces.</div>
           </div>
           <div class="form-group">
@@ -702,7 +702,7 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Fecha de inicio</label>
-          <input type="date" class="form-control" id="pFechaInicio"/>
+          <input type="date" class="form-control" id="pFechaInicio" onchange="refrescarCodigoSugerido()"/>
         </div>
         <div class="form-group">
           <label class="form-label">Fecha fin planificada</label>
@@ -4497,9 +4497,10 @@ function prepararEmpresaProyecto(proyecto){
   // Código: libre mientras el proyecto no tenga documentos emitidos (la base lo impone igual).
   const inp = document.getElementById('pCodigo'), nota = document.getElementById('pCodigoNota'), btn = document.getElementById('pCodigoSugerir');
   inp.value = proyecto?.codigo || '';
+  inp._sugerido = '';
   inp.readOnly = false; btn.style.display = '';
   inp.placeholder = proyecto ? 'Sin código' : 'Se asigna al guardar';
-  nota.textContent = proyecto ? '' : 'Déjalo vacío para asignar el siguiente de la gestora.';
+  nota.textContent = proyecto ? '' : 'Déjalo vacío para asignar el siguiente del emisor (o de la gestora, si emite ella).';
   if(proyecto?.id && proyecto.codigo){
     sb.rpc('proyecto_tiene_documentos_emitidos', { pid: proyecto.id }).then(({ data })=>{
       if(data !== true || document.getElementById('editProyectoId').value !== proyecto.id) return;
@@ -4509,7 +4510,10 @@ function prepararEmpresaProyecto(proyecto){
   }
 }
 
-// Siguiente código libre de la gestora para ese tipo y año (año de inicio o, si falta, el actual).
+// Siguiente código libre para ese tipo y año (año de inicio o, si falta, el actual). empresaId es la
+// empresa cuya sigla lleva el código: el EMISOR documental del proyecto y, si no tiene, la gestora.
+// Así un proyecto cuyo contrato firma otra empresa nace con su sigla y el código sigue siendo
+// cierto aunque cambie de gestora.
 async function siguienteCodigoProyecto(empresaId, tipo, fechaInicio){
   const anio = parseInt(String(fechaInicio || hoyEcuador()).slice(0, 4), 10);
   const { data, error } = await sb.rpc('proyecto_siguiente_codigo', { p_empresa: empresaId, p_tipo: tipo, p_anio: anio });
@@ -4518,10 +4522,22 @@ async function siguienteCodigoProyecto(empresaId, tipo, fechaInicio){
 
 async function sugerirCodigoProyecto(){
   const empresaId = document.getElementById('pEmpresa').value, tipo = document.getElementById('pTipo').value;
+  const emisorId = document.getElementById('pEmisor').value;
   if(!empresaId || !tipo){ toast('Elige primero la empresa gestora y el tipo','error'); return; }
-  const codigo = await siguienteCodigoProyecto(empresaId, tipo, document.getElementById('pFechaInicio').value);
-  if(!codigo){ toast('No se pudo proponer un código (¿la gestora tiene sigla?)','error'); return; }
-  document.getElementById('pCodigo').value = codigo;
+  const codigo = await siguienteCodigoProyecto(emisorId || empresaId, tipo, document.getElementById('pFechaInicio').value);
+  if(!codigo){ toast('No se pudo proponer un código (¿la empresa tiene sigla?)','error'); return; }
+  const inp = document.getElementById('pCodigo');
+  inp.value = codigo; inp._sugerido = codigo;
+}
+
+// El código sugerido depende del emisor (o la gestora), el tipo y el año de inicio. Si alguno cambia
+// después de «Sugerir» y el campo sigue con ese valor, se vuelve a pedir; un código escrito a mano
+// no se toca.
+async function refrescarCodigoSugerido(){
+  const inp = document.getElementById('pCodigo');
+  if(!inp || !inp._sugerido || inp.readOnly || inp.value.trim().toUpperCase() !== inp._sugerido) return;
+  inp.value = ''; inp._sugerido = '';
+  if(document.getElementById('pEmpresa').value && document.getElementById('pTipo').value) await sugerirCodigoProyecto();
 }
 
 // Lee y valida el bloque de empresa del formulario. Devuelve las columnas a guardar,
@@ -4535,6 +4551,22 @@ async function leerEmpresaProyecto(id){
   if(!empresaId){ toast(currentPerfil?.rolGlobal === 'admin' ? 'Selecciona la empresa gestora' : 'Tu perfil no tiene empresa asignada: pide al administrador que la asigne','error'); return null; }
   if(!tipo){ toast('Selecciona el tipo de proyecto','error'); return null; }
   if(codigo && !RE_CODIGO_PROYECTO.test(codigo)){ toast('El código debe tener la forma SIGLA-TIP-AAAA-NNN (ej. HDV-FIS-2026-007)','error'); return null; }
+  // Prefijo del código: la sigla del emisor y, si emite la gestora, la de la gestora. Al editar se
+  // admite conservar el prefijo que el proyecto ya tenía (el código es una etiqueta congelada: no
+  // sigue al emisor). La base impone lo mismo a quien no es admin global; al admin global, que está
+  // exento allí, se le pide confirmación aquí.
+  const siglaEsperada = empresaPorId(emisorId || empresaId)?.sigla || '';
+  const prefijo = codigo.split('-')[0], prefijoPrevio = (original?.codigo || '').split('-')[0];
+  if(codigo && siglaEsperada && prefijo !== siglaEsperada){
+    const codigoIgual = !!original && codigo === (original.codigo || '');
+    const emisorIgual = !!original && emisorId === (original.emisor_empresa_id || null);
+    if(codigoIgual && !emisorIgual){
+      if(!confirm(`El código ${codigo} no cambia al cambiar el emisor: seguirá con la sigla ${prefijo} aunque los documentos nuevos salgan a nombre de ${empresaPorId(emisorId || empresaId)?.nombre || siglaEsperada}.\n\n¿Guardar así?`)) return null;
+    } else if(!codigoIgual && !(original && prefijoPrevio && prefijo === prefijoPrevio)){
+      if(currentPerfil?.rolGlobal !== 'admin'){ toast(`El código debe empezar por ${siglaEsperada}, la sigla del emisor del proyecto (o de la gestora, si emite ella). Usa «Sugerir».`,'error'); return null; }
+      if(!confirm(`El código ${codigo} no empieza por ${siglaEsperada}, la sigla del emisor de este proyecto.\n\n¿Guardarlo así?`)) return null;
+    }
+  }
   const cols = { tipo, emisor_empresa_id: emisorId, codigo: codigo || null };
   const cambiaGestora = !!(original?.empresa_id && empresaId !== original.empresa_id);
   if(cambiaGestora){
@@ -4547,7 +4579,7 @@ async function leerEmpresaProyecto(id){
   }
   if(!id || cambiaGestora) cols.empresa_id = empresaId;
   if(!id && !codigo){
-    cols.codigo = await siguienteCodigoProyecto(empresaId, tipo, document.getElementById('pFechaInicio').value);
+    cols.codigo = await siguienteCodigoProyecto(emisorId || empresaId, tipo, document.getElementById('pFechaInicio').value);
     if(!cols.codigo){ toast('No se pudo asignar el código automáticamente: escríbelo a mano','error'); return null; }
   }
   return cols;
@@ -4557,6 +4589,9 @@ function mensajeErrorProyecto(error){
   const m = error?.message || '';
   if(/proyectos_codigo_uniq/.test(m)) return 'Ya existe un proyecto con ese código. Usa «Sugerir» para tomar el siguiente libre.';
   if(/proyectos_codigo_chk/.test(m)) return 'El código debe tener la forma SIGLA-TIP-AAAA-NNN.';
+  if(/no corresponde al emisor del proyecto/.test(m)) return 'El código debe empezar por la sigla del emisor del proyecto (o de la gestora, si emite ella). Usa «Sugerir».';
+  // La base aún tiene la regla anterior (prefijo = gestora): «Sugerir» no lo arregla, es un ajuste pendiente en la base.
+  if(/no corresponde a la empresa gestora/.test(m)) return 'La base todavía exige en el código la sigla de la gestora: falta actualizar la regla del prefijo. Avisa al administrador. (' + m + ')';
   return 'Error: ' + m;
 }
 

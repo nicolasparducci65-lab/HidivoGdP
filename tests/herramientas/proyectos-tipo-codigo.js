@@ -231,12 +231,14 @@ begin
   if falta is not null then raise exception 'No existen (o no están activas) las empresas con sigla: %', falta; end if;
   select count(*) into n from public.proyectos where id::text in (${idsSql});
   if n <> ${cambios.length} then raise exception 'El CSV trae ${cambios.length} proyectos y la base tiene % de ellos: CSV desactualizado', n; end if;
-${conCodigo.length ? `  -- El prefijo del código es la sigla del emisor; sin emisor, la de la gestora.
+${conCodigo.length ? `  -- El prefijo del código es la sigla del emisor (el del CSV o, con la celda vacía, el que el
+  -- proyecto ya tiene); sin emisor, la de la gestora.
   select string_agg(v.codigo, ', ') into falta
     from (values ${valores}) v(id, codigo, emisor)
     join public.proyectos p on p.id::text = v.id
     join public.empresas g on g.id = p.empresa_id
-   where split_part(v.codigo, '-', 1) <> coalesce(nullif(v.emisor, ''), g.sigla);
+    left join public.empresas e on e.id = p.emisor_empresa_id
+   where split_part(v.codigo, '-', 1) <> coalesce(nullif(v.emisor, ''), e.sigla, g.sigla);
   if falta is not null then raise exception 'Códigos cuyo prefijo no es la sigla del emisor ni de la gestora: %', falta; end if;
 ` : ''}${idsConCorte ? `  -- Los proyectos con emisor_desde no deben traer historial de emisor previo (el corte se fija sobre la fila nueva).
   select count(*) into n from public.proyecto_emisor_historial where proyecto_id::text in (${idsConCorte});
