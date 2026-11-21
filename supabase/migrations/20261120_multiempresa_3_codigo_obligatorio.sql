@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Multiempresa 3/3: tipo y código obligatorios para proyectos NUEVOS.
--- NO ejecutar automáticamente. APLICAR SOLO CUANDO LA FASE 2 ESTÉ PUBLICADA:
+-- APLICADA en producción el 20-nov-2026, con la v63 publicada. Solo debe aplicarse con la fase 2 publicada:
 -- la app anterior (SW v51) crea proyectos sin tipo y con esta migración
 -- dejaría de poder crearlos.
 --
