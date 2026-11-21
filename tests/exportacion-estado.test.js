@@ -229,7 +229,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     igual(a.motivos, ['SPI 0,92', '1 garantía por vencer en 5 días o menos', '7 pendientes (libro, observaciones y solicitudes)'], 'motivos (SPI truncado; garantías con el aviso de 5 días del núcleo)');
     const r = P('ZZZ-PIL-2026-002').avance;
     igual([r.semaforo, r.dias_atraso, r.valor_ganado_pct, r.programado_pct, r.cronograma_vencido], ['rojo', 284, 20, 90, false], 'rojo');
-    assert(Math.abs(r.spi - 0.2 / 0.9) < 1e-9, 'SPI del rojo: ' + r.spi);
+    assert(r.spi === Math.round((0.2 / 0.9) * 1e4) / 1e4, 'SPI del rojo: ' + r.spi);
     igual(r.motivos, ['SPI 0,22', '1 garantía vencida', 'atraso estimado de 284 días'], 'motivos del rojo');
     igual(P('ZZZ-CON-2026-003').avance, { ejecutado_pct: 0, programado_pct: null, valor_ganado_pct: null, spi: null, dias_atraso: null, cronograma_vencido: false, linea_base: null, semaforo: 'verde', motivos: ['sin cronograma: no hay SPI'] }, 'sin cronograma: sin SPI y sin atraso estimable');
     // La garantía que vence en 15 días espera decisión, pero NO pone amarillo el semáforo (aviso de 5 días).
