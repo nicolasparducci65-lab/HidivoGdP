@@ -200,16 +200,21 @@ function generarSql(filas){
     // Si el emisor indicado es la propia gestora, queda NULL («emite la gestora»).
     if(f.emisor) sets.push(`emisor_empresa_id = nullif((select id from public.empresas where sigla = ${lit(f.emisor)}), empresa_id)`);
     sentencias.push(`update public.proyectos set ${sets.join(', ')} where id = ${id};`);
-    // El trigger anota el emisor anterior con fecha de corte = hoy; emisor_desde la sustituye.
+    // El trigger anota el emisor anterior con fecha de corte = hoy; emisor_desde la sustituye. La fila
+    // recién anotada es la de creado_en = now() (misma transacción). Si no hay exactamente una —el
+    // emisor no cambió, o el script no se ejecutó entero— se detiene todo en vez de callar.
     if(f.emisor && f.emisor_desde)
-      sentencias.push(`update public.proyecto_emisor_historial set hasta = ${lit(f.emisor_desde)} where proyecto_id = ${id} and creado_en = now();`);
+      sentencias.push(`do $$ declare n integer; begin update public.proyecto_emisor_historial set hasta = ${lit(f.emisor_desde)} where proyecto_id = ${id} and creado_en = now(); get diagnostics n = row_count; if n <> 1 then raise exception 'emisor_desde del proyecto %: se esperaba 1 fila de historial recién anotada y hay % (¿el emisor ya era ese, o el script no se ejecutó entero?)', ${id}, n; end if; end $$;`);
   }
   const idsSql = cambios.map(f => lit(f.id.toLowerCase())).join(', ') || "''";
+  const idsConCorte = cambios.filter(f => f.emisor && f.emisor_desde).map(f => lit(f.id.toLowerCase())).join(', ');
   const conCodigo = cambios.filter(f => f.codigo);
   const valores = conCodigo.map(f => `(${lit(f.id.toLowerCase())}, ${lit(f.codigo)}, ${lit(f.emisor)})`).join(', ');
   return `-- Multiempresa: tipo, código y emisor de proyectos existentes.
 -- Generado por tests/herramientas/proyectos-tipo-codigo.js desde el CSV revisado. NO editar a mano.
 -- Aplicar en el SQL Editor DESPUÉS de las migraciones multiempresa 1 y 2. ${cambios.length} proyecto(s).
+-- EJECUTAR ENTERO, de una vez (no por partes ni sentencia a sentencia): las fechas de corte del
+-- emisor dependen de que todo corra en la misma transacción.
 -- Sin JWT (SQL Editor) los bloqueos del código y del emisor no aplican: este script puede corregir.
 -- Cambiar el emisor anota el anterior en proyecto_emisor_historial con fecha de corte = hoy;
 -- donde el CSV trae emisor_desde, esa fecha sustituye a la de hoy (los documentos con fecha
@@ -233,6 +238,9 @@ ${conCodigo.length ? `  -- El prefijo del código es la sigla del emisor; sin em
     join public.empresas g on g.id = p.empresa_id
    where split_part(v.codigo, '-', 1) <> coalesce(nullif(v.emisor, ''), g.sigla);
   if falta is not null then raise exception 'Códigos cuyo prefijo no es la sigla del emisor ni de la gestora: %', falta; end if;
+` : ''}${idsConCorte ? `  -- Los proyectos con emisor_desde no deben traer historial de emisor previo (el corte se fija sobre la fila nueva).
+  select count(*) into n from public.proyecto_emisor_historial where proyecto_id::text in (${idsConCorte});
+  if n > 0 then raise exception 'Hay % fila(s) de historial de emisor previas en proyectos con emisor_desde: revisarlas a mano antes de aplicar', n; end if;
 ` : ''}end $$;
 
 ${sentencias.join('\n')}

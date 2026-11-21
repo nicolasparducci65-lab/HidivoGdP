@@ -84,7 +84,8 @@ const EXPORT = JSON.stringify({ rows: [
     const sql = H.generarSql(revisado);
     assert((sql.match(/^update public\.proyectos/gm) || []).length === 3, 'el proyecto sin datos no genera UPDATE');
     assert(sql.includes(`update public.proyectos set tipo = 'pilotes', codigo = 'CIP-PIL-2026-001', emisor_empresa_id = nullif((select id from public.empresas where sigla = 'CIP'), empresa_id) where id = '${ID(2)}';`), 'UPDATE del proyecto 2');
-    assert(sql.includes(`update public.proyecto_emisor_historial set hasta = '2026-01-15' where proyecto_id = '${ID(2)}' and creado_en = now();`), 'corte del emisor anterior en emisor_desde');
+    assert(sql.includes(`update public.proyecto_emisor_historial set hasta = '2026-01-15' where proyecto_id = '${ID(2)}' and creado_en = now(); get diagnostics n = row_count; if n <> 1 then raise exception`), 'corte del emisor anterior en emisor_desde, comprobando que tocó exactamente una fila');
+    assert(/EJECUTAR ENTERO/.test(sql) && sql.includes(`from public.proyecto_emisor_historial where proyecto_id::text in ('${ID(2)}')`), 'avisa de ejecutarlo entero y comprueba que no haya historial previo');
     assert((sql.match(/proyecto_emisor_historial set hasta/g) || []).length === 1, 'sin emisor_desde no se toca la fecha de corte');
     assert(sql.includes("array['CIP', 'HDV']::text[]") && sql.includes('n <> 3'), 'comprobaciones previas: siglas activas y número de proyectos');
     assert(sql.includes("coalesce(nullif(v.emisor, ''), g.sigla)") && sql.includes(`('${ID(2)}', 'CIP-PIL-2026-001', 'CIP')`), 'comprueba que el prefijo sea el del emisor o la gestora');
