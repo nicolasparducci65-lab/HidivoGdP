@@ -4,7 +4,9 @@
 //
 //   node exportar.js <datos.json> <carpeta-salida> [--version-app X] [--ahora ISO]
 //
-// <datos.json> es la salida de consulta.sql. Se acepta en cuatro formas:
+// <datos.json> es la salida de consulta.sql o, lo que es lo mismo, la respuesta de
+// la función public.exportacion_estado_datos() llamada por la API (rpc), que
+// devuelve el objeto directo. Se acepta en cuatro formas:
 //   · el objeto «datos» directo                 { proyectos: […], … }
 //   · envuelto                                  { datos: { … } }
 //   · un arreglo de filas                       [ { datos: { … } } ]
@@ -18,8 +20,9 @@
 // Salida estándar, dos líneas:
 //   Estado válido para AAAA-MM-DD: N proyectos de T, M bloques fallidos
 //   RESULTADO proyectos=N fallidos=M resumen=ok|parcial|null
-// La segunda es para máquinas: «resumen» dice si las cinco partes del resumen
+// La segunda es para máquinas: «resumen» dice si las seis partes del resumen
 // se calcularon (ok), solo algunas (parcial) o ninguna (null).
+// El .json sale en «formato: 2» (lo describe la cabecera de estado-proyectos.js).
 //
 // Código de salida:
 //   0  todo bien: archivos escritos y ningún bloque fallido

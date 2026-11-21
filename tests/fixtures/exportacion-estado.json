@@ -16,9 +16,43 @@
    "fecha_fin_real": null,
    "estado": "ejecucion",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-021",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado sin produccion",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-GER-2026-026",
+   "tipo": "gerencia",
+   "nombre": "ZZZ Proyecto sin estado",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 20000,
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin_planificada": "2026-12-31",
+   "fecha_fin_real": null,
+   "estado": null,
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000011",
@@ -36,9 +70,7 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "recepcion_definitiva",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000007",
@@ -56,9 +88,7 @@
    "fecha_fin_real": null,
    "estado": "ejecucion",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": "ZZZ Ciudad de Ejemplo",
-   "latitud": null,
-   "longitud": null
+   "ubicacion": "ZZZ Ciudad de Ejemplo"
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000020",
@@ -76,9 +106,43 @@
    "fecha_fin_real": null,
    "estado": "cancelado",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-028",
+   "tipo": "construccion",
+   "nombre": "ZZZ Programado terminado y rubro sin cronograma",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 100000,
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin_planificada": "2026-10-31",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-019",
+   "tipo": "construccion",
+   "nombre": "ZZZ Cronograma vencido y obra terminada",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 20000,
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin_planificada": "2026-10-31",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000012",
@@ -96,9 +160,7 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "liquidado",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000017",
@@ -116,9 +178,7 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "recepcion_definitiva",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000009",
@@ -136,9 +196,25 @@
    "fecha_fin_real": null,
    "estado": "pausado",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-MUR-2026-023",
+   "tipo": "muros_pantalla",
+   "nombre": "ZZZ Muro sin nada ejecutado",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 40000,
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin_planificada": "2026-12-31",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000023",
@@ -156,9 +232,7 @@
    "fecha_fin_real": null,
    "estado": "ejecucion",
    "estado_cierre": "recepcion_provisional",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000015",
@@ -176,9 +250,7 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "recepcion_definitiva",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000013",
@@ -196,9 +268,25 @@
    "fecha_fin_real": null,
    "estado": "planificacion",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-025",
+   "tipo": "construccion",
+   "nombre": "ZZZ Pausado con cronograma atrasado",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 30000,
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin_planificada": "2026-10-30",
+   "fecha_fin_real": null,
+   "estado": "pausado",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000008",
@@ -216,9 +304,25 @@
    "fecha_fin_real": null,
    "estado": "ejecucion",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": "ZZZ Muelle de Ejemplo",
-   "latitud": -2.19,
-   "longitud": -79.88
+   "ubicacion": "ZZZ Muelle de Ejemplo"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-020",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado con garantia vencida",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000016",
@@ -236,9 +340,7 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "recepcion_definitiva",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000010",
@@ -256,9 +358,25 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000024",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-GER-2026-017",
+   "tipo": "gerencia",
+   "nombre": "ZZZ Proyecto en planificacion",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": null,
+   "fecha_inicio": "2027-01-11",
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "planificacion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000014",
@@ -276,9 +394,25 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "recepcion_definitiva",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-FIS-2024-024",
+   "tipo": "fiscalizacion",
+   "nombre": "ZZZ Finalizado sin produccion ni pendientes",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 10000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "finalizado",
+   "estado_cierre": "recepcion_definitiva",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000019",
@@ -296,9 +430,25 @@
    "fecha_fin_real": null,
    "estado": "cancelado",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-022",
+   "tipo": "construccion",
+   "nombre": "ZZZ Avance y cantidades distintos",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 50000,
+   "fecha_inicio": null,
+   "fecha_fin_planificada": null,
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000021",
@@ -316,9 +466,43 @@
    "fecha_fin_real": null,
    "estado": "finalizado",
    "estado_cierre": "en_ejecucion",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-027",
+   "tipo": "construccion",
+   "nombre": "ZZZ Plan con meseta",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 100000,
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin_planificada": "2026-12-01",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "empresa_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "emisor_empresa_id": null,
+   "codigo": "ZZZ-CON-2026-018",
+   "tipo": "construccion",
+   "nombre": "ZZZ Cronograma vencido sin terminar",
+   "descripcion": null,
+   "contratante": "ZZZ Cliente de Ejemplo S.A.",
+   "contratista": "ZZZ Constructora de Ejemplo",
+   "monto_contrato": 40000,
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin_planificada": "2026-10-31",
+   "fecha_fin_real": null,
+   "estado": "ejecucion",
+   "estado_cierre": "en_ejecucion",
+   "ubicacion": null
   },
   {
    "id": "aaaaaaaa-0000-4000-8000-000000000018",
@@ -336,9 +520,7 @@
    "fecha_fin_real": null,
    "estado": "ejecucion",
    "estado_cierre": "liquidado",
-   "ubicacion": null,
-   "latitud": null,
-   "longitud": null
+   "ubicacion": null
   }
  ],
  "empresas": [
@@ -360,7 +542,7 @@
  ],
  "rubros": [
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000024",
+   "id": "aaaaaaaa-0000-4000-8000-000000000036",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
    "codigo": "1",
    "descripcion": "ZZZ Tablero",
@@ -369,7 +551,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "id": "aaaaaaaa-0000-4000-8000-000000000041",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "1.01",
    "descripcion": "ZZZ Estructura",
@@ -378,7 +560,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "id": "aaaaaaaa-0000-4000-8000-000000000042",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "1.02",
    "descripcion": "ZZZ Mampostería",
@@ -387,7 +569,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "id": "aaaaaaaa-0000-4000-8000-000000000043",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "3.01",
    "descripcion": "ZZZ Instalaciones eléctricas",
@@ -396,7 +578,7 @@
    "estado": "planificado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "id": "aaaaaaaa-0000-4000-8000-000000000044",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "OC-01",
    "descripcion": "ZZZ Refuerzo adicional",
@@ -405,7 +587,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "id": "aaaaaaaa-0000-4000-8000-000000000045",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.01",
    "descripcion": "ZZZ Limpieza final",
@@ -414,7 +596,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "id": "aaaaaaaa-0000-4000-8000-000000000046",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.02",
    "descripcion": "ZZZ Jardinería",
@@ -423,7 +605,7 @@
    "estado": "planificado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "id": "aaaaaaaa-0000-4000-8000-000000000047",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.03",
    "descripcion": "ZZZ Pintura exterior",
@@ -432,7 +614,7 @@
    "estado": "planificado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000036",
+   "id": "aaaaaaaa-0000-4000-8000-000000000048",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.04",
    "descripcion": "ZZZ Desencofrado",
@@ -441,7 +623,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000037",
+   "id": "aaaaaaaa-0000-4000-8000-000000000049",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.05",
    "descripcion": "ZZZ Replanteo",
@@ -450,7 +632,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000038",
+   "id": "aaaaaaaa-0000-4000-8000-000000000050",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "codigo": "4.06",
    "descripcion": "ZZZ Solo en línea base antigua",
@@ -459,7 +641,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000053",
+   "id": "aaaaaaaa-0000-4000-8000-000000000065",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
    "codigo": "P-01",
    "descripcion": "ZZZ Pilotes hincados",
@@ -468,7 +650,7 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000056",
+   "id": "aaaaaaaa-0000-4000-8000-000000000068",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000010",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -477,7 +659,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000057",
+   "id": "aaaaaaaa-0000-4000-8000-000000000069",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000011",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -486,7 +668,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000058",
+   "id": "aaaaaaaa-0000-4000-8000-000000000070",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -495,7 +677,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000059",
+   "id": "aaaaaaaa-0000-4000-8000-000000000071",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000012",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -504,7 +686,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000060",
+   "id": "aaaaaaaa-0000-4000-8000-000000000072",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -513,7 +695,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000061",
+   "id": "aaaaaaaa-0000-4000-8000-000000000073",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -522,7 +704,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000064",
+   "id": "aaaaaaaa-0000-4000-8000-000000000076",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
@@ -531,7 +713,7 @@
    "estado": "terminado"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000065",
+   "id": "aaaaaaaa-0000-4000-8000-000000000077",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000018",
    "codigo": "1",
    "descripcion": "ZZZ Gerencia",
@@ -540,202 +722,433 @@
    "estado": "trabajando"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000066",
+   "id": "aaaaaaaa-0000-4000-8000-000000000078",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000021",
    "codigo": "1",
    "descripcion": "ZZZ Obra civil",
    "monto_contrato": 5000,
    "total_produccion": 5000,
    "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000079",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra gris",
+   "monto_contrato": 40000,
+   "total_produccion": 38800,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000082",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra gris",
+   "monto_contrato": 20000,
+   "total_produccion": 20000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000085",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 10000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000086",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000087",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000029",
+   "codigo": "1",
+   "descripcion": "ZZZ Estructura metálica",
+   "monto_contrato": 50000,
+   "total_produccion": 20000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000088",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "codigo": "1",
+   "descripcion": "ZZZ Muro pantalla",
+   "monto_contrato": 40000,
+   "total_produccion": 0,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000091",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra civil",
+   "monto_contrato": 10000,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000092",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "codigo": "1",
+   "descripcion": "ZZZ Estructura",
+   "monto_contrato": 30000,
+   "total_produccion": 9000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000095",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "codigo": "1",
+   "descripcion": "ZZZ Gerencia",
+   "monto_contrato": 20000,
+   "total_produccion": 5000,
+   "estado": "trabajando"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000098",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "codigo": "1",
+   "descripcion": "ZZZ Cimentación",
+   "monto_contrato": 50000,
+   "total_produccion": 50000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000099",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "codigo": "2",
+   "descripcion": "ZZZ Estructura",
+   "monto_contrato": 50000,
+   "total_produccion": 0,
+   "estado": "planificado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000103",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "codigo": "1",
+   "descripcion": "ZZZ Obra gris",
+   "monto_contrato": 60000,
+   "total_produccion": 60000,
+   "estado": "terminado"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000104",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "codigo": "2",
+   "descripcion": "ZZZ Acabados",
+   "monto_contrato": 40000,
+   "total_produccion": 10000,
+   "estado": "trabajando"
   }
  ],
  "cronograma_rubros": [
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "id": "aaaaaaaa-0000-4000-8000-000000000039",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000024",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000036",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000038",
    "fecha_inicio": "2026-11-01",
    "fecha_fin": "2026-12-11",
    "created_at": "2026-10-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "id": "aaaaaaaa-0000-4000-8000-000000000040",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000024",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000036",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000037",
    "fecha_inicio": "2026-09-01",
    "fecha_fin": "2026-10-31",
    "created_at": "2026-08-01T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000041",
+   "id": "aaaaaaaa-0000-4000-8000-000000000053",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000029",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000041",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-08-03",
    "fecha_fin": "2026-09-30",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000042",
+   "id": "aaaaaaaa-0000-4000-8000-000000000054",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000030",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000042",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-10-01",
    "fecha_fin": "2026-11-30",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000043",
+   "id": "aaaaaaaa-0000-4000-8000-000000000055",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000031",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000043",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-11-24",
    "fecha_fin": "2026-12-15",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000044",
+   "id": "aaaaaaaa-0000-4000-8000-000000000056",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000033",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000045",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-11-15",
    "fecha_fin": "2026-11-28",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000045",
+   "id": "aaaaaaaa-0000-4000-8000-000000000057",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000034",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000046",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-12-06",
    "fecha_fin": "2026-12-20",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000046",
+   "id": "aaaaaaaa-0000-4000-8000-000000000058",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000035",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000047",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-12-05",
    "fecha_fin": "2026-12-18",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000047",
+   "id": "aaaaaaaa-0000-4000-8000-000000000059",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000036",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000048",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-11-10",
    "fecha_fin": "2026-11-21",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000048",
+   "id": "aaaaaaaa-0000-4000-8000-000000000060",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000037",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000049",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000051",
    "fecha_inicio": "2026-11-01",
    "fecha_fin": "2026-11-20",
    "created_at": "2026-09-25T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000049",
+   "id": "aaaaaaaa-0000-4000-8000-000000000061",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000029",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000041",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000052",
    "fecha_inicio": "2026-08-03",
    "fecha_fin": "2026-08-20",
    "created_at": "2026-07-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000050",
+   "id": "aaaaaaaa-0000-4000-8000-000000000062",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000030",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000042",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000052",
    "fecha_inicio": "2026-08-21",
    "fecha_fin": "2026-09-30",
    "created_at": "2026-07-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000051",
+   "id": "aaaaaaaa-0000-4000-8000-000000000063",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000031",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000043",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000052",
    "fecha_inicio": "2026-10-01",
    "fecha_fin": "2026-10-31",
    "created_at": "2026-07-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000052",
+   "id": "aaaaaaaa-0000-4000-8000-000000000064",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000038",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000050",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000052",
    "fecha_inicio": "2026-11-20",
    "fecha_fin": "2026-11-30",
    "created_at": "2026-07-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000055",
+   "id": "aaaaaaaa-0000-4000-8000-000000000067",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000053",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000054",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000065",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000066",
    "fecha_inicio": "2026-09-01",
    "fecha_fin": "2026-11-30",
    "created_at": "2026-07-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000063",
+   "id": "aaaaaaaa-0000-4000-8000-000000000075",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
-   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000061",
-   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000062",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000073",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000074",
    "fecha_inicio": "2024-01-01",
    "fecha_fin": "2024-06-30",
    "created_at": "2023-12-15T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000081",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000079",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000080",
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin": "2026-10-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000084",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000082",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000083",
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin": "2026-10-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000090",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000088",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000089",
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin": "2026-12-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000094",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000092",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000093",
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin": "2026-10-30",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000097",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000095",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000096",
+   "fecha_inicio": "2026-10-01",
+   "fecha_fin": "2026-12-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000101",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000098",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000100",
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin": "2026-08-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000102",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000099",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000100",
+   "fecha_inicio": "2026-11-01",
+   "fecha_fin": "2026-12-01",
+   "created_at": "2026-07-20T15:00:00+00:00"
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000106",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000035",
+   "rubro_id": "aaaaaaaa-0000-4000-8000-000000000103",
+   "linea_base_id": "aaaaaaaa-0000-4000-8000-000000000105",
+   "fecha_inicio": "2026-08-01",
+   "fecha_fin": "2026-10-31",
+   "created_at": "2026-07-20T15:00:00+00:00"
   }
  ],
  "lineas_base": [
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "id": "aaaaaaaa-0000-4000-8000-000000000037",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
    "numero": 1,
    "activa": false
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "id": "aaaaaaaa-0000-4000-8000-000000000038",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000022",
    "numero": 2,
    "activa": false
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000039",
+   "id": "aaaaaaaa-0000-4000-8000-000000000051",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "numero": 2,
    "activa": true
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000040",
+   "id": "aaaaaaaa-0000-4000-8000-000000000052",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "numero": 1,
    "activa": false
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000054",
+   "id": "aaaaaaaa-0000-4000-8000-000000000066",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
    "numero": 1,
    "activa": true
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000062",
+   "id": "aaaaaaaa-0000-4000-8000-000000000074",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000080",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000025",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000083",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000026",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000089",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000030",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000093",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000032",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000096",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000033",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000100",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000034",
+   "numero": 1,
+   "activa": true
+  },
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000105",
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000035",
    "numero": 1,
    "activa": true
   }
  ],
  "planillas_pago": [
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "id": "aaaaaaaa-0000-4000-8000-000000000107",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "numero": 3,
    "fecha_inicio": "2026-09-01",
@@ -749,7 +1162,7 @@
    "updated_at": "2026-10-05T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "id": "aaaaaaaa-0000-4000-8000-000000000108",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "numero": 4,
    "fecha_inicio": "2026-10-01",
@@ -763,7 +1176,7 @@
    "updated_at": "2026-11-10T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000069",
+   "id": "aaaaaaaa-0000-4000-8000-000000000109",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "numero": 5,
    "fecha_inicio": "2026-11-01",
@@ -777,7 +1190,7 @@
    "updated_at": "2026-11-20T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000070",
+   "id": "aaaaaaaa-0000-4000-8000-000000000110",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
    "numero": 1,
    "fecha_inicio": "2026-09-01",
@@ -791,7 +1204,7 @@
    "updated_at": "fecha-corrupta"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000071",
+   "id": "aaaaaaaa-0000-4000-8000-000000000111",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000014",
    "numero": 1,
    "fecha_inicio": "2024-01-01",
@@ -805,7 +1218,7 @@
    "updated_at": "2024-02-05T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "id": "aaaaaaaa-0000-4000-8000-000000000112",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000016",
    "numero": 7,
    "fecha_inicio": "2024-06-01",
@@ -819,7 +1232,7 @@
    "updated_at": "2026-09-01T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000073",
+   "id": "aaaaaaaa-0000-4000-8000-000000000113",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
    "numero": 1,
    "fecha_inicio": "2024-01-01",
@@ -833,7 +1246,7 @@
    "updated_at": "2024-02-05T15:00:00+00:00"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000074",
+   "id": "aaaaaaaa-0000-4000-8000-000000000114",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000019",
    "numero": 1,
    "fecha_inicio": "2025-01-01",
@@ -849,47 +1262,47 @@
  ],
  "planilla_historial": [
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000107",
    "accion": "Planilla enviada a revisión",
    "created_at": "2026-10-05T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000107",
    "accion": "Planilla en revisión",
    "created_at": "2026-10-10T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000067",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000107",
    "accion": "Planilla aprobada por fiscalizador",
    "created_at": "2026-11-01T02:30:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000108",
    "accion": "Planilla guardada como borrador",
    "created_at": "2026-11-10T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000108",
    "accion": "Planilla enviada a revisión",
    "created_at": "2026-11-12T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000068",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000108",
    "accion": "Planilla en revisión",
    "created_at": "2026-11-14T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000071",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000111",
    "accion": "Planilla aprobada por fiscalizador",
    "created_at": "2024-02-20T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000112",
    "accion": "Planilla enviada a revisión",
    "created_at": "2026-09-01T15:00:00+00:00"
   },
   {
-   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000072",
+   "planilla_id": "aaaaaaaa-0000-4000-8000-000000000112",
    "accion": "Planilla aprobada por fiscalizador",
    "created_at": "2026-09-15T15:00:00+00:00"
   }
@@ -935,6 +1348,12 @@
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000015",
    "tipo": "fiel_cumplimiento",
    "vigencia_hasta": "2027-06-30",
+   "estado": "vigente"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "tipo": "buena_calidad_materiales",
+   "vigencia_hasta": "2026-10-01",
    "estado": "vigente"
   },
   {
@@ -1117,6 +1536,15 @@
    "con_antecedente": false
   },
   {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "numero": 1,
+   "titulo": "ZZZ Falta el registro de cantidades",
+   "estado": "abierta",
+   "creado_por": "aaaaaaaa-0000-4000-8000-000000000006",
+   "created_at": "2026-11-17T15:00:00+00:00",
+   "con_antecedente": false
+  },
+  {
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000020",
    "numero": 7,
    "titulo": "ZZZ Avisar a zzz.residente@zzz-ejemplo.test",
@@ -1128,42 +1556,42 @@
  ],
  "ensayos": [
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000075",
+   "id": "aaaaaaaa-0000-4000-8000-000000000115",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": false,
    "resuelto": false,
    "reensayo_de": null
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000076",
+   "id": "aaaaaaaa-0000-4000-8000-000000000116",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": false,
    "resuelto": false,
    "reensayo_de": null
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000078",
+   "id": "aaaaaaaa-0000-4000-8000-000000000118",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": false,
    "resuelto": false,
-   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000076"
+   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000116"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000077",
+   "id": "aaaaaaaa-0000-4000-8000-000000000117",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": false,
    "resuelto": true,
    "reensayo_de": null
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000079",
+   "id": "aaaaaaaa-0000-4000-8000-000000000119",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": true,
    "resuelto": false,
-   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000077"
+   "reensayo_de": "aaaaaaaa-0000-4000-8000-000000000117"
   },
   {
-   "id": "aaaaaaaa-0000-4000-8000-000000000080",
+   "id": "aaaaaaaa-0000-4000-8000-000000000120",
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000007",
    "cumple": true,
    "resuelto": false,
@@ -1266,7 +1694,7 @@
   },
   {
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000008",
-   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000081",
+   "usuario_id": "aaaaaaaa-0000-4000-8000-000000000121",
    "perfil_id": null,
    "rol": "residente"
   }
@@ -1348,6 +1776,36 @@
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000017",
    "tipo": "definitiva",
    "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000027",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000028",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "tipo": "provisional",
+   "fecha": "2024-03-01"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000031",
+   "tipo": "definitiva",
+   "fecha": "2024-09-01"
   }
  ],
  "liquidaciones": [
@@ -1368,6 +1826,15 @@
   },
   {
    "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000018"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000027"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000028"
+  },
+  {
+   "proyecto_id": "aaaaaaaa-0000-4000-8000-000000000031"
   }
  ]
 }

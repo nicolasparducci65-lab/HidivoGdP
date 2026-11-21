@@ -6644,6 +6644,13 @@ async function cargarCartera(){
     return (filtrar ? filtrar(q) : q).in('proyecto_id', ids).order('id');
   }, 1000, true);
   const agrupar = filas => { const m = {}; filas.forEach(f=>{ (m[f.proyecto_id] = m[f.proyecto_id] || []).push(f); }); return m; };
+  // Cualquier fallo (de lectura o del núcleo) acaba aquí: mensaje de error, nunca indicadores a medias.
+  const pintarErrorCartera = e => {
+    console.error('cargarCartera', e);
+    cont.innerHTML = barraFiltroHtml + `<div class="empty-state" id="carteraError"><div class="empty-icon">⚠️</div><div class="empty-title">No se pudo leer la cartera</div>
+      <div class="empty-sub">No se muestran indicadores: con datos incompletos el SPI y el semáforo saldrían equivocados.<br>${escAttr((e && e.message) || String(e))}</div>
+      <button class="btn primary" style="margin-top:12px" onclick="cargarCartera()">Reintentar</button></div>`;
+  };
   let rubros, lineasBase, planillas, anticipos, garantias, libro, observaciones, solicitudes, cronograma;
   const porP = {};
   try{
@@ -6676,20 +6683,21 @@ async function cargarCartera(){
     const rubrosPorP = agrupar(rubros), garPorP = agrupar(garantias);
 
     ids.forEach(id=>{ porP[id] = {vigente:0, ejecutado:0, plan:0, planillado:0, liquidoPend:0, amortizado:0, anticipo:0, garVencidas:0, garPorVencer:0, libro:0, obs:0, sol:0}; });
+    // Fecha de inicio de cada proyecto (proyectos.fecha_inicio, ya viene en la lectura de proyectos):
+    // el núcleo acota con ella el atraso a la fecha cuando es posterior al primer inicio programado.
+    const inicioPorProyecto = {};
+    todos.forEach(p=>{ inicioPorProyecto[p.id] = p.fecha_inicio ?? null; });
     // Avance, plan, SPI y atraso: una sola regla para toda la plataforma (cartera-nucleo.js).
     // El núcleo lanza ante una fecha mal formada: también eso se muestra como error.
     ids.forEach(id=>{
       const p = porP[id];
-      p.evm = nucleoEvmProyecto({ rubros: rubrosPorP[id]||[], cronograma: cronPorP[id]||[], lineaBaseActivaId: lbPorProyecto[id]||null, hoy: hoyStr });
+      p.evm = nucleoEvmProyecto({ rubros: rubrosPorP[id]||[], cronograma: cronPorP[id]||[], lineaBaseActivaId: lbPorProyecto[id]||null, hoy: hoyStr, fechaInicioProyecto: inicioPorProyecto[id] });
       p.vigente = p.evm.vigente; p.ejecutado = p.evm.ejecutado; p.plan = p.evm.planPct;
       const g = nucleoGarantias(garPorP[id]||[], hoyStr);
       p.gar = g; p.garVencidas = g.vencidas; p.garPorVencer = g.porVencer;
     });
   }catch(e){
-    console.error('cargarCartera', e);
-    cont.innerHTML = barraFiltroHtml + `<div class="empty-state" id="carteraError"><div class="empty-icon">⚠️</div><div class="empty-title">No se pudo leer la cartera</div>
-      <div class="empty-sub">No se muestran indicadores: con datos incompletos el SPI y el semáforo saldrían equivocados.<br>${escAttr((e && e.message) || String(e))}</div>
-      <button class="btn primary" style="margin-top:12px" onclick="cargarCartera()">Reintentar</button></div>`;
+    pintarErrorCartera(e);
     return;
   }
   planillas.forEach(pl=>{
@@ -6705,6 +6713,24 @@ async function cargarCartera(){
   observaciones.forEach(o=>{ if(porP[o.proyecto_id]) porP[o.proyecto_id].obs++; });
   solicitudes.forEach(s=>{ if(porP[s.proyecto_id]) porP[s.proyecto_id].sol++; });
 
+  // Semáforo y avisos de «datos por completar»: reglas del núcleo. Solo los proyectos en ejecución
+  // llevan color; los demás (planificación, pausado, finalizado, cancelado) salen sin color, con su
+  // estado y sus pendientes. Un proyecto sin estado registrado (null) tampoco lleva color: el núcleo
+  // lo acepta, sale como «Sin estado» y queda anotado en «datos por completar».
+  const SEMAFOROS = { rojo:{color:'#e2445c',emoji:'🔴',orden:0}, amarillo:{color:'#b8860b',emoji:'🟡',orden:1}, verde:{color:'#00854d',emoji:'🟢',orden:2}, sin:{color:'#676879',emoji:'⚪',orden:3} };
+  const txtConSemaforo = estadoLabel(NUCLEO_CARTERA.ESTADO_CON_SEMAFORO).toLowerCase();
+  try{
+    activos.forEach(p=>{
+      const d = porP[p.id];
+      d.sem = nucleoSemaforo({ estado: p.estado ?? null, evm: d.evm, garantias: d.gar, pendientes: d.libro + d.obs + d.sol });
+      d.clave = d.sem.color || 'sin';
+      d.porCompletar = nucleoDatosPorCompletar({ evm: d.evm, estado: p.estado });
+    });
+  }catch(e){
+    pintarErrorCartera(e);
+    return;
+  }
+
   const fmt = v => '$' + (v||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtK = v => v>=1e6 ? '$'+(v/1e6).toFixed(2)+'M' : v>=1e3 ? '$'+(v/1e3).toFixed(1)+'K' : fmt(v);
 
@@ -6717,30 +6743,50 @@ async function cargarCartera(){
   window._resumenesCartera = resumenesIA||[];
 
   const filas = activos.map(p=>{
-    const d = porP[p.id];
-    const real = d.evm.realPct;
-    const spi = d.evm.spi;
-    const atraso = d.evm.atrasoDias;
-    const sem = nucleoSemaforo({ evm: d.evm, garantias: d.gar, pendientes: d.libro + d.obs + d.sol });
-    const { color, emoji } = { rojo:{color:'#e2445c',emoji:'🔴'}, amarillo:{color:'#b8860b',emoji:'🟡'}, verde:{color:'#00854d',emoji:'🟢'} }[sem.color];
-    d._sem = emoji;
+    const d = porP[p.id], evm = d.evm, sem = d.sem;
+    const conColor = sem.color !== null;
+    const { color, emoji } = SEMAFOROS[d.clave];
+    const avance = evm.avancePct;            // avance principal: valor ganado de TODOS los rubros (el SPI usa evPct: solo los que tienen cronograma)
+    const spi = evm.spi;
+    const atraso = evm.atrasoFechaDias;      // atraso a la fecha (el que usa el semáforo); null si no hay con qué medirlo
+    const proyectado = evm.atrasoProyectadoDias;
+    const estadoProyecto = p.estado ? estadoLabel(p.estado) : 'Sin estado';
     // SPI truncado a dos decimales por el núcleo, como en los motivos del semáforo: el número pintado nunca contradice su color
-    const spiTxt = spi===null ? '—' : nucleoSpiTruncado(spi).toFixed(2);
+    const spiTxt = (spi===null || !d.evm.spiValido) ? '—' : nucleoSpiTruncado(spi).toFixed(2);
     const pctEs = v => v.toFixed(1).replace('.', ',');
-    const spiTitulo = d.evm.sinCronograma ? 'Sin cronograma: no hay SPI'
-      : `Valor ganado ${pctEs(d.evm.evPct)} % sobre plan ${pctEs(d.evm.planPct)} % · solo rubros con cronograma`;
-    const spiColor = (spi===null || !d.evm.spiValido) ? '#676879' : spi<NUCLEO_CARTERA.SPI_ROJO ? '#e2445c' : spi<NUCLEO_CARTERA.SPI_AMARILLO ? '#b8860b' : '#00854d';
+    const enDias = n => `${n} día${n===1?'':'s'}`;
+    // Rubros sin cronograma: cuentan en el avance principal, pero no en el plan ni en el SPI
+    const sinCronTxt = !evm.sinCronograma && evm.rubrosSinCronograma>0 ? `${evm.rubrosSinCronograma} de ${evm.rubros} rubro(s) sin cronograma` : '';
+    // Los atrasos solo se pintan en los proyectos con semáforo (en ejecución). Si la fecha ganada es
+    // anterior al inicio del proyecto, el núcleo acotó el atraso a los días transcurridos desde ese inicio.
+    const inicioProyecto = p.fecha_inicio ? String(p.fecha_inicio).slice(0, 10) : '';
+    const atrasoDetalle = inicioProyecto && evm.fechaGanada && evm.fechaGanada < inicioProyecto
+      ? `acotado a los días transcurridos desde el inicio del proyecto, ${inicioProyecto}`
+      : `el plan preveía este valor ganado el ${evm.fechaGanada}`;
+    const spiTitulo = [
+      evm.sinCronograma ? 'Sin cronograma: no hay SPI' : `Valor ganado ${pctEs(evm.evPct)} % sobre plan ${pctEs(evm.planPct)} % · solo rubros con cronograma`,
+      sinCronTxt ? `${sinCronTxt}: no entran al SPI (el avance total es ${pctEs(avance)} %)` : '',
+      conColor && atraso>0 ? `atraso a la fecha: ${enDias(atraso)} (${atrasoDetalle})` : '',
+      !conColor ? '' : proyectado>0 ? `atraso proyectado al final: ${enDias(proyectado)}`
+        : (proyectado===null && evm.spiValido) ? `atraso proyectado al final: no estimable (SPI menor que ${NUCLEO_CARTERA.SPI_MINIMO_PROYECCION.toFixed(2).replace('.', ',')})` : ''
+    ].filter(Boolean).join(' · ');
+    const spiColor = (!conColor || spi===null || !evm.spiValido) ? '#676879' : spi<NUCLEO_CARTERA.SPI_ROJO ? '#e2445c' : spi<NUCLEO_CARTERA.SPI_AMARILLO ? '#b8860b' : '#00854d';
+    const avanceTitulo = `Avance por valor ganado ${pctEs(avance)} % frente a plan a hoy ${pctEs(evm.planPct)} % · ejecutado por cantidades ${pctEs(evm.realPct)} %`
+      + (evm.sinCronograma ? ' · sin cronograma: no hay plan ni SPI' : sinCronTxt ? ` · ${sinCronTxt}: cuentan en el avance, no en el plan ni en el SPI (valor ganado en cronograma ${pctEs(evm.evPct)} %)` : '');
+    const semTitulo = conColor ? (sem.motivos.join(' · ') || 'Sin alertas')
+      : `Sin semáforo: proyecto en estado «${estadoProyecto}» (solo llevan color los proyectos ${txtConSemaforo})`;
     const alertas = [
       d.libro ? `📖${d.libro}` : '', d.obs ? `📌${d.obs}` : '', d.sol ? `📨${d.sol}` : '',
       d.garPorVencer ? `🛡️${d.garPorVencer}` : '', d.garVencidas ? `<b style="color:#e2445c">🛡️!${d.garVencidas}</b>` : ''
     ].filter(Boolean).join(' ');
-    const estadoTxt = {en_ejecucion:'En ejecución', recepcion_provisional:'R. provisional', recepcion_definitiva:'R. definitiva'}[p.estado_cierre]||'En ejecución';
+    const cierreTxt = {recepcion_provisional:'R. provisional', recepcion_definitiva:'R. definitiva'}[p.estado_cierre]||'';
     return `<tr style="cursor:pointer" onclick="irANotificacion('${p.id}','curvaS')" title="Ir a la Curva S del proyecto">
-      <td style="font-size:16px" title="${escAttr(sem.motivos.join(' · ') || 'Sin alertas')}">${emoji}</td>
-      <td style="font-weight:600">${distintivoEmpresa(p)}${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${[escAttr(codigoTipoTexto(p)), estadoTxt, escAttr(p.contratante||'')].filter(Boolean).join(' · ')}</div></td>
-      <td style="white-space:nowrap"><div style="font-size:13px;font-weight:600">${real.toFixed(1)}% <span style="color:#676879;font-weight:400">/ ${d.plan.toFixed(1)}%</span></div>
-        <div style="background:#e6e9ef;border-radius:4px;height:6px;width:110px;margin-top:3px;position:relative"><div style="background:${color};border-radius:4px;height:6px;width:${Math.min(100,real)}%"></div><div style="position:absolute;top:-2px;left:${Math.min(100,d.plan)}%;width:2px;height:10px;background:#323338"></div></div></td>
-      <td title="${escAttr(spiTitulo)}" style="text-align:center;font-weight:800;color:${spiColor}">${spiTxt}${atraso>0?`<div style="font-size:10px;color:#e2445c;font-weight:600">~${atraso}d atraso</div>`:''}</td>
+      <td style="font-size:16px;text-align:center" title="${escAttr(semTitulo)}">${emoji}${conColor?'':`<div class="cartera-sin-semaforo" style="font-size:10px;color:#676879;white-space:nowrap">${escAttr(estadoProyecto)}</div>`}</td>
+      <td style="font-weight:600">${distintivoEmpresa(p)}${escAttr(p.nombre)}<div style="font-size:11px;color:#676879;font-weight:400">${[escAttr(codigoTipoTexto(p)), escAttr(estadoProyecto), cierreTxt, escAttr(p.contratante||'')].filter(Boolean).join(' · ')}</div></td>
+      <td style="white-space:nowrap" title="${escAttr(avanceTitulo)}"><div style="font-size:13px;font-weight:600">${avance.toFixed(1)}% <span style="color:#676879;font-weight:400">/ ${d.plan.toFixed(1)}%</span></div>
+        <div style="background:#e6e9ef;border-radius:4px;height:6px;width:110px;margin-top:3px;position:relative"><div style="background:${color};border-radius:4px;height:6px;width:${Math.min(100,avance)}%"></div><div style="position:absolute;top:-2px;left:${Math.min(100,d.plan)}%;width:2px;height:10px;background:#323338"></div></div>${d.porCompletar.length?`
+        <div class="cartera-por-completar" style="font-size:10px;color:#b8860b;font-weight:600;margin-top:3px" title="${escAttr('Datos por completar: ' + d.porCompletar.join(' · '))}">⚠ datos por completar</div>`:''}</td>
+      <td title="${escAttr(spiTitulo)}" style="text-align:center;font-weight:800;color:${spiColor}">${spiTxt}${conColor && atraso>0?`<div style="font-size:10px;color:#e2445c;font-weight:600">${atraso}d atraso a la fecha</div>`:''}</td>
       <td style="text-align:right;white-space:nowrap">${fmtK(d.vigente)}<div style="font-size:11px;color:#676879">${d.vigente>0?(d.planillado/d.vigente*100).toFixed(0):0}% planillado</div></td>
       <td style="text-align:right;white-space:nowrap;font-weight:600;color:${d.liquidoPend>0?'#b8860b':'#676879'}">${d.liquidoPend>0?fmtK(d.liquidoPend):'—'}</td>
       <td style="text-align:right;white-space:nowrap;color:#676879">${d.anticipo>0?fmtK(Math.max(0,d.anticipo-d.amortizado)):'—'}</td>
@@ -6748,25 +6794,24 @@ async function cargarCartera(){
     </tr>`;
   });
 
-  // Ordenar: rojos primero, luego amarillos, luego verdes
-  const orden = {'🔴':0,'🟡':1,'🟢':2};
-  const filasOrdenadas = activos.map((p,i)=>({fila:filas[i], sem:porP[p.id]._sem}))
-    .sort((a,b)=>orden[a.sem]-orden[b.sem]).map(x=>x.fila);
+  // Ordenar: rojos primero, luego amarillos, luego verdes y al final los que no llevan color
+  const filasOrdenadas = activos.map((p,i)=>({fila:filas[i], orden:SEMAFOROS[porP[p.id].clave].orden}))
+    .sort((a,b)=>a.orden-b.orden).map(x=>x.fila);
 
   const totVigente = activos.reduce((s,p)=>s+porP[p.id].vigente,0);
   const totPlanillado = activos.reduce((s,p)=>s+porP[p.id].planillado,0);
   const totLiquidoPend = activos.reduce((s,p)=>s+porP[p.id].liquidoPend,0);
-  const nRojo = activos.filter(p=>porP[p.id]._sem==='🔴').length;
-  const nAmarillo = activos.filter(p=>porP[p.id]._sem==='🟡').length;
-  const nVerde = activos.filter(p=>porP[p.id]._sem==='🟢').length;
+  // La salud de la cartera cuenta solo los proyectos con semáforo (en ejecución)
+  const nDe = clave => activos.filter(p=>porP[p.id].clave===clave).length;
+  const nRojo = nDe('rojo'), nAmarillo = nDe('amarillo'), nVerde = nDe('verde'), nSinSemaforo = nDe('sin');
 
   // Totales por empresa gestora (sobre los proyectos activos mostrados)
   const porEmpresa = {};
   activos.forEach(p=>{
-    const t = porEmpresa[p.empresa_id||''] = porEmpresa[p.empresa_id||''] || { n:0, vigente:0, planillado:0, liquidoPend:0, rojo:0, amarillo:0, verde:0 };
+    const t = porEmpresa[p.empresa_id||''] = porEmpresa[p.empresa_id||''] || { n:0, vigente:0, planillado:0, liquidoPend:0, rojo:0, amarillo:0, verde:0, sin:0 };
     const d = porP[p.id];
     t.n++; t.vigente += d.vigente; t.planillado += d.planillado; t.liquidoPend += d.liquidoPend;
-    t[{'🔴':'rojo','🟡':'amarillo','🟢':'verde'}[d._sem]]++;
+    t[d.clave]++;
   });
   const totalesEmpresaHtml = !multiempresaActiva() ? '' : `<div class="card" style="margin-bottom:18px">
     <div class="card-header"><div><div class="card-title">Totales por empresa</div><div class="card-subtitle">Proyectos activos de cada empresa gestora</div></div></div>
@@ -6777,7 +6822,7 @@ async function cargarCartera(){
       <td style="text-align:right;white-space:nowrap">${fmtK(t.vigente)}</td>
       <td style="text-align:right;white-space:nowrap">${fmtK(t.planillado)}</td>
       <td style="text-align:right;white-space:nowrap">${t.liquidoPend>0?fmtK(t.liquidoPend):'—'}</td>
-      <td style="text-align:center;white-space:nowrap">🔴${t.rojo} 🟡${t.amarillo} 🟢${t.verde}</td>
+      <td style="text-align:center;white-space:nowrap">🔴${t.rojo} 🟡${t.amarillo} 🟢${t.verde}${t.sin?` ⚪${t.sin}`:''}</td>
     </tr>`).join('')}
     </tbody></table></div>
   </div>`;
@@ -6789,14 +6834,14 @@ async function cargarCartera(){
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">CARTERA CONTRATADA</div><div style="font-size:20px;font-weight:800;color:#0073ea">${fmtK(totVigente)}</div><div style="font-size:11px;color:#676879">${activos.length} proyecto(s) activo(s)</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">PLANILLADO ACUMULADO</div><div style="font-size:20px;font-weight:800;color:#00854d">${fmtK(totPlanillado)}</div><div style="font-size:11px;color:#676879">${totVigente>0?(totPlanillado/totVigente*100).toFixed(1):0}% de la cartera</div></div>
     <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">LÍQUIDO POR PAGAR</div><div style="font-size:20px;font-weight:800;color:${totLiquidoPend>0?'#b8860b':'#676879'}">${fmtK(totLiquidoPend)}</div><div style="font-size:11px;color:#676879">planillas aprobadas sin pagar</div></div>
-    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div style="font-size:11px;color:#676879">Rojo: SPI &lt; ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, garantía vencida o atraso &gt; ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días</div></div>
+    <div class="card" style="text-align:center;padding:16px"><div style="font-size:11px;color:#676879">SALUD DE LA CARTERA</div><div style="font-size:20px;font-weight:800">🔴${nRojo} 🟡${nAmarillo} 🟢${nVerde}</div><div id="carteraSaludConteo" style="font-size:11px;color:#676879">${nRojo+nAmarillo+nVerde} proyecto(s) ${txtConSemaforo} · ⚪ ${nSinSemaforo} sin semáforo</div><div style="font-size:11px;color:#676879">Rojo: SPI &lt; ${NUCLEO_CARTERA.SPI_ROJO.toFixed(2)}, cronograma vencido con la obra sin terminar, garantía vencida o atraso a la fecha &gt; ${NUCLEO_CARTERA.ATRASO_ROJO_DIAS} días</div></div>
   </div>
   ${totalesEmpresaHtml}
   <div class="card">
     <div style="overflow-x:auto"><table style="width:100%"><thead><tr>
-      <th></th><th>Proyecto</th><th>Avance real / plan</th><th style="text-align:center">SPI</th><th style="text-align:right">Monto vigente</th><th style="text-align:right">Líquido pend.</th><th style="text-align:right">Anticipo saldo</th><th>Alertas</th>
+      <th></th><th>Proyecto</th><th title="Avance por valor ganado de todos los rubros frente al plan a hoy (el SPI usa solo los rubros con cronograma)">Avance (valor ganado) / plan</th><th style="text-align:center">SPI</th><th style="text-align:right">Monto vigente</th><th style="text-align:right">Líquido pend.</th><th style="text-align:right">Anticipo saldo</th><th>Alertas</th>
     </tr></thead><tbody>${filasOrdenadas.join('')||'<tr><td colspan="8" style="text-align:center;padding:24px;color:#676879">Sin proyectos activos</td></tr>'}</tbody></table></div>
-    <div style="font-size:11px;color:#676879;margin-top:10px">📖 libro por aprobar · 📌 observaciones abiertas · 📨 solicitudes · 🛡️ garantías por vencer (! = vencida) · barra: avance real, marca negra = plan a hoy · clic en la fila para ir al proyecto</div>
+    <div style="font-size:11px;color:#676879;margin-top:10px">📖 libro por aprobar · 📌 observaciones abiertas · 📨 solicitudes · 🛡️ garantías por vencer (! = vencida) · barra: avance por valor ganado, marca negra = plan a hoy · ⚪ sin semáforo: solo llevan color los proyectos ${txtConSemaforo} · clic en la fila para ir al proyecto</div>
   </div>
   ${liquidados.length ? `<details style="margin-top:16px"><summary style="cursor:pointer;font-weight:600;color:#676879">🏁 Proyectos liquidados (${liquidados.length})</summary>
     <div class="card" style="margin-top:10px">${liquidados.map(p=>`<div style="display:flex;justify-content:space-between;padding:8px 4px;border-bottom:1px solid #e6e9ef;cursor:pointer" onclick="irANotificacion('${p.id}','contrato')"><span>${escAttr(p.nombre)}</span><span style="color:#676879;font-size:12px">${escAttr(p.contratante||'')}</span></div>`).join('')}</div></details>` : ''}`;
@@ -11456,9 +11501,17 @@ let reportesTabActivo = 'libro';
 async function cargarReportesGlobales(){
   const el = document.getElementById('reportesGlobalesContent');
   el.innerHTML = '<div class="page-loader"><div class="spinner"></div>Cargando reportes...</div>';
+  // Si una lectura falla no se pinta un reporte con conteos a medias: se avisa y se ofrece reintentar.
+  const pintarErrorReportes = e => {
+    console.error('cargarReportesGlobales', e);
+    el.innerHTML = `<div class="empty-state" id="reportesError"><div class="empty-icon">⚠️</div><div class="empty-title">No se pudieron leer los reportes</div>
+      <div class="empty-sub">No se muestran conteos: con datos incompletos saldrían equivocados.<br>${escAttr((e && e.message) || String(e))}</div>
+      <button class="btn primary" style="margin-top:12px" onclick="cargarReportesGlobales()">Reintentar</button></div>`;
+  };
 
   // Cargar todos los proyectos para el filtro de contratante
-  const { data: todosProyectos } = await sb.from('proyectos').select('*');
+  const { data: todosProyectos, error: errProyectos } = await sb.from('proyectos').select('*');
+  if(errProyectos){ pintarErrorReportes(errProyectos); return; }
   const contratantes = [...new Set((todosProyectos||[]).map(p=>p.contratante).filter(Boolean))].sort();
 
   // Filtrar proyectos según empresa, tipo y contratante seleccionados
@@ -11476,31 +11529,30 @@ async function cargarReportesGlobales(){
     return;
   }
 
-  // Construir queries con filtro de fecha
-  let qLibro = sb.from('libro_obra').select('id,proyecto_id,fecha,actividades_ejecutadas,clima_diurno,clima_nocturno').in('proyecto_id', idsProyectos);
-  let qObs = sb.from('observaciones').select('id,proyecto_id,numero,titulo,estado,created_at').in('proyecto_id', idsProyectos);
-  let qSol = sb.from('solicitudes').select('id,proyecto_id,numero,titulo,tipo,estado,created_at').in('proyecto_id', idsProyectos);
-
-  if(reportesFiltroDesde){
-    qLibro = qLibro.gte('fecha', reportesFiltroDesde);
-    qObs = qObs.gte('created_at', reportesFiltroDesde+'T00:00:00');
-    qSol = qSol.gte('created_at', reportesFiltroDesde+'T00:00:00');
+  // Lecturas con filtro de fecha, PAGINADAS (PostgREST corta en 1.000 filas sin avisar: el libro de
+  // obra de la cartera ya pasa de esa cifra) y con orden estable (fecha o creación, y luego id) para
+  // que ninguna fila se repita ni se pierda entre páginas. Modo estricto: un fallo lanza.
+  const entreFechas = (q, col, desde, hasta) => {
+    if(desde) q = q.gte(col, desde);
+    if(hasta) q = q.lte(col, hasta);
+    return q;
+  };
+  const desdeTs = reportesFiltroDesde ? reportesFiltroDesde+'T00:00:00' : '';
+  const hastaTs = reportesFiltroHasta ? reportesFiltroHasta+'T23:59:59' : '';
+  let libroData, obsData, solData;
+  try{
+    [libroData, obsData, solData] = await Promise.all([
+      traerPaginado(()=> entreFechas(sb.from('libro_obra').select('id,proyecto_id,fecha,actividades_ejecutadas,clima_diurno,clima_nocturno').in('proyecto_id', idsProyectos), 'fecha', reportesFiltroDesde, reportesFiltroHasta)
+        .order('fecha',{ascending:false}).order('id'), 1000, true),
+      traerPaginado(()=> entreFechas(sb.from('observaciones').select('id,proyecto_id,numero,titulo,estado,created_at').in('proyecto_id', idsProyectos), 'created_at', desdeTs, hastaTs)
+        .order('created_at',{ascending:false}).order('id'), 1000, true),
+      traerPaginado(()=> entreFechas(sb.from('solicitudes').select('id,proyecto_id,numero,titulo,tipo,estado,created_at').in('proyecto_id', idsProyectos), 'created_at', desdeTs, hastaTs)
+        .order('created_at',{ascending:false}).order('id'), 1000, true)
+    ]);
+  }catch(e){
+    pintarErrorReportes(e);
+    return;
   }
-  if(reportesFiltroHasta){
-    qLibro = qLibro.lte('fecha', reportesFiltroHasta);
-    qObs = qObs.lte('created_at', reportesFiltroHasta+'T23:59:59');
-    qSol = qSol.lte('created_at', reportesFiltroHasta+'T23:59:59');
-  }
-
-  const [{data:libro}, {data:obs}, {data:sols}] = await Promise.all([
-    qLibro.order('fecha',{ascending:false}),
-    qObs.order('created_at',{ascending:false}),
-    qSol.order('created_at',{ascending:false})
-  ]);
-
-  const libroData = libro||[];
-  const obsData = obs||[];
-  const solData = sols||[];
 
   // ── Métricas generales ──
   const obsAbiertas = obsData.filter(o=>o.estado==='abierta'||o.estado==='pendiente').length;

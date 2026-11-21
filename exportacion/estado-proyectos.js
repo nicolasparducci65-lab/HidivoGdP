@@ -1,21 +1,64 @@
 // ============================================================================
 // Exportación diaria del estado de proyectos: módulo PURO (sin red ni disco).
 //
-//   construirEstado(datos, opciones)  →  objeto del GDO-estado-proyectos.json (formato 1)
+//   construirEstado(datos, opciones)  →  objeto del GDO-estado-proyectos.json (formato 2)
 //   estadoAMarkdown(estado)           →  texto del GDO-estado-proyectos.md
 //   estadoDelResumen(estado)          →  'ok' | 'parcial' | 'null'
 //   limpiarTexto(texto)               →  el texto sin correos ni uuid
 //
 // «datos» es el objeto que devuelve exportacion/consulta.sql (una clave por tabla).
-// Avance, SPI, atraso, línea base activa, garantías vencidas / por vencer y semáforo
-// salen SIEMPRE de ../cartera-nucleo.js: aquí no se repite ninguna de esas fórmulas.
+// Avance (valor ganado), ejecutado por cantidades, SPI, los dos atrasos, línea base
+// activa, garantías vencidas / por vencer, «datos por completar» y semáforo salen
+// SIEMPRE de ../cartera-nucleo.js: aquí no se repite ninguna de esas fórmulas.
 //
-// Reglas propias de la exportación (fase 0, con las decisiones del 21-nov-2026):
+// Formato 2 (decisiones del 21-nov-2026). Cambios frente al formato 1:
+//   · avance: «avance_pct» es el PRINCIPAL: el valor ganado de TODOS los rubros,
+//     tengan o no cronograma. «valor_ganado_cronograma_pct» es el valor ganado solo
+//     de los rubros con cronograma (el numerador del SPI; null sin cronograma) y
+//     «rubros_sin_cronograma» dice cuántos rubros quedan fuera de él: si es 0, los
+//     dos porcentajes son el mismo. «ejecutado_cantidades_pct» va aparte.
+//     Desaparecen ejecutado_pct y valor_ganado_pct.
+//   · SPI: «spi» es el número, redondeado a 4 decimales; «spi_texto» es el que se
+//     lee: TRUNCADO a dos decimales por el núcleo («0,84»), el mismo de los motivos
+//     del semáforo. Un SPI de 0,84996 sale spi = 0.85 y spi_texto = «0,84»: el
+//     texto nunca contradice el umbral.
+//   · atrasos: «dias_atraso» se sustituye por «atraso_fecha_dias» (el del semáforo:
+//     último día en que el plan no superaba el valor ganado; nunca supera los días
+//     desde el inicio, que es el primer inicio programado o, si es posterior, la
+//     fecha de inicio del proyecto) y «atraso_proyectado_dias» (proyección al final;
+//     null si no es estimable). Los dos van SOLO en los proyectos con semáforo: en
+//     los que no están en ejecución son null y el .md no habla de atraso ni de
+//     cronograma vencido («cronograma_vencido» y «fin_programado» sí van, como dato).
+//     Se añaden «fin_programado» y «datos_por_completar» (lista de textos).
+//   · semaforo: solo los proyectos en ejecución llevan color. En planificación,
+//     pausado, finalizado, cancelado y sin estado es null (y motivos, lista vacía):
+//     salen con su estado y sus pendientes. Una garantía vencida de un proyecto que
+//     no está en ejecución no da color: sigue en su bloque de garantías y en
+//     «Esperan decisión».
+//   · resumen.semaforo: { rojo, amarillo, verde, sin_semaforo: { planificacion,
+//     pausado, finalizado, cancelado, sin_estado }, sin_datos }. «sin_datos» cuenta
+//     los proyectos en ejecución cuyo avance no se pudo calcular.
+//   · resumen.datos_por_completar: [{ proyecto, avisos }].
+//   · orden: primero los proyectos en ejecución (rojo, amarillo, verde; dentro, por
+//     código), después los demás por estado (pausado, planificación, finalizado,
+//     cancelado; dentro, por código) y al final los que no tienen estado.
+//   · identidad: sin latitud ni longitud (D8: la ubicación sale de la descripción,
+//     que va completa, y del campo ubicacion).
+//
+// Reglas propias de la exportación:
 //   · Proyectos incluidos (D9): los no liquidados que tienen código. Los de estado
 //     «finalizado» o «cancelado» solo si tienen algo pendiente: planilla en revisión
 //     o aprobada sin pagar, garantía vigente, acta o liquidación pendiente,
-//     observación abierta o en proceso, u orden de cambio solicitada. Los pausados
-//     van siempre. La cabecera cuenta los excluidos por motivo.
+//     observación abierta o en proceso, orden de cambio solicitada o algún aviso de
+//     «datos por completar» del núcleo (p. ej. finalizado sin producción registrada:
+//     los datos por completar cuentan como pendiente). Los pausados y los que no
+//     tienen estado van siempre. La cabecera cuenta los excluidos por motivo.
+//   · Un proyecto sin estado sale sin color, al final, con su bloque de avance y con
+//     el aviso «proyecto sin estado registrado» en datos_por_completar.
+//   · La fecha de inicio del proyecto (proyectos.fecha_inicio) se pasa al núcleo para
+//     acotar el atraso a la fecha. Si viene mal formada, el fallo se anota en el
+//     bloque de identidad y el avance se calcula sin esa cota (el atraso solo puede
+//     salir mayor, nunca menor).
 //   · Acta o liquidación pendiente (D6): cuenta SOLO desde que existe el acta
 //     provisional. Con provisional y sin definitiva falta la definitiva; con
 //     definitiva y sin liquidación falta la liquidación. Un proyecto finalizado o
@@ -32,9 +75,10 @@
 //     'vencida_hace', 'faltan' o 'esperando'.
 //   · El aviso de 15 días de «Esperan decisión» NO es el del semáforo: el semáforo
 //     usa el suyo (5 días) dentro del núcleo.
-//   · Identidad: el código y el nombre del proyecto se leen fuera de cualquier
-//     try; un proyecto nunca sale anónimo. Cada entrada de bloques_fallidos lleva
-//     el código y el índice del proyecto en la lista «proyectos».
+//   · Identidad: el código, el nombre y el estado del proyecto se leen fuera de
+//     cualquier try; un proyecto nunca sale anónimo (si la base no le tiene estado,
+//     sale como «sin estado»). Cada entrada de bloques_fallidos lleva el código y el
+//     índice del proyecto en la lista «proyectos».
 //   · Cada bloque de cada proyecto y cada parte del resumen se calcula en su propio
 //     try/catch: si falla queda en null y se anota en bloques_fallidos. Nunca se
 //     omite nada en silencio.
@@ -50,13 +94,17 @@
 'use strict';
 const N = require('../cartera-nucleo.js');
 
-const FORMATO = 1;
+const FORMATO = 2;
 const OBSERVACION_ANTIGUA_DIAS = 15;   // D5: más de 15 días
 const GARANTIA_DECISION_DIAS = 15;     // D7: 15 días o menos (solo «Esperan decisión»)
 const PROXIMOS_DIAS = 14;
 const OBSERVACIONES_LISTADAS = 3;
 const ORDEN_COLOR = { rojo: 0, amarillo: 1, verde: 2 };
-const PARTES_RESUMEN = ['por_gestora', 'por_emisor', 'por_tipo', 'semaforo', 'esperan_decision'];
+// Orden de salida: en ejecución primero (por color) y después los demás, por estado.
+const ORDEN_ESTADO = { ejecucion: 0, pausado: 1, planificacion: 2, finalizado: 3, cancelado: 4 };
+const SIN_ESTADO = 'sin_estado';
+const ESTADOS_SIN_SEMAFORO = ['planificacion', 'pausado', 'finalizado', 'cancelado', SIN_ESTADO];
+const PARTES_RESUMEN = ['por_gestora', 'por_emisor', 'por_tipo', 'semaforo', 'datos_por_completar', 'esperan_decision'];
 const OMITIDO = '(dato omitido)';
 const EMPRESA_NO_ENCONTRADA = '(empresa no encontrada)';
 
@@ -198,8 +246,18 @@ function construirEstado(datos, opciones){
     const cronograma = cronogramaDe(rubros);
     cronograma.forEach(c => { fechaEcuador(c.fecha_inicio, 'cronograma_rubros.fecha_inicio'); fechaEcuador(c.fecha_fin, 'cronograma_rubros.fecha_fin'); });
     const lb = N.nucleoLineaBaseActiva(de('lineas_base', p.id));
-    return { rubros, cronograma, lb, evm: N.nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId: lb ? lb.id : null, hoy }) };
+    return { rubros, cronograma, lb, evm: N.nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId: lb ? lb.id : null, hoy, fechaInicioProyecto: inicioDe(p) }) };
   }
+  // Fecha de inicio del proyecto para el núcleo (acota el atraso a la fecha). Una fecha mal
+  // formada no tumba el avance: se calcula sin esa cota (el atraso solo puede salir mayor) y el
+  // fallo queda anotado por el bloque de identidad, que valida la misma columna.
+  function inicioDe(p){
+    try{ return fechaEcuador(p.fecha_inicio, 'proyectos.fecha_inicio'); }
+    catch(e){ return null; }
+  }
+  // Estado que se pasa al núcleo: el del proyecto tal cual (null si no tiene). Si los datos no
+  // traen siquiera la columna, llega undefined y el semáforo del núcleo lanza.
+  const estadoParaNucleo = reg => (reg.p.estado === undefined ? undefined : reg.estado);
 
   // D6: qué acta o liquidación está pendiente (null si ninguna). Solo cuenta desde que existe
   // el acta provisional (la fila del acta o el estado de cierre del proyecto).
@@ -219,38 +277,41 @@ function construirEstado(datos, opciones){
   const obsSinResolver = o => o.estado === 'abierta' || o.estado === 'en_proceso';
   const planillaEnRevision = pl => pl.estado === 'enviada' || pl.estado === 'en_revision';
   const cerrado = p => p.estado === 'finalizado' || p.estado === 'cancelado';
-  // D9: ¿un proyecto finalizado o cancelado tiene algo pendiente?
+  // D9: ¿un proyecto finalizado o cancelado tiene algo pendiente? Los avisos de «datos por
+  // completar» del núcleo (finalizado sin producción o sin rubros, diferencia grande entre el
+  // valor ganado y las cantidades) cuentan como pendiente.
   function tienePendientes(p){
     return de('planillas_pago', p.id).some(pl => planillaEnRevision(pl) || pl.estado === 'aprobada')
       || de('garantias', p.id).some(g => g.estado === 'vigente')
       || cierrePendiente(p) !== null
       || de('observaciones', p.id).some(obsSinResolver)
-      || de('ordenes_cambio', p.id).some(o => o.estado === 'solicitada');
+      || de('ordenes_cambio', p.id).some(o => o.estado === 'solicitada')
+      || N.nucleoDatosPorCompletar({ evm: evmDe(p).evm, estado: textoLimpio(p.estado) }).length > 0;
   }
 
   // ── Bloques de un proyecto ────────────────────────────────────────────────
-  // Cada función recibe el registro del proyecto: { p, codigo, nombre, interno }.
+  // Cada función recibe el registro del proyecto: { p, codigo, nombre, estado, interno }.
   // «interno» guarda lo que «Esperan decisión» necesita y no se exporta.
 
-  // La identidad NUNCA es null: código y nombre ya están leídos; el resto se calcula en
+  // La identidad NUNCA es null: código, nombre y estado ya están leídos; el resto se calcula en
   // tres partes, cada una con su try (identidad, identidad.empresa, identidad.monto_vigente).
   function bloqueIdentidad(reg){
     const p = reg.p;
     const id = {
       codigo: reg.codigo, nombre: reg.nombre, descripcion: null,
-      ubicacion: null, latitud: null, longitud: null,
+      ubicacion: null,   // D8: sin coordenadas; la ubicación sale de la descripción
       gestora: null, emisor: null, tipo: null,
-      contratante: null, contratista: null, estado: null, estado_cierre: null,
+      contratante: null, contratista: null, estado: reg.estado, estado_cierre: null,
       fecha_firma: null,   // D4: la base no guarda la fecha de firma
       fecha_inicio: null, fecha_fin_contractual: null, fecha_fin_real: null,
       monto_contractual: null, monto_vigente: null, monto_ordenes_cambio: null
     };
     const resto = intentar('identidad', reg, () => ({
       descripcion: textoLimpio(p.descripcion),
-      ubicacion: textoLimpio(p.ubicacion), latitud: numero(p.latitud, 'proyectos.latitud'), longitud: numero(p.longitud, 'proyectos.longitud'),
+      ubicacion: textoLimpio(p.ubicacion),
       tipo: textoLimpio(p.tipo),
       contratante: textoLimpio(p.contratante), contratista: textoLimpio(p.contratista),
-      estado: textoLimpio(p.estado), estado_cierre: textoLimpio(p.estado_cierre),
+      estado_cierre: textoLimpio(p.estado_cierre),
       fecha_inicio: fechaEcuador(p.fecha_inicio, 'proyectos.fecha_inicio'),
       fecha_fin_contractual: fechaEcuador(p.fecha_fin_planificada, 'proyectos.fecha_fin_planificada'),
       fecha_fin_real: fechaEcuador(p.fecha_fin_real, 'proyectos.fecha_fin_real'),
@@ -281,18 +342,30 @@ function construirEstado(datos, opciones){
     const pendientes = (libro ? numero(libro.pendientes_aprobacion, 'libro_obra.pendientes_aprobacion') || 0 : 0)
       + de('observaciones', p.id).filter(o => o.estado === 'abierta').length
       + de('solicitudes', p.id).filter(s => s.estado === 'pendiente' || s.estado === 'en_revision').length;
-    // El semáforo recibe las garantías contadas con el aviso oficial del núcleo (5 días).
-    const semaforo = N.nucleoSemaforo({ evm, garantias: N.nucleoGarantias(garantias, hoy), pendientes });
+    // El semáforo recibe las garantías contadas con el aviso oficial del núcleo (5 días) y el
+    // estado del proyecto tal cual: el núcleo solo da color en ejecución (en los demás estados y
+    // sin estado, color null y sin motivos, aunque haya garantías vencidas).
+    const semaforo = N.nucleoSemaforo({ estado: estadoParaNucleo(reg), evm, garantias: N.nucleoGarantias(garantias, hoy), pendientes });
+    const conSemaforo = semaforo.color !== null;
+    // El SPI que se lee: truncado por el núcleo sobre el valor SIN redondear, como en los motivos.
+    const spiTruncado = evm.spiValido ? N.nucleoSpiTruncado(evm.spi) : null;
     return {
-      ejecutado_pct: redondear(evm.realPct, 2),
+      avance_pct: redondear(evm.avancePct, 2),                 // PRINCIPAL: valor ganado de TODOS los rubros
+      valor_ganado_cronograma_pct: evm.sinCronograma ? null : redondear(evm.evPct, 2),   // solo rubros con cronograma: numerador del SPI
+      ejecutado_cantidades_pct: redondear(evm.realPct, 2),     // Σ producción / Σ monto, aparte
       programado_pct: evm.sinCronograma ? null : redondear(evm.planPct, 2),
-      valor_ganado_pct: evm.sinCronograma ? null : redondear(evm.evPct, 2),
       spi: evm.spiValido ? redondear(evm.spi, 4) : null,
-      // null = no se puede estimar (sin SPI válido, o SPI 0: nada hecho de lo programado).
-      dias_atraso: evm.spiValido && evm.spi > 0 ? evm.atrasoDias : null,
+      spi_texto: spiTruncado === null ? null : spiTruncado.toFixed(2).replace('.', ','),
+      // Los atrasos van solo con semáforo (en ejecución). Ahí son null si no hay SPI válido (sin
+      // cronograma o plan a la fecha mínimo) y el proyectado, además, si no es estimable.
+      atraso_fecha_dias: conSemaforo ? evm.atrasoFechaDias : null,
+      atraso_proyectado_dias: conSemaforo ? evm.atrasoProyectadoDias : null,
       cronograma_vencido: evm.cronogramaVencido,
+      fin_programado: evm.ultimoFin,
       linea_base: lb ? `LB-${lb.numero}` : null,
-      semaforo: semaforo.color, motivos: semaforo.motivos
+      rubros_sin_cronograma: evm.rubrosSinCronograma,
+      semaforo: semaforo.color, motivos: semaforo.motivos,
+      datos_por_completar: N.nucleoDatosPorCompletar({ evm, estado: reg.estado })
     };
   }
 
@@ -490,7 +563,7 @@ function construirEstado(datos, opciones){
     // Identidad mínima, fuera de cualquier try: con esto el proyecto nunca queda anónimo.
     const codigo = textoLimpio(p.codigo);
     if(!codigo){ excluidos.sin_codigo++; return; }
-    const reg = { p, codigo, nombre: textoLimpio(p.nombre), interno: {}, b: null };
+    const reg = { p, codigo, nombre: textoLimpio(p.nombre), estado: textoLimpio(p.estado), interno: {}, b: null };
     if(cerrado(p)){
       // Si no se puede saber si tiene pendientes, el proyecto entra (y queda anotado).
       let pendiente = true;
@@ -505,13 +578,18 @@ function construirEstado(datos, opciones){
     regs.push(reg);
   });
 
-  const colorDe = reg => (reg.b.avance ? ORDEN_COLOR[reg.b.avance.semaforo] : 3);
+  // En ejecución primero (rojo, amarillo, verde y, al final, el que quedó sin avance); después
+  // los demás agrupados por estado y, al final, los que no tienen estado (o tienen uno que no se
+  // conoce). Dentro de cada grupo, por código.
+  const tieneColor = reg => !!reg.b.avance && Object.prototype.hasOwnProperty.call(ORDEN_COLOR, reg.b.avance.semaforo);
+  const estadoDe = reg => (Object.prototype.hasOwnProperty.call(ORDEN_ESTADO, reg.estado) ? ORDEN_ESTADO[reg.estado] : 5);
+  const colorDe = reg => (reg.estado !== N.NUCLEO_CARTERA.ESTADO_CON_SEMAFORO ? 0 : tieneColor(reg) ? ORDEN_COLOR[reg.b.avance.semaforo] : 3);
   regs = regs.map((reg, i) => ({ reg, i }))
-    .sort((x, y) => colorDe(x.reg) - colorDe(y.reg) || comparar(x.reg.codigo, y.reg.codigo) || comparar(String(x.reg.nombre || ''), String(y.reg.nombre || '')) || x.i - y.i)
+    .sort((x, y) => estadoDe(x.reg) - estadoDe(y.reg) || colorDe(x.reg) - colorDe(y.reg) || comparar(x.reg.codigo, y.reg.codigo) || comparar(String(x.reg.nombre || ''), String(y.reg.nombre || '')) || x.i - y.i)
     .map(x => x.reg);
   const indiceDe = new Map(regs.map((reg, i) => [reg, i]));
 
-  // ── Resumen: cinco partes independientes, cada una con su try ─────────────
+  // ── Resumen: seis partes independientes, cada una con su try ──────────────
   // Los totales por gestora, emisor y tipo cuentan SOLO los proyectos incluidos.
   function agrupar(claveDe, ordenDe){
     const mapa = new Map();
@@ -532,15 +610,28 @@ function construirEstado(datos, opciones){
     por_emisor: intentar('resumen.por_emisor', null, () => agrupar(reg => grupoEmpresa(empresasDe(reg.p).emisor || { sigla: null, nombre: 'sin emisor' }), ordenEmpresa)),
     por_tipo: intentar('resumen.por_tipo', null, () => agrupar(reg => { const tipo = textoLimpio(reg.p.tipo); return { clave: tipo || '', base: { tipo } }; }, x => String(x.tipo || '~'))),
     semaforo: intentar('resumen.semaforo', null, () => {
-      const s = { rojo: 0, amarillo: 0, verde: 0, sin_datos: 0 };
+      // Colores: solo los proyectos en ejecución. Los demás se cuentan por estado, sin color.
+      // «sin_datos»: en ejecución, pero el avance no se pudo calcular.
+      const sin = {};
+      ESTADOS_SIN_SEMAFORO.forEach(e => { sin[e] = 0; });
+      const s = { rojo: 0, amarillo: 0, verde: 0, sin_semaforo: sin, sin_datos: 0 };
       regs.forEach(reg => {
         const av = reg.b.avance;
-        if(!av) s.sin_datos++;
-        else if(Object.prototype.hasOwnProperty.call(ORDEN_COLOR, av.semaforo)) s[av.semaforo]++;
+        if(reg.estado !== N.NUCLEO_CARTERA.ESTADO_CON_SEMAFORO){
+          if(av && av.semaforo !== null) throw new Error('un proyecto que no está en ejecución trae color');
+          const e = reg.estado || SIN_ESTADO;
+          sin[e] = (Object.prototype.hasOwnProperty.call(sin, e) ? sin[e] : 0) + 1;
+        }
+        else if(!av) s.sin_datos++;
+        else if(tieneColor(reg)) s[av.semaforo]++;
         else throw new Error('color de semáforo desconocido');
       });
       return s;
     }),
+    // Proyectos con avisos de «datos por completar» (los textos los da el núcleo), en el orden de salida.
+    datos_por_completar: intentar('resumen.datos_por_completar', null, () => regs
+      .filter(reg => reg.b.avance && reg.b.avance.datos_por_completar.length)
+      .map(reg => ({ proyecto: reg.codigo, avisos: reg.b.avance.datos_por_completar.slice() }))),
     esperan_decision: intentar('resumen.esperan_decision', null, () => decisiones.map(d => ({ d, u: urgencia(d) }))
       .sort((a, b) => a.u[0] - b.u[0] || a.u[1] - b.u[1] || comparar(a.d.proyecto, b.d.proyecto) || comparar(a.d.clase, b.d.clase) || comparar(a.d.detalle, b.d.detalle))
       .map(x => x.d))
@@ -562,7 +653,7 @@ function construirEstado(datos, opciones){
   };
 }
 
-// 'ok' si las cinco partes del resumen están calculadas, 'null' si no hay ninguna, 'parcial' en lo demás.
+// 'ok' si las seis partes del resumen están calculadas, 'null' si no hay ninguna, 'parcial' en lo demás.
 function estadoDelResumen(estado){
   const r = estado && estado.resumen;
   const hechas = r ? PARTES_RESUMEN.filter(k => r[k] !== null && r[k] !== undefined).length : 0;
@@ -588,6 +679,9 @@ function periodo(desde, hasta){
 const enLinea = t => String(t === null || t === undefined ? '' : t).replace(/\s+/g, ' ').trim();
 const celda = t => enLinea(t).replace(/\|/g, '\\|');
 const ICONOS = { rojo: '🔴', amarillo: '🟡', verde: '🟢' };
+const SIN_COLOR = '⚪';
+const PLURAL_ESTADO = { pausado: ['pausado', 'pausados'], planificacion: ['en planificación', 'en planificación'],
+  finalizado: ['finalizado', 'finalizados'], cancelado: ['cancelado', 'cancelados'], sin_estado: ['sin estado', 'sin estado'] };
 // Celda «Días» de «Esperan decisión»: dice qué cuentan los días.
 function plazo(d){
   if(d.dias === null || d.dias === undefined) return '—';
@@ -620,7 +714,20 @@ function estadoAMarkdown(estado){
   L.push(`- Por emisor: ${res.por_emisor ? empresas(res.por_emisor, false) : noCalculado('resumen.por_emisor', null)}`);
   L.push(`- Por tipo: ${res.por_tipo ? res.por_tipo.map(x => `${TIPOS_PROYECTO[x.tipo] || x.tipo || 'sin tipo'} ${numeroEc(x.proyectos, 0)}`).join(' · ') || 'sin proyectos' : noCalculado('resumen.por_tipo', null)}`);
   const s = res.semaforo;
-  L.push(`- Semáforo: ${s ? `${plural(s.rojo, 'rojo', 'rojos')} · ${plural(s.amarillo, 'amarillo', 'amarillos')} · ${plural(s.verde, 'verde', 'verdes')}${s.sin_datos ? ' · ' + numeroEc(s.sin_datos, 0) + ' sin datos' : ''}` : noCalculado('resumen.semaforo', null)}`);
+  L.push(`- Semáforo (solo proyectos en ejecución): ${s ? `${plural(s.rojo, 'rojo', 'rojos')} · ${plural(s.amarillo, 'amarillo', 'amarillos')} · ${plural(s.verde, 'verde', 'verdes')}${s.sin_datos ? ' · ' + numeroEc(s.sin_datos, 0) + ' sin datos' : ''}` : noCalculado('resumen.semaforo', null)}`);
+  if(s){
+    // Recuento sin semáforo, por estado y en el orden de salida de los proyectos.
+    const sin = s.sin_semaforo || {};
+    const estados = Object.keys(sin).filter(e => sin[e] > 0).sort((a, b) => (ORDEN_ESTADO[a] === undefined ? 9 : ORDEN_ESTADO[a]) - (ORDEN_ESTADO[b] === undefined ? 9 : ORDEN_ESTADO[b]) || comparar(a, b));
+    L.push(`- Sin semáforo (no están en ejecución): ${estados.map(e => plural(sin[e], (PLURAL_ESTADO[e] || [e])[0], (PLURAL_ESTADO[e] || [e, e])[1])).join(' · ') || 'ninguno'}`);
+  }
+  const dc = res.datos_por_completar;
+  if(!dc) L.push(`- Datos por completar: ${noCalculado('resumen.datos_por_completar', null)}`);
+  else if(!dc.length) L.push('- Datos por completar: ninguno');
+  else {
+    L.push(`- Datos por completar: ${plural(dc.length, 'proyecto', 'proyectos')}`);
+    dc.forEach(x => L.push(`  - ${enLinea(x.proyecto)}: ${x.avisos.map(enLinea).join('; ')}`));
+  }
   L.push('', '### Esperan decisión de Nicolás', '');
   if(!res.esperan_decision) L.push(noCalculado('resumen.esperan_decision', null));
   else if(!res.esperan_decision.length) L.push('Nada espera decisión.');
@@ -634,7 +741,11 @@ function estadoAMarkdown(estado){
 
   estado.proyectos.forEach((p, i) => {
     const id = p.identidad, av = p.avance;
-    L.push(`## ${av ? ICONOS[av.semaforo] || '⚪' : '⚪'} ${id.codigo} — ${enLinea(id.nombre) || 'sin nombre'}`, '');
+    // En ejecución: el emoji de su color (⚪ si el avance no se pudo calcular). En los demás
+    // estados no hay color: ⚪ y el estado.
+    const enEjecucion = id.estado === N.NUCLEO_CARTERA.ESTADO_CON_SEMAFORO;
+    const nombreEstado = ESTADOS_PROYECTO[id.estado] || id.estado || 'sin estado';
+    L.push(`## ${enEjecucion ? (av && ICONOS[av.semaforo]) || SIN_COLOR : SIN_COLOR} ${id.codigo} — ${enLinea(id.nombre) || 'sin nombre'}${enEjecucion ? '' : ` (${nombreEstado})`}`, '');
 
     if(fallo('identidad', i)) L.push(`**Identidad.** ${noCalculado('identidad', i)}`);
     else {
@@ -642,7 +753,7 @@ function estadoAMarkdown(estado){
       const sinEmpresas = fallo('identidad.empresa', i) && id.gestora === null && id.emisor === null;
       L.push(`**Identidad.** ${sinEmpresas ? 'Gestora y emisor: ' + noCalculado('identidad.empresa', i) : `Gestora ${nombreEmpresa(res.por_gestora, id.gestora)} · emisor ${nombreEmpresa(res.por_emisor, id.emisor)}`} · ${TIPOS_PROYECTO[id.tipo] || id.tipo || 'sin tipo'} · ${ESTADOS_PROYECTO[id.estado] || id.estado || 'sin estado'}${cierre}`);
       L.push(`Contratante: ${enLinea(id.contratante) || 'no registrado'} · Contratista: ${enLinea(id.contratista) || 'no registrado'}`);
-      L.push(`Ubicación: ${enLinea(id.ubicacion) || 'no registrada'} (${id.latitud !== null && id.longitud !== null ? `${numeroEc(id.latitud, 6)}; ${numeroEc(id.longitud, 6)}` : 'sin coordenadas'})`);
+      L.push(`Ubicación: ${enLinea(id.ubicacion) || 'no registrada'}`);
       L.push(`Firma: ${id.fecha_firma || 'no registrada'} · Inicio: ${id.fecha_inicio || 'no registrado'} · Fin contractual: ${id.fecha_fin_contractual || 'no registrado'}${id.fecha_fin_real ? ' · Fin real: ' + id.fecha_fin_real : ''}`);
       L.push(`Monto contractual ${dinero(id.monto_contractual)} · vigente ${fallo('identidad.monto_vigente', i) ? 'no disponible' : dinero(id.monto_vigente)} (órdenes de cambio ${dinero(id.monto_ordenes_cambio)})`);
       L.push(`Descripción: ${enLinea(id.descripcion) || 'sin descripción'}`);
@@ -651,18 +762,31 @@ function estadoAMarkdown(estado){
 
     if(!av) L.push(`**Avance.** ${noCalculado('avance', i)}`);
     else {
-      const partes = [`Ejecutado ${numeroEc(av.ejecutado_pct, 1)} %`,
-        av.programado_pct === null ? 'sin cronograma' : `programado ${numeroEc(av.programado_pct, 1)} %${av.linea_base ? ` (${av.linea_base})` : ' (sin línea base activa)'}`];
-      if(av.valor_ganado_pct !== null && av.valor_ganado_pct !== undefined) partes.push(`valor ganado ${numeroEc(av.valor_ganado_pct, 1)} %`);
-      // El SPI se escribe truncado, igual que en los motivos del semáforo.
-      partes.push(av.spi === null ? 'SPI no disponible' : `SPI ${numeroEc(N.nucleoSpiTruncado(av.spi), 2)}`);
-      if(av.spi !== null){
-        if(av.dias_atraso === null) partes.push('atraso no estimable (nada ejecutado de lo programado)');
-        else partes.push(av.dias_atraso > 0 ? `atraso estimado ${dias(av.dias_atraso)}` : 'sin atraso estimado');
+      const partes = [`Avance (valor ganado) ${numeroEc(av.avance_pct, 1)} %`];
+      if(av.programado_pct === null) partes.push('sin cronograma');
+      else {
+        partes.push(`programado ${numeroEc(av.programado_pct, 1)} %${av.linea_base ? ` (${av.linea_base})` : ' (sin línea base activa)'}`);
+        // Con rubros fuera del cronograma, el SPI no sale del avance principal: se dice con qué se calcula.
+        if(av.rubros_sin_cronograma > 0) partes.push(`valor ganado en cronograma ${numeroEc(av.valor_ganado_cronograma_pct, 1)} % (${plural(av.rubros_sin_cronograma, 'rubro', 'rubros')} sin cronograma)`);
+        // El SPI se escribe truncado por el núcleo (spi_texto), igual que en los motivos del semáforo.
+        partes.push(av.spi === null || av.spi === undefined ? 'SPI no disponible' : `SPI ${av.spi_texto}`);
+        // Atrasos y «cronograma vencido»: solo con semáforo (en ejecución) y solo con SPI. Un atraso
+        // en cero no se escribe; con los dos en cero, «sin atraso»; el proyectado null, «no estimable».
+        const conSemaforo = enEjecucion && av.semaforo !== null && av.semaforo !== undefined;
+        if(conSemaforo && av.spi !== null && av.spi !== undefined){
+          const aFecha = av.atraso_fecha_dias, proyectado = av.atraso_proyectado_dias, atrasos = [];
+          if(aFecha > 0) atrasos.push(`atraso a la fecha ${dias(aFecha)}`);
+          if(proyectado === null || proyectado === undefined) atrasos.push('atraso proyectado no estimable');
+          else if(proyectado > 0) atrasos.push(`atraso proyectado ${dias(proyectado)}`);
+          if(atrasos.length) atrasos.forEach(x => partes.push(x)); else partes.push('sin atraso');
+        }
+        if(conSemaforo && av.cronograma_vencido) partes.push(`cronograma vencido${av.fin_programado ? ' el ' + av.fin_programado : ''}`);
       }
-      if(av.cronograma_vencido) partes.push('cronograma vencido');
       L.push(`**Avance.** ${partes.join(' · ')}`);
-      L.push(`Semáforo ${av.semaforo}${av.motivos.length ? ': ' + av.motivos.join('; ') : ''}`);
+      L.push(`Ejecutado por cantidades: ${numeroEc(av.ejecutado_cantidades_pct, 1)} %`);
+      if(av.datos_por_completar && av.datos_por_completar.length) L.push(`⚠ Datos por completar: ${av.datos_por_completar.map(enLinea).join('; ')}`);
+      if(av.semaforo === null || av.semaforo === undefined) L.push(`Sin semáforo: proyecto ${nombreEstado}`);
+      else L.push(`Semáforo ${av.semaforo}${av.motivos.length ? ': ' + av.motivos.join('; ') : ''}`);
     }
     L.push('');
 

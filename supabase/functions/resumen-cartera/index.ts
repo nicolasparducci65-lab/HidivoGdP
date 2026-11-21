@@ -31,6 +31,27 @@ function hoyEcuador(desplazamientoDias = 0): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(d);
 }
 
+// Lee TODAS las filas de una tabla, por páginas de 1.000 con .range() y un orden estable (por
+// defecto, id): PostgREST corta cada respuesta en max-rows (1.000) SIN avisar, y con la cartera
+// completa varias de estas tablas ya pasan de esa cifra. `filtrar` añade los filtros de la
+// lectura (.eq, .in…). Si una página devuelve error LANZA con el nombre de la tabla: el resumen
+// no se calcula con datos parciales (la función responde 500).
+// deno-lint-ignore no-explicit-any
+async function leerPaginado(sb: any, tabla: string, columnas: string, filtrar?: ((q: any) => any) | null, orden: string[] = ['id'], tam = 1000): Promise<any[]> {
+  // deno-lint-ignore no-explicit-any
+  const filas: any[] = [];
+  for (let desde = 0; ; desde += tam) {
+    let q = sb.from(tabla).select(columnas);
+    if (filtrar) q = filtrar(q);
+    for (const columna of orden) q = q.order(columna);
+    const { data, error } = await q.range(desde, desde + tam - 1);
+    if (error) throw new Error(`No se pudo leer la tabla ${tabla}: ${error.message || String(error)}`);
+    filas.push(...(data || []));
+    if (!data || data.length < tam) break;
+  }
+  return filas;
+}
+
 function fechaLegibleEcuador(): string {
   return new Intl.DateTimeFormat('es-EC', {
     timeZone: 'America/Guayaquil', weekday: 'long', day: 'numeric', month: 'long'
@@ -78,14 +99,16 @@ Deno.serve(async (req) => {
     const ids = activos.map(p => p.id);
 
     // ── Destinatarios: admins (cartera completa) y fiscalizadores (sus proyectos) ──
-    const [{ data: admins }, { data: miembrosFis }] = await Promise.all([
-      sb.from('perfiles').select('id').eq('rol', 'admin'),
-      sb.from('proyecto_miembros').select('usuario_id,proyecto_id').eq('rol', 'fiscalizador').in('proyecto_id', ids)
+    // Las lecturas van paginadas; si alguna falla, leerPaginado lanza y la función responde 500
+    // con el nombre de la tabla (catch del final), sin enviar un resumen incompleto.
+    const [admins, miembrosFis] = await Promise.all([
+      leerPaginado(sb, 'perfiles', 'id', q => q.eq('rol', 'admin')),
+      leerPaginado(sb, 'proyecto_miembros', 'usuario_id,proyecto_id', q => q.eq('rol', 'fiscalizador').in('proyecto_id', ids))
     ]);
 
     const proyectosPorUsuario = new Map<string, Set<string>>();
-    (admins || []).forEach(a => proyectosPorUsuario.set(a.id, new Set(ids)));
-    (miembrosFis || []).forEach(m => {
+    admins.forEach(a => proyectosPorUsuario.set(a.id, new Set(ids)));
+    miembrosFis.forEach(m => {
       if (proyectosPorUsuario.has(m.usuario_id)) return; // admin ya tiene todo
       if (!proyectosPorUsuario.get(m.usuario_id)) proyectosPorUsuario.set(m.usuario_id, new Set());
       proyectosPorUsuario.get(m.usuario_id)!.add(m.proyecto_id);
@@ -99,14 +122,16 @@ Deno.serve(async (req) => {
     const limite5 = hoyEcuador(5);
     const hoyMs = new Date(hoyStr + 'T00:00:00').getTime();
 
-    const [rubR, cronR, lbR, planR, garR, obsR, solR] = await Promise.all([
-      sb.from('rubros').select('id,proyecto_id,monto_contrato,total_produccion').in('proyecto_id', ids),
-      sb.from('cronograma_rubros').select('proyecto_id,rubro_id,fecha_inicio,fecha_fin,linea_base_id').in('proyecto_id', ids),
-      sb.from('lineas_base').select('id,proyecto_id').eq('activa', true).in('proyecto_id', ids),
-      sb.from('planillas_pago').select('proyecto_id,estado').in('estado', ['enviada', 'en_revision']).in('proyecto_id', ids),
-      sb.from('garantias').select('proyecto_id,vigencia_hasta').eq('estado', 'vigente').in('proyecto_id', ids),
-      sb.from('observaciones').select('proyecto_id,created_at').eq('estado', 'abierta').in('proyecto_id', ids),
-      sb.from('solicitudes').select('proyecto_id').in('estado', ['pendiente', 'en_revision']).in('proyecto_id', ids)
+    // Siete lecturas por proyecto, todas completas (paginadas, orden estable por id; el cronograma
+    // por creación e id, que fija cuál es la última fila de cada rubro).
+    const [rubros, cronTodo, lineasBase, planillas, garantias, observaciones, solicitudes] = await Promise.all([
+      leerPaginado(sb, 'rubros', 'id,proyecto_id,monto_contrato,total_produccion', q => q.in('proyecto_id', ids)),
+      leerPaginado(sb, 'cronograma_rubros', 'proyecto_id,rubro_id,fecha_inicio,fecha_fin,linea_base_id', q => q.in('proyecto_id', ids), ['created_at', 'id']),
+      leerPaginado(sb, 'lineas_base', 'id,proyecto_id', q => q.eq('activa', true).in('proyecto_id', ids)),
+      leerPaginado(sb, 'planillas_pago', 'proyecto_id,estado', q => q.in('estado', ['enviada', 'en_revision']).in('proyecto_id', ids)),
+      leerPaginado(sb, 'garantias', 'proyecto_id,vigencia_hasta', q => q.eq('estado', 'vigente').in('proyecto_id', ids)),
+      leerPaginado(sb, 'observaciones', 'proyecto_id,created_at', q => q.eq('estado', 'abierta').in('proyecto_id', ids)),
+      leerPaginado(sb, 'solicitudes', 'proyecto_id', q => q.in('estado', ['pendiente', 'en_revision']).in('proyecto_id', ids))
     ]);
 
     // Una fila de cronograma cuenta solo si su LB es la activa DEL PROYECTO de la
@@ -114,8 +139,8 @@ Deno.serve(async (req) => {
     // LB activa de la cartera: 89 filas de Hospitalización colgadas de la LB de
     // Parqueadero se sumaban dos veces. Sin LB activa, se leen todas (como en la app).
     const lbPorProyecto: Record<string, string> = {};
-    (lbR.data || []).forEach(l => { lbPorProyecto[l.proyecto_id] = l.id; });
-    const cron = (cronR.data || []).filter(c => {
+    lineasBase.forEach(l => { lbPorProyecto[l.proyecto_id] = l.id; });
+    const cron = cronTodo.filter(c => {
       const lbActiva = lbPorProyecto[c.proyecto_id];
       return lbActiva ? c.linea_base_id === lbActiva : true;
     });
@@ -132,7 +157,7 @@ Deno.serve(async (req) => {
     });
     const montoRubro: Record<string, number> = {};
     const produccionRubro: Record<string, number> = {};
-    (rubR.data || []).forEach(r => {
+    rubros.forEach(r => {
       const p = porP[r.proyecto_id]; if (!p) return;
       p.vigente += (r.monto_contrato || 0); p.ejecutado += (r.total_produccion || 0);
       montoRubro[r.id] = r.monto_contrato || 0;
@@ -150,13 +175,13 @@ Deno.serve(async (req) => {
       // todos los rubros, se sigue usando para el texto de avance real).
       p.ev += p.vigente > 0 ? (produccionRubro[c.rubro_id] || 0) / p.vigente * 100 : 0;
     });
-    (planR.data || []).forEach(pl => { if (porP[pl.proyecto_id]) porP[pl.proyecto_id].planillasRev++; });
-    (garR.data || []).forEach(g => {
+    planillas.forEach(pl => { if (porP[pl.proyecto_id]) porP[pl.proyecto_id].planillasRev++; });
+    garantias.forEach(g => {
       const p = porP[g.proyecto_id]; if (!p || !g.vigencia_hasta) return; // fechas null se ignoran
       if (g.vigencia_hasta < hoyStr) p.garVencidas++;
       else if (g.vigencia_hasta <= limite5) p.garPorVencer++;
     });
-    (obsR.data || []).forEach(o => {
+    observaciones.forEach(o => {
       const p = porP[o.proyecto_id]; if (!p) return;
       p.obs++;
       if (o.created_at) {
@@ -164,7 +189,7 @@ Deno.serve(async (req) => {
         if (dias > p.obsDiasMax) p.obsDiasMax = dias;
       }
     });
-    (solR.data || []).forEach(s => { if (porP[s.proyecto_id]) porP[s.proyecto_id].sol++; });
+    solicitudes.forEach(s => { if (porP[s.proyecto_id]) porP[s.proyecto_id].sol++; });
 
     // Semáforo, SPI y atraso — misma fórmula que el Panel Cartera
     const lineaProyecto = (pid: string): string => {

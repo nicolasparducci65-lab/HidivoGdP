@@ -3,10 +3,17 @@
 // sobre un fixture SINTÉTICO (fixtures/exportacion-estado.json, todo con prefijo ZZZ; se
 // regenera con herramientas/gen-fixture-exportacion.js, que explica cada proyecto).
 //
-// El fixture trae 17 proyectos, en orden revuelto: 11 que deben salir y 6 que no (dos
-// liquidados, uno sin código y tres finalizados o cancelados sin pendientes). La planilla del
-// proyecto de pilotes tiene una fecha corrupta a propósito, y hay un correo y un uuid metidos
-// en textos libres.
+// El fixture trae 29 proyectos, en orden revuelto: 23 que deben salir (10 en ejecución, que
+// son los únicos con semáforo, 12 de los demás estados y uno sin estado) y 6 que no (dos liquidados, uno sin
+// código y tres finalizados o cancelados sin pendientes). La planilla del proyecto de pilotes
+// tiene una fecha corrupta a propósito, y hay un correo y un uuid metidos en textos libres.
+//
+// Formato 2 (decisiones del 21-nov-2026): semáforo solo en ejecución, avance principal = valor
+// ganado de TODOS los rubros (el de los rubros con cronograma, que es el del SPI, va aparte), el
+// ejecutado por cantidades aparte, SPI con su texto truncado, dos atrasos (a la fecha y
+// proyectado) solo en los proyectos con semáforo, «datos por completar» (que cuentan como
+// pendiente de un finalizado) y sin coordenadas. Las cifras esperadas están calculadas a mano
+// con las reglas de la cabecera de cartera-nucleo.js; el comentario de cada caso dice cómo.
 //
 //   node exportacion-estado.test.js
 'use strict';
@@ -25,10 +32,31 @@ const fixture = () => JSON.parse(fs.readFileSync(RUTA_FIXTURE, 'utf8'));
 const igual = (a, b, msg) => assert(JSON.stringify(a) === JSON.stringify(b), `${msg}: se obtuvo ${JSON.stringify(a)}, se esperaba ${JSON.stringify(b)}`);
 const RE_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const BLOQUES = ['identidad', 'avance', 'proximos_14_dias', 'planillas', 'garantias', 'ordenes_cambio', 'libro', 'observaciones', 'calidad_seguridad', 'documentos', 'equipo'];
-const INCLUIDOS = ['ZZZ-PIL-2026-002', 'ZZZ-FIS-2026-001', 'ZZZ-CON-2026-003', 'ZZZ-DIS-2026-013', 'ZZZ-FIS-2024-008', 'ZZZ-FIS-2024-009',
-  'ZZZ-FIS-2024-010', 'ZZZ-FIS-2025-004', 'ZZZ-FIS-2025-005', 'ZZZ-MUR-2026-016', 'ZZZ-PUE-2026-015'];
+// Orden de salida: en ejecución (rojo, amarillo, verde; dentro por código), después pausado,
+// planificación, finalizado y cancelado (dentro por código) y al final el que no tiene estado.
+const EN_EJECUCION = ['ZZZ-CON-2026-018', 'ZZZ-CON-2026-027', 'ZZZ-MUR-2026-023', 'ZZZ-PIL-2026-002',              // rojos
+  'ZZZ-FIS-2026-001',                                                                                           // amarillo
+  'ZZZ-CON-2026-019', 'ZZZ-CON-2026-022', 'ZZZ-CON-2026-028', 'ZZZ-MUR-2026-016', 'ZZZ-PUE-2026-015'];            // verdes
+const SIN_SEMAFORO = ['ZZZ-CON-2026-003', 'ZZZ-CON-2026-025',                                                      // pausados
+  'ZZZ-GER-2026-017',                                                                                           // planificación
+  'ZZZ-FIS-2024-008', 'ZZZ-FIS-2024-009', 'ZZZ-FIS-2024-010', 'ZZZ-FIS-2024-020', 'ZZZ-FIS-2024-021', 'ZZZ-FIS-2024-024', 'ZZZ-FIS-2025-004', 'ZZZ-FIS-2025-005',   // finalizados
+  'ZZZ-DIS-2026-013',                                                                                           // cancelado
+  'ZZZ-GER-2026-026'];                                                                                          // sin estado (al final)
+const INCLUIDOS = EN_EJECUCION.concat(SIN_SEMAFORO);
+const SEMAFORO = { rojo: 4, amarillo: 1, verde: 5, sin_semaforo: { planificacion: 1, pausado: 2, finalizado: 8, cancelado: 1, sin_estado: 1 }, sin_datos: 0 };
+const CLAVES_AVANCE = ['avance_pct', 'valor_ganado_cronograma_pct', 'ejecutado_cantidades_pct', 'programado_pct', 'spi', 'spi_texto', 'atraso_fecha_dias', 'atraso_proyectado_dias',
+  'cronograma_vencido', 'fin_programado', 'linea_base', 'rubros_sin_cronograma', 'semaforo', 'motivos', 'datos_por_completar'];
+// Avance de un proyecto sin cronograma: sin SPI ni atrasos.
+const sinCronograma = (avance, cantidades, x) => ({ avance_pct: avance, valor_ganado_cronograma_pct: null, ejecutado_cantidades_pct: cantidades, programado_pct: null, spi: null, spi_texto: null, atraso_fecha_dias: null,
+  atraso_proyectado_dias: null, cronograma_vencido: false, fin_programado: null, linea_base: null, rubros_sin_cronograma: 0, semaforo: null, motivos: [], datos_por_completar: [], ...x });
+const DIF_022 = 'el valor ganado (100,0 %) y el ejecutado por cantidades (40,0 %) difieren en más de 10 puntos';
+const SIN_PRODUCCION = 'proyecto finalizado sin producción registrada';
+const SIN_ESTADO = 'proyecto sin estado registrado';
 const proyectoDe = (f, codigo) => f.proyectos.find(p => p.codigo === codigo);
 const codigos = e => e.proyectos.map(p => p.identidad.codigo);
+// Un proyecto de un estado construido aparte, y su posición en la lista.
+const PD = (e, codigo) => e.proyectos.find(p => p.identidad.codigo === codigo);
+const indice = (e, codigo) => codigos(e).indexOf(codigo);
 // Sección de un proyecto en el .md (desde su título hasta el siguiente).
 const seccionDe = (md, codigo) => { const t = md.split(/^(?=## )/m).filter(x => x.startsWith('## ') && x.split('\n')[0].includes(' ' + codigo + ' — ')); assert(t.length === 1, `se esperaba una sección de ${codigo} y hay ${t.length}`); return t[0]; };
 // Construye el estado tras modificar una copia del fixture.
@@ -46,8 +74,8 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
 
   await prueba('cabecera: formato, fechas de Ecuador, versión y conteos de incluidos y excluidos por motivo', () => {
     igual(Object.keys(estado), ['formato', 'generado', 'valido_para', 'zona', 'version_app', 'proyectos_total', 'proyectos_incluidos', 'proyectos_excluidos', 'bloques_fallidos', 'resumen', 'proyectos'], 'claves de primer nivel');
-    igual([estado.formato, estado.generado, estado.valido_para, estado.zona, estado.version_app], [1, '2026-11-21T03:14:07-05:00', '2026-11-21', 'America/Guayaquil', 'hidivo-vZZ'], 'cabecera');
-    igual([estado.proyectos_total, estado.proyectos_incluidos], [17, 11], 'conteos');
+    igual([estado.formato, estado.generado, estado.valido_para, estado.zona, estado.version_app], [2, '2026-11-21T03:14:07-05:00', '2026-11-21', 'America/Guayaquil', 'hidivo-vZZ'], 'cabecera (formato 2)');
+    igual([estado.proyectos_total, estado.proyectos_incluidos], [29, 23], 'conteos');
     igual(estado.proyectos_excluidos, { sin_codigo: 1, liquidados: 2, cerrados_sin_pendientes: 3 }, 'excluidos por motivo');
     const ex = estado.proyectos_excluidos;
     igual(estado.proyectos_incluidos + ex.sin_codigo + ex.liquidados + ex.cerrados_sin_pendientes, estado.proyectos_total, 'incluidos + excluidos = total');
@@ -59,11 +87,11 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
   });
 
   await prueba('D9: quedan fuera los liquidados (también el que sigue «en ejecución»), el que no tiene código y los finalizados o cancelados sin pendientes', () => {
-    igual(codigos(estado), INCLUIDOS, 'proyectos y orden (rojo, amarillo y verdes por código, con la entrada revuelta)');
+    igual(codigos(estado), INCLUIDOS, 'proyectos y orden (en ejecución por color y código; después por estado y código; con la entrada revuelta)');
     ['ZZZ-FIS-2024-006', 'ZZZ-FIS-2024-007', 'ZZZ-GER-2026-011', 'ZZZ-FIS-2025-012', 'ZZZ-FIS-2023-014', 'ZZZ Sin codigo', 'ZZZ Liquidado', 'ZZZ Finalizado sin pendientes',
       'ZZZ En ejecucion pero liquidado', 'ZZZ Cancelado sin pendientes', 'ZZZ Cerrado sin acta ni pendientes'].forEach(t => assert(!texto.includes(t) && !md.includes(t), 'no debe aparecer ' + t));
     igual(P('ZZZ-CON-2026-003').identidad.estado, 'pausado', 'el pausado va siempre');
-    igual(estado.proyectos.map(p => p.avance.semaforo), ['rojo', 'amarillo'].concat(Array(9).fill('verde')), 'colores');
+    igual(estado.proyectos.map(p => p.avance.semaforo), ['rojo', 'rojo', 'rojo', 'rojo', 'amarillo', 'verde', 'verde', 'verde', 'verde', 'verde'].concat(Array(13).fill(null)), 'colores: solo los 10 en ejecución');
     const liquidadoEnEjecucion = proyectoDe(fixture(), 'ZZZ-GER-2026-011');
     igual([liquidadoEnEjecucion.estado, liquidadoEnEjecucion.estado_cierre], ['ejecucion', 'liquidado'], 'el fixture trae un liquidado que sigue en ejecución');
     // El mismo proyecto, sin el estado «liquidado», sí sale: lo que lo excluye es el estado de cierre.
@@ -86,7 +114,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       assert(codigos(estado).includes(codigo), `${codigo} debe incluirse por su ${que}`);
       const e = con(f => resolver(f, proyectoDe(f, codigo).id));
       assert(!codigos(e).includes(codigo), `${codigo} debe quedar fuera al resolverse su ${que}`);
-      igual([e.proyectos_incluidos, e.proyectos_excluidos.cerrados_sin_pendientes], [10, 4], `conteos sin ${codigo}`);
+      igual([e.proyectos_incluidos, e.proyectos_excluidos.cerrados_sin_pendientes], [22, 4], `conteos sin ${codigo}`);
       assert(!estado.resumen.esperan_decision.some(d => d.proyecto === codigo), `${codigo} no tiene nada en «Esperan decisión»`);
     });
     // Una planilla solo enviada también es un pendiente.
@@ -96,7 +124,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     // Un finalizado sin pendientes entra en cuanto tiene una orden de cambio solicitada.
     const e = con(f => { f.ordenes_cambio.find(o => o.proyecto_id === proyectoDe(f, 'ZZZ-FIS-2024-007').id).estado = 'solicitada'; });
     assert(codigos(e).includes('ZZZ-FIS-2024-007'), 'orden de cambio solicitada');
-    igual([e.proyectos_incluidos, e.proyectos_excluidos.cerrados_sin_pendientes], [12, 2], 'conteos con el 007');
+    igual([e.proyectos_incluidos, e.proyectos_excluidos.cerrados_sin_pendientes], [24, 2], 'conteos con el 007');
   });
 
   await prueba('D6/D9: un finalizado SIN acta provisional entra solo por otro pendiente y no genera fila de acta', () => {
@@ -143,7 +171,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
   });
 
   await prueba('un bloque con datos corruptos queda en null y anotado (con código e índice), sin tumbar lo demás', () => {
-    igual(estado.bloques_fallidos, [{ bloque: 'planillas', proyecto: 'ZZZ-PIL-2026-002', indice: 0, motivo: 'fecha inválida en planillas_pago.created_at' }], 'bloques fallidos');
+    igual(estado.bloques_fallidos, [{ bloque: 'planillas', proyecto: 'ZZZ-PIL-2026-002', indice: 3, motivo: 'fecha inválida en planillas_pago.created_at' }], 'bloques fallidos');
     const p = P('ZZZ-PIL-2026-002');
     assert(p.planillas === null, 'el bloque fallido es null');
     BLOQUES.filter(b => b !== 'planillas').forEach(b => assert(p[b] !== null, 'el bloque ' + b + ' sí se calcula'));
@@ -156,7 +184,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     const f = fixture(); delete f.ensayos;
     const e = construirEstado(f, OPCIONES);
     const calidad = e.bloques_fallidos.filter(x => x.bloque === 'calidad_seguridad');
-    igual(calidad.length, 11, 'un fallo de calidad por proyecto');
+    igual(calidad.length, 23, 'un fallo de calidad por proyecto');
     igual(calidad.map(x => x.indice).sort((a, b) => a - b), INCLUIDOS.map((_, i) => i), 'cada fallo con el índice de su proyecto');
     calidad.forEach(x => igual(x.proyecto, INCLUIDOS[x.indice], 'código e índice coinciden'));
     igual(calidad[0].motivo, 'falta la tabla «ensayos» en los datos', 'motivo');
@@ -165,98 +193,394 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     igual(estadoDelResumen(e), 'ok', 'el resumen no depende de esa tabla');
   });
 
-  await prueba('identidad: código y nombre salen SIEMPRE; con dos identidades fallidas a la vez cada sección conserva su proyecto', () => {
-    const e = con(f => { proyectoDe(f, 'ZZZ-FIS-2026-001').latitud = 'abc'; proyectoDe(f, 'ZZZ-PIL-2026-002').latitud = 'abc'; });
+  await prueba('identidad: código, nombre y estado salen SIEMPRE; con dos identidades fallidas a la vez cada sección conserva su proyecto', () => {
+    const e = con(f => { proyectoDe(f, 'ZZZ-FIS-2026-001').fecha_inicio = 'abc'; proyectoDe(f, 'ZZZ-PIL-2026-002').fecha_inicio = 'abc'; });
     igual(codigos(e), INCLUIDOS, 'los códigos y el orden no cambian');
     igual(e.bloques_fallidos.filter(x => x.bloque === 'identidad'), [
-      { bloque: 'identidad', proyecto: 'ZZZ-FIS-2026-001', indice: 1, motivo: 'número inválido en proyectos.latitud' },
-      { bloque: 'identidad', proyecto: 'ZZZ-PIL-2026-002', indice: 0, motivo: 'número inválido en proyectos.latitud' }], 'cada fallo dice de qué proyecto es');
-    const id1 = e.proyectos[1].identidad, id2 = e.proyectos[0].identidad;
-    igual([id1.codigo, id1.nombre, id1.descripcion, id1.estado, id1.monto_contractual], ['ZZZ-FIS-2026-001', 'ZZZ Edificio de ejemplo', null, null, null], 'identidad del 001: código y nombre, lo demás null');
-    igual([id2.codigo, id2.nombre, id2.gestora, id2.emisor, id2.monto_vigente], ['ZZZ-PIL-2026-002', 'ZZZ Pilotes de ejemplo', 'ZZG', 'ZZE', 50000], 'identidad del 002: las empresas y el monto vigente se calculan aparte');
+      { bloque: 'identidad', proyecto: 'ZZZ-FIS-2026-001', indice: 4, motivo: 'fecha inválida en proyectos.fecha_inicio' },
+      { bloque: 'identidad', proyecto: 'ZZZ-PIL-2026-002', indice: 3, motivo: 'fecha inválida en proyectos.fecha_inicio' }], 'cada fallo dice de qué proyecto es');
+    const id1 = e.proyectos[4].identidad, id2 = e.proyectos[3].identidad;
+    igual([id1.codigo, id1.nombre, id1.estado, id1.descripcion, id1.tipo, id1.monto_contractual], ['ZZZ-FIS-2026-001', 'ZZZ Edificio de ejemplo', 'ejecucion', null, null, null], 'identidad del 001: código, nombre y estado; lo demás null');
+    igual([id2.codigo, id2.nombre, id2.estado, id2.gestora, id2.emisor, id2.monto_vigente], ['ZZZ-PIL-2026-002', 'ZZZ Pilotes de ejemplo', 'ejecucion', 'ZZG', 'ZZE', 50000], 'identidad del 002: las empresas y el monto vigente se calculan aparte');
     igual(Object.keys(id1), Object.keys(P('ZZZ-FIS-2026-001').identidad), 'la identidad conserva todas sus claves');
+    // El semáforo no depende del resto de la identidad: los dos conservan su color y su lugar.
+    igual([e.proyectos[3].avance.semaforo, e.proyectos[4].avance.semaforo], ['rojo', 'amarillo'], 'colores');
+    // La fecha de inicio mal formada tampoco tumba el avance: se calcula sin esa cota del atraso (el fallo ya está anotado en la identidad).
+    igual([e.proyectos[3].avance, e.proyectos[4].avance], [P('ZZZ-PIL-2026-002').avance, P('ZZZ-FIS-2026-001').avance], 'avance completo con la fecha de inicio mal formada');
+    igual(e.bloques_fallidos.filter(x => x.bloque === 'avance'), [], 'el avance no queda como bloque fallido');
     const m = estadoAMarkdown(e);
-    igual(m.split('\n').filter(x => x.startsWith('## ') && x !== '## Resumen').slice(0, 2), ['## 🔴 ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo', '## 🟡 ZZZ-FIS-2026-001 — ZZZ Edificio de ejemplo'], 'títulos');
+    igual(m.split('\n').filter(x => x.startsWith('## ') && x !== '## Resumen').slice(3, 5), ['## 🔴 ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo', '## 🟡 ZZZ-FIS-2026-001 — ZZZ Edificio de ejemplo'], 'títulos');
     const s2 = seccionDe(m, 'ZZZ-PIL-2026-002'), s1 = seccionDe(m, 'ZZZ-FIS-2026-001');
-    [s1, s2].forEach(s => assert(s.includes('**Identidad.** no se pudo calcular: número inválido en proyectos.latitud'), 'la sección dice el motivo'));
+    [s1, s2].forEach(s => assert(s.includes('**Identidad.** no se pudo calcular: fecha inválida en proyectos.fecha_inicio'), 'la sección dice el motivo'));
     assert(s2.includes('Semáforo rojo: SPI 0,22') && s2.includes('ZZZ Pilotes hincados') && !s2.includes('ZZZ Mampostería'), 'la sección del 002 trae los datos del 002');
     assert(s1.includes('Semáforo amarillo: SPI 0,92') && s1.includes('ZZZ Mampostería') && !s1.includes('ZZZ Pilotes hincados'), 'la sección del 001 trae los datos del 001');
-    assert(!m.includes('identidad no disponible') && !m.split('\n').some(x => x.startsWith('## ') && /sin código|sin nombre/.test(x)), 'ningún proyecto queda anónimo');
+    assert(!m.includes('identidad no disponible') && !m.split('\n').some(x => x.startsWith('## ') && !x.includes('ZZZ-GER-2026-026') && /sin código|sin nombre|sin estado/.test(x)), 'ningún proyecto queda anónimo ni pierde su estado (el 026 no lo tiene en el fixture)');
     igual(e.resumen.esperan_decision, estado.resumen.esperan_decision, '«Esperan decisión» no se altera');
+    igual(e.resumen.semaforo, SEMAFORO, 'ni el recuento del semáforo');
   });
 
   await prueba('identidad: dos proyectos con el MISMO código se distinguen por el índice', () => {
-    const e = con(f => { const a = proyectoDe(f, 'ZZZ-FIS-2024-008'), b = proyectoDe(f, 'ZZZ-FIS-2024-009'); b.codigo = a.codigo; a.longitud = 'x'; b.longitud = 'x'; });
+    const e = con(f => { const a = proyectoDe(f, 'ZZZ-FIS-2024-008'), b = proyectoDe(f, 'ZZZ-FIS-2024-009'); b.codigo = a.codigo; a.monto_contrato = 'x'; b.monto_contrato = 'x'; });
     const fallos = e.bloques_fallidos.filter(x => x.bloque === 'identidad');
-    igual(fallos.map(x => [x.proyecto, e.proyectos[x.indice].identidad.nombre]).sort(), [['ZZZ-FIS-2024-008', 'ZZZ Solo garantia vigente'], ['ZZZ-FIS-2024-008', 'ZZZ Solo planilla aprobada']], 'un índice distinto para cada uno');
+    igual(fallos.map(x => [x.proyecto, e.proyectos[x.indice].identidad.nombre, x.motivo]).sort(), [['ZZZ-FIS-2024-008', 'ZZZ Solo garantia vigente', 'número inválido en proyectos.monto_contrato'],
+      ['ZZZ-FIS-2024-008', 'ZZZ Solo planilla aprobada', 'número inválido en proyectos.monto_contrato']], 'un índice distinto para cada uno');
     const titulos = estadoAMarkdown(e).split('\n').filter(x => x.includes('— ZZZ Solo '));
-    igual(titulos, ['## 🟢 ZZZ-FIS-2024-008 — ZZZ Solo garantia vigente', '## 🟢 ZZZ-FIS-2024-008 — ZZZ Solo planilla aprobada', '## 🟢 ZZZ-FIS-2024-010 — ZZZ Solo observacion en proceso'], 'cada sección con su nombre');
+    igual(titulos, ['## ⚪ ZZZ-FIS-2024-008 — ZZZ Solo garantia vigente (finalizado)', '## ⚪ ZZZ-FIS-2024-008 — ZZZ Solo planilla aprobada (finalizado)', '## ⚪ ZZZ-FIS-2024-010 — ZZZ Solo observacion en proceso (finalizado)'], 'cada sección con su nombre y su estado');
   });
 
-  await prueba('identidad: un rubro corrupto deja sin monto vigente (anotado) pero con código, nombre y el resto', () => {
+  await prueba('identidad: un rubro corrupto deja sin monto vigente (anotado) pero con código, nombre y el resto; en ejecución y sin avance va tras los verdes', () => {
     const e = con(f => { f.rubros.find(r => r.codigo === 'P-01').monto_contrato = 'xx'; });
-    const id = e.proyectos.find(p => p.identidad.codigo === 'ZZZ-PIL-2026-002').identidad;
-    igual([id.nombre, id.tipo, id.monto_contractual, id.monto_vigente], ['ZZZ Pilotes de ejemplo', 'pilotes', 50000, null], 'identidad');
-    const i = codigos(e).indexOf('ZZZ-PIL-2026-002');
+    const id = PD(e, 'ZZZ-PIL-2026-002').identidad;
+    igual([id.nombre, id.tipo, id.estado, id.monto_contractual, id.monto_vigente], ['ZZZ Pilotes de ejemplo', 'pilotes', 'ejecucion', 50000, null], 'identidad');
+    const i = indice(e, 'ZZZ-PIL-2026-002');
     igual(e.bloques_fallidos.filter(x => x.indice === i).map(x => x.bloque).sort(), ['avance', 'identidad.monto_vigente', 'planillas', 'proximos_14_dias'], 'bloques anotados');
-    igual(e.resumen.semaforo, { rojo: 0, amarillo: 1, verde: 9, sin_datos: 1 }, 'sin avance cuenta como «sin datos»');
-    igual(i, 10, 'un proyecto sin color va al final');
+    igual(e.resumen.semaforo, { ...SEMAFORO, rojo: 3, sin_datos: 1 }, 'en ejecución y sin avance cuenta como «sin datos», no como sin semáforo');
+    igual(i, 9, 'el que está en ejecución y quedó sin color va al final de los de ejecución, antes de los demás estados');
+    igual(codigos(e).slice(10), SIN_SEMAFORO, 'los que no están en ejecución no se mueven');
     igual(e.resumen.por_tipo.find(x => x.tipo === 'pilotes'), { tipo: 'pilotes', proyectos: 1, monto_vigente: 0, proyectos_sin_monto: 1 }, 'el resumen dice que falta un monto');
-    igual(e.resumen.por_gestora[0], { sigla: 'ZZG', nombre: 'ZZZ GESTORA', proyectos: 10, monto_vigente: 698600, proyectos_sin_monto: 1 }, 'por gestora');
-    const s = seccionDe(estadoAMarkdown(e), 'ZZZ-PIL-2026-002');
-    assert(s.startsWith('## ⚪ ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo') && s.includes('vigente no disponible') && s.includes('**Avance.** no se pudo calcular: número inválido en rubros.monto_contrato'), '.md: ' + s.slice(0, 600));
+    igual(e.resumen.por_gestora[0], { sigla: 'ZZG', nombre: 'ZZZ GESTORA', proyectos: 22, monto_vigente: 1128600, proyectos_sin_monto: 1 }, 'por gestora');
+    const m = estadoAMarkdown(e), s = seccionDe(m, 'ZZZ-PIL-2026-002');
+    assert(s.startsWith('## ⚪ ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo\n') && s.includes('vigente no disponible') && s.includes('**Avance.** no se pudo calcular: número inválido en rubros.monto_contrato'), '.md: ' + s.slice(0, 600));
+    assert(m.includes('- Semáforo (solo proyectos en ejecución): 3 rojos · 1 amarillo · 5 verdes · 1 sin datos'), '.md, resumen con «sin datos»');
   });
 
-  await prueba('identidad y montos', () => {
+  await prueba('identidad y montos (D8: descripción completa y ubicación, sin coordenadas)', () => {
     const id = P('ZZZ-FIS-2026-001').identidad;
-    igual(Object.keys(id), ['codigo', 'nombre', 'descripcion', 'ubicacion', 'latitud', 'longitud', 'gestora', 'emisor', 'tipo', 'contratante', 'contratista', 'estado', 'estado_cierre',
+    igual(Object.keys(id), ['codigo', 'nombre', 'descripcion', 'ubicacion', 'gestora', 'emisor', 'tipo', 'contratante', 'contratista', 'estado', 'estado_cierre',
       'fecha_firma', 'fecha_inicio', 'fecha_fin_contractual', 'fecha_fin_real', 'monto_contractual', 'monto_vigente', 'monto_ordenes_cambio'], 'claves');
     igual([id.gestora, id.emisor, id.tipo, id.estado, id.estado_cierre], ['ZZG', 'ZZG', 'fiscalizacion', 'ejecucion', 'en_ejecucion'], 'identidad');
     igual([id.fecha_firma, id.fecha_inicio, id.fecha_fin_contractual, id.fecha_fin_real], [null, '2026-08-03', '2026-12-15', null], 'fechas (D4: firma null)');
     igual([id.monto_contractual, id.monto_vigente, id.monto_ordenes_cambio], [410000, 428600, 18600], 'montos');
-    assert(id.descripcion.includes('\n'), 'la descripción va completa, sin recortar');
+    igual(id.descripcion, 'Construcción de un edificio de dos plantas.\nIncluye obras exteriores | y cerramiento.', 'la descripción va completa, sin recortar');
+    igual(id.ubicacion, 'ZZZ Ciudad de Ejemplo', 'ubicación');
     const id2 = P('ZZZ-PIL-2026-002').identidad;
-    igual([id2.gestora, id2.emisor, id2.latitud, id2.longitud], ['ZZG', 'ZZE', -2.19, -79.88], 'emisor documental distinto de la gestora');
+    igual([id2.gestora, id2.emisor, id2.ubicacion], ['ZZG', 'ZZE', 'ZZZ Muelle de Ejemplo'], 'emisor documental distinto de la gestora');
     const id3 = P('ZZZ-CON-2026-003').identidad;
-    igual([id3.gestora, id3.monto_contractual, id3.monto_vigente], ['ZZH', null, 0], 'proyecto sin rubros ni monto');
+    igual([id3.gestora, id3.monto_contractual, id3.monto_vigente, id3.ubicacion], ['ZZH', null, 0, null], 'proyecto sin rubros ni monto');
+    // D8: ni la salida ni la entrada llevan coordenadas.
+    assert(!/latitud|longitud|coordenadas/i.test(texto) && !/latitud|longitud|coordenadas/i.test(md), 'la salida no habla de coordenadas');
+    assert(!/latitud|longitud/i.test(fs.readFileSync(RUTA_FIXTURE, 'utf8')), 'el fixture tampoco las trae');
+    // Unas coordenadas que llegaran por otro camino (una consulta antigua) se ignoran, válidas o no.
+    const e = con(f => { const p = proyectoDe(f, 'ZZZ-PIL-2026-002'); p.latitud = 'abc'; p.longitud = -79.88; });
+    igual([e.proyectos, e.bloques_fallidos], [estado.proyectos, estado.bloques_fallidos], 'latitud y longitud de más no cambian nada');
   });
 
-  await prueba('avance, valor ganado, SPI, atraso y semáforo salen del núcleo (línea base activa)', () => {
+  await prueba('formato 2: el bloque de avance trae sus quince claves y ya no existen ejecutado_pct, valor_ganado_pct ni dias_atraso', () => {
+    estado.proyectos.forEach(p => igual(Object.keys(p.avance), CLAVES_AVANCE, 'claves del avance de ' + p.identidad.codigo));
+    assert(!/"(ejecutado_pct|valor_ganado_pct|dias_atraso)"/.test(texto), 'claves del formato 1 en el .json');
+    estado.proyectos.forEach(p => {
+      const a = p.avance, c = p.identidad.codigo;
+      assert(Array.isArray(a.motivos) && Array.isArray(a.datos_por_completar), 'listas de ' + c);
+      assert(a.semaforo === null || ['rojo', 'amarillo', 'verde'].includes(a.semaforo), 'color de ' + c);
+      igual(a.semaforo !== null, p.identidad.estado === 'ejecucion', 'color si y solo si está en ejecución: ' + c);
+      // Atrasos: solo con semáforo y con SPI; ahí el atraso a la fecha es un número.
+      if(a.semaforo === null || a.spi === null) igual([a.atraso_fecha_dias, a.atraso_proyectado_dias], [null, null], 'sin semáforo o sin SPI no hay atrasos en ' + c);
+      else assert(Number.isInteger(a.atraso_fecha_dias) && a.atraso_fecha_dias >= 0, 'atraso a la fecha de ' + c);
+      igual(a.programado_pct === null, a.fin_programado === null, 'programado y fin programado van juntos en ' + c);
+      igual(a.programado_pct === null, a.valor_ganado_cronograma_pct === null, 'programado y valor ganado en cronograma van juntos en ' + c);
+      // El SPI que se lee: null si no hay SPI; si lo hay, dos decimales con coma y nunca por encima del número.
+      igual(a.spi === null, a.spi_texto === null, 'spi y spi_texto van juntos en ' + c);
+      if(a.spi !== null) assert(/^\d+,\d\d$/.test(a.spi_texto) && Number(a.spi_texto.replace(',', '.')) <= a.spi + 0.00005 && a.spi - Number(a.spi_texto.replace(',', '.')) < 0.0101, `spi_texto de ${c}: ${a.spi_texto} para ${a.spi}`);
+      assert(Number.isInteger(a.rubros_sin_cronograma) && a.rubros_sin_cronograma >= 0, 'rubros sin cronograma de ' + c);
+      // Con todos los rubros en el cronograma, el avance principal y el valor ganado en cronograma son el mismo número.
+      if(a.programado_pct !== null && a.rubros_sin_cronograma === 0) igual(a.valor_ganado_cronograma_pct, a.avance_pct, 'todos los rubros en cronograma: un solo valor ganado en ' + c);
+    });
+  });
+
+  await prueba('avance principal = valor ganado de TODOS los rubros; el SPI usa el de los rubros con cronograma; el ejecutado por cantidades va aparte', () => {
+    // 001: monto vigente 428.600. Ganado: 100.000 (terminado) + 150.000 + 0, con cronograma (250.000 = 58,33 %),
+    // más 14.300 del rubro OC-01, que no tiene cronograma: 264.300 = 61,67 %. Plan a hoy 270.000 = 63,00 %.
+    // Rubros fuera del cronograma vigente: dos (OC-01 y el 4.06, que solo está en la línea base antigua).
     const a = P('ZZZ-FIS-2026-001').avance;
-    igual(Object.keys(a), ['ejecutado_pct', 'programado_pct', 'valor_ganado_pct', 'spi', 'dias_atraso', 'cronograma_vencido', 'linea_base', 'semaforo', 'motivos'], 'claves');
-    igual([a.ejecutado_pct, a.programado_pct, a.valor_ganado_pct, a.dias_atraso, a.cronograma_vencido, a.linea_base, a.semaforo], [61.67, 63, 58.33, 9, false, 'LB-2', 'amarillo'], 'avance (el valor ganado no es el avance ejecutado: solo cuenta los rubros con cronograma)');
-    assert(a.spi === 0.9259, 'SPI 250/270 redondeado a 4 decimales, se obtuvo ' + a.spi);
+    igual([a.avance_pct, a.valor_ganado_cronograma_pct, a.ejecutado_cantidades_pct, a.programado_pct, a.rubros_sin_cronograma, a.cronograma_vencido, a.fin_programado, a.linea_base, a.semaforo],
+      [61.67, 58.33, 61.67, 63, 2, false, '2026-12-20', 'LB-2', 'amarillo'], 'avance (el principal cuenta todos los rubros; el del cronograma, solo los programados)');
+    igual([a.spi, a.spi_texto], [0.9259, '0,92'], 'SPI 250/270: el número a 4 decimales y el texto truncado a 2');
+    assert(Math.abs(a.valor_ganado_cronograma_pct / a.programado_pct - a.spi) < 0.0005, 'el SPI es el valor ganado en cronograma entre lo programado');
+    assert(Math.abs(a.avance_pct / a.programado_pct - a.spi) > 0.05, 'y NO el avance principal entre lo programado (hay un rubro sin cronograma)');
     igual(a.motivos, ['SPI 0,92', '1 garantía por vencer en 5 días o menos', '7 pendientes (libro, observaciones y solicitudes)'], 'motivos (SPI truncado; garantías con el aviso de 5 días del núcleo)');
+    igual(a.datos_por_completar, [], 'avance principal y cantidades coinciden: sin «datos por completar»');
     const r = P('ZZZ-PIL-2026-002').avance;
-    igual([r.semaforo, r.dias_atraso, r.valor_ganado_pct, r.programado_pct, r.cronograma_vencido], ['rojo', 284, 20, 90, false], 'rojo');
-    assert(r.spi === Math.round((0.2 / 0.9) * 1e4) / 1e4, 'SPI del rojo: ' + r.spi);
-    igual(r.motivos, ['SPI 0,22', '1 garantía vencida', 'atraso estimado de 284 días'], 'motivos del rojo');
-    igual(P('ZZZ-CON-2026-003').avance, { ejecutado_pct: 0, programado_pct: null, valor_ganado_pct: null, spi: null, dias_atraso: null, cronograma_vencido: false, linea_base: null, semaforo: 'verde', motivos: ['sin cronograma: no hay SPI'] }, 'sin cronograma: sin SPI y sin atraso estimable');
+    igual([r.semaforo, r.avance_pct, r.valor_ganado_cronograma_pct, r.ejecutado_cantidades_pct, r.programado_pct, r.rubros_sin_cronograma, r.cronograma_vencido, r.fin_programado], ['rojo', 20, 20, 20, 90, 0, false, '2026-11-30'], 'rojo');
+    igual([r.spi, r.spi_texto], [Math.round((0.2 / 0.9) * 1e4) / 1e4, '0,22'], 'SPI del rojo');
+    igual(r.motivos, ['SPI 0,22', '1 garantía vencida', 'atraso a la fecha de 63 días'], 'motivos del rojo (el atraso del semáforo es el atraso a la fecha)');
+    // SPI 0,84996 (38.248,2 de 45.000 programados): redondeado a 4 decimales es 0,85, pero está en
+    // rojo (< 0,85). El texto va truncado, como el motivo: nunca se lee «0,85» en un rojo.
+    const e85 = con(f => { f.rubros.find(x => x.codigo === 'P-01').total_produccion = 38248.2; });
+    const a85 = PD(e85, 'ZZZ-PIL-2026-002').avance;
+    igual([a85.spi, a85.spi_texto, a85.semaforo, a85.motivos], [0.85, '0,84', 'rojo', ['SPI 0,84', '1 garantía vencida']], 'SPI justo bajo el umbral');
+    const s85 = seccionDe(estadoAMarkdown(e85), 'ZZZ-PIL-2026-002');
+    assert(s85.includes(' · SPI 0,84 · ') && s85.includes('Semáforo rojo: SPI 0,84; 1 garantía vencida') && !s85.includes('0,85'), '.md con el SPI truncado: ' + s85.split('\n').filter(x => /SPI/.test(x)).join(' / '));
     // La garantía que vence en 15 días espera decisión, pero NO pone amarillo el semáforo (aviso de 5 días).
-    igual([P('ZZZ-FIS-2025-004').avance.semaforo, P('ZZZ-FIS-2025-004').avance.motivos], ['verde', ['sin cronograma: no hay SPI']], 'los 15 días de «Esperan decisión» no llegan al semáforo');
+    const e = con(f => { proyectoDe(f, 'ZZZ-FIS-2025-004').estado = 'ejecucion'; });
+    igual([PD(e, 'ZZZ-FIS-2025-004').avance.semaforo, PD(e, 'ZZZ-FIS-2025-004').avance.motivos], ['verde', ['sin cronograma: no hay SPI']], 'en ejecución: los 15 días de «Esperan decisión» no llegan al semáforo');
     igual(decision('garantia_por_vencer', 'ZZZ-FIS-2025-004').length, 1, 'y sí espera decisión');
   });
 
-  await prueba('avance: cronograma vencido, SPI 0 y el texto del atraso en el .md', () => {
-    igual(P('ZZZ-FIS-2024-009').avance, { ejecutado_pct: 100, programado_pct: 100, valor_ganado_pct: 100, spi: 1, dias_atraso: 0, cronograma_vencido: true, linea_base: 'LB-1', semaforo: 'verde', motivos: [] }, 'cronograma vencido');
-    assert(seccionDe(md, 'ZZZ-FIS-2024-009').includes('**Avance.** Ejecutado 100,0 % · programado 100,0 % (LB-1) · valor ganado 100,0 % · SPI 1,00 · sin atraso estimado · cronograma vencido'), '.md del cronograma vencido');
-    assert(md.includes('**Avance.** Ejecutado 20,0 % · programado 90,0 % (LB-1) · valor ganado 20,0 % · SPI 0,22 · atraso estimado 284 días'), '.md con atraso');
-    assert(md.includes('**Avance.** Ejecutado 0,0 % · sin cronograma · SPI no disponible\n'), '.md sin cronograma: no se habla de atraso');
-    // SPI 0: nada ejecutado de lo programado. El atraso no es «0 días»: no se puede estimar.
-    const e = con(f => { f.rubros.find(r => r.codigo === 'P-01').total_produccion = 0; });
-    const av = e.proyectos.find(p => p.identidad.codigo === 'ZZZ-PIL-2026-002').avance;
-    igual([av.spi, av.dias_atraso, av.valor_ganado_pct, av.semaforo], [0, null, 0, 'rojo'], 'SPI 0');
+  await prueba('rubro sin cronograma con lo programado terminado: avance principal mayor que el del cronograma, SPI 1,00 y verde aunque el cronograma esté vencido', () => {
+    // 028: rubro A (60.000, terminado) con cronograma vencido el 31-oct; rubro B (40.000, 10.000 producidos) sin cronograma.
+    // Avance principal (60.000 + 10.000) / 100.000 = 70 %. En cronograma: 60 % ganado de 60 % programado.
+    igual(P('ZZZ-CON-2026-028').avance, { avance_pct: 70, valor_ganado_cronograma_pct: 60, ejecutado_cantidades_pct: 70, programado_pct: 60, spi: 1, spi_texto: '1,00', atraso_fecha_dias: 0, atraso_proyectado_dias: 0,
+      cronograma_vencido: true, fin_programado: '2026-10-31', linea_base: 'LB-1', rubros_sin_cronograma: 1, semaforo: 'verde', motivos: [], datos_por_completar: [] }, 'lo programado está terminado: el vencimiento no da rojo');
+    assert(seccionDe(md, 'ZZZ-CON-2026-028').includes('**Avance.** Avance (valor ganado) 70,0 % · programado 60,0 % (LB-1) · valor ganado en cronograma 60,0 % (1 rubro sin cronograma) · SPI 1,00 · sin atraso · cronograma vencido el 2026-10-31\nEjecutado por cantidades: 70,0 %\nSemáforo verde\n'), '.md del 028: ' + seccionDe(md, 'ZZZ-CON-2026-028').split('\n').filter(x => /Avance|Semáforo/.test(x)).join(' / '));
+    // Si el rubro programado queda a la mitad (30.000 de 60.000), el vencimiento sí es rojo: 50 % de lo
+    // programado. Avance principal (30.000 + 10.000) / 100.000 = 40 %. El plan (91 días) preveía ese 30 % el
+    // día 45 (15-sep): 67 días de atraso. Proyectado: 91 × (1/0,5 − 1) = 91.
+    const e = con(f => { const r = f.rubros.find(x => x.proyecto_id === proyectoDe(f, 'ZZZ-CON-2026-028').id && x.codigo === '1'); r.estado = 'trabajando'; r.total_produccion = 30000; });
+    const a = PD(e, 'ZZZ-CON-2026-028').avance;
+    igual([a.avance_pct, a.valor_ganado_cronograma_pct, a.programado_pct, a.spi, a.spi_texto, a.atraso_fecha_dias, a.atraso_proyectado_dias, a.semaforo], [40, 30, 60, 0.5, '0,50', 67, 91, 'rojo'], 'programado a medias');
+    igual(a.motivos, ['SPI 0,50', 'cronograma vencido el 2026-10-31 con 50,0 % de lo programado', 'atraso a la fecha de 67 días'], 'motivos: el porcentaje es de lo programado, no del proyecto');
+  });
+
+  await prueba('dos atrasos: «a la fecha» cuenta desde el ÚLTIMO día en que el plan no superaba lo ganado y nunca supera los días desde el inicio; «proyectado» es la proyección al final', () => {
+    // 002: cronograma del 1-sep al 30-nov (90 días); hoy es el día 81 y hay 20 % ganado. El plan
+    // preveía ese 20 % el día 18 (19-sep): 63 días de atraso a la fecha. Proyectado: 90 × (1/0,2222 − 1) = 315.
+    const r = P('ZZZ-PIL-2026-002').avance;
+    igual([r.atraso_fecha_dias, r.atraso_proyectado_dias], [63, 315], 'atrasos del 002');
+    assert(r.atraso_fecha_dias <= 81 && r.atraso_proyectado_dias > 81, 'a la fecha no supera los 81 días transcurridos; el proyectado sí puede');
+    // 001: el plan preveía el valor ganado en cronograma de hoy el 15-nov (6 días); proyectado 139 × (1/0,9259 − 1) = 11.
+    igual([P('ZZZ-FIS-2026-001').avance.atraso_fecha_dias, P('ZZZ-FIS-2026-001').avance.atraso_proyectado_dias], [6, 11], 'atrasos del 001');
+    // En todos los proyectos con atraso: atraso a la fecha ≤ días desde el primer inicio programado.
+    const f = fixture();
+    estado.proyectos.forEach(p => {
+      if(p.avance.atraso_fecha_dias === null) return;
+      const propios = new Set(f.rubros.filter(x => x.proyecto_id === proyectoDe(f, p.identidad.codigo).id).map(x => x.id));
+      const inicios = f.cronograma_rubros.filter(c => propios.has(c.rubro_id)).map(c => c.fecha_inicio).sort();
+      const transcurridos = Math.round((Date.parse('2026-11-21') - Date.parse(inicios[0])) / 86400000);
+      assert(p.avance.atraso_fecha_dias <= transcurridos, `${p.identidad.codigo}: atraso a la fecha ${p.avance.atraso_fecha_dias} > ${transcurridos} días transcurridos`);
+    });
+    // La fecha de inicio del proyecto (proyectos.fecha_inicio) acota el atraso si es posterior al primer
+    // inicio programado: el 002 arrancado el 1-nov no puede llevar más de 20 días de atraso (y con 20 ya
+    // no pasa de los 30 del rojo). Una fecha anterior al cronograma no cambia nada.
+    const tarde = PD(con(f2 => { proyectoDe(f2, 'ZZZ-PIL-2026-002').fecha_inicio = '2026-11-01'; }), 'ZZZ-PIL-2026-002').avance;
+    igual([tarde.atraso_fecha_dias, tarde.atraso_proyectado_dias, tarde.semaforo, tarde.motivos], [20, 315, 'rojo', ['SPI 0,22', '1 garantía vencida']], 'acotado por la fecha de inicio del proyecto');
+    igual(PD(con(f2 => { proyectoDe(f2, 'ZZZ-PIL-2026-002').fecha_inicio = '2026-01-15'; }), 'ZZZ-PIL-2026-002').avance, r, 'inicio del proyecto anterior al cronograma: igual');
+    igual(PD(con(f2 => { proyectoDe(f2, 'ZZZ-PIL-2026-002').fecha_inicio = null; }), 'ZZZ-PIL-2026-002').avance, r, 'sin fecha de inicio: igual');
+    // SPI 0 (023: nada ejecutado, plan al 56 %): el atraso a la fecha son los 51 días que lleva el
+    // cronograma (su tope) y el proyectado NO es estimable: null, nunca 0.
+    const z = P('ZZZ-MUR-2026-023').avance;
+    igual([z.spi, z.spi_texto, z.avance_pct, z.programado_pct, z.atraso_fecha_dias, z.atraso_proyectado_dias, z.semaforo], [0, '0,00', 0, 56.04, 51, null, 'rojo'], 'SPI 0');
+    igual(z.motivos, ['SPI 0,00', 'atraso a la fecha de 51 días'], 'motivos con SPI 0');
+    const s = seccionDe(md, 'ZZZ-MUR-2026-023');
+    assert(s.includes('**Avance.** Avance (valor ganado) 0,0 % · programado 56,0 % (LB-1) · SPI 0,00 · atraso a la fecha 51 días · atraso proyectado no estimable\n'), '.md con SPI 0: ' + s.split('\n').find(x => x.startsWith('**Avance')));
+    igual(md.split('\n').filter(x => x.includes('no estimable')).length, 1, '«no estimable» solo en el proyecto en ejecución sin proyección');
+    // Lo mismo al dejar el 002 sin producción: a la fecha, los 81 días transcurridos; proyectado, null.
+    const e = con(f2 => { f2.rubros.find(x => x.codigo === 'P-01').total_produccion = 0; });
+    const av = PD(e, 'ZZZ-PIL-2026-002').avance;
+    igual([av.spi, av.avance_pct, av.atraso_fecha_dias, av.atraso_proyectado_dias, av.semaforo], [0, 0, 81, null, 'rojo'], '002 con SPI 0');
+    // Con un SPI menor que 0,10 (4.000 de 45.000 programados = 0,0889) tampoco hay proyección. El plan
+    // preveía ese 8 % el día 7 (8-sep): 74 días de atraso a la fecha.
+    const e10 = con(f2 => { f2.rubros.find(x => x.codigo === 'P-01').total_produccion = 4000; });
+    const a10 = PD(e10, 'ZZZ-PIL-2026-002').avance;
+    igual([a10.spi, a10.spi_texto, a10.atraso_fecha_dias, a10.atraso_proyectado_dias, a10.semaforo], [0.0889, '0,08', 74, null, 'rojo'], 'SPI menor que 0,10: proyectado no estimable');
+    assert(seccionDe(estadoAMarkdown(e10), 'ZZZ-PIL-2026-002').includes(' · SPI 0,08 · atraso a la fecha 74 días · atraso proyectado no estimable\n'), '.md con SPI 0,08');
+    assert(![md, estadoAMarkdown(e), estadoAMarkdown(e10)].some(m => /atraso (a la fecha|proyectado) 0 d[ií]as/.test(m)), 'nunca «atraso 0 días»');
+    // Con el plan a la fecha todavía mínimo no hay SPI y no se habla de atraso.
+    const e2 = con(f2 => { const id = proyectoDe(f2, 'ZZZ-MUR-2026-023').id; f2.cronograma_rubros.filter(c => c.proyecto_id === id).forEach(c => { c.fecha_inicio = '2026-11-21'; }); });
+    const a2 = PD(e2, 'ZZZ-MUR-2026-023').avance;
+    igual([a2.spi, a2.spi_texto, a2.programado_pct, a2.atraso_fecha_dias, a2.atraso_proyectado_dias, a2.semaforo, a2.motivos], [null, null, 0, null, null, 'verde', []], 'arranque de obra: sin SPI ni atrasos');
+    assert(seccionDe(estadoAMarkdown(e2), 'ZZZ-MUR-2026-023').includes('**Avance.** Avance (valor ganado) 0,0 % · programado 0,0 % (LB-1) · SPI no disponible\n'), '.md del arranque');
+  });
+
+  await prueba('meseta en el plan: el tramo plano no cuenta como atraso (se cuenta desde el último día en que el plan no superaba lo ganado)', () => {
+    // 027: rubro A (50 %) del 1 al 31-ago, terminado; rubro B (50 %) del 1-nov al 1-dic (30 días), sin empezar.
+    // El plan vale 50 % desde el 31-ago hasta el 1-nov. Hoy (día 20 de B): 50 + 50 × 20/30 = 83,33 %. SPI 50/83,33 = 0,60.
+    // Atraso a la fecha: del 1-nov (último día con el plan en 50 %) a hoy = 20 días; no los 82 desde el 31-ago.
+    // Proyectado: 122 días de cronograma × (1/0,6 − 1) = 81.
+    igual(P('ZZZ-CON-2026-027').avance, { avance_pct: 50, valor_ganado_cronograma_pct: 50, ejecutado_cantidades_pct: 50, programado_pct: 83.33, spi: 0.6, spi_texto: '0,60', atraso_fecha_dias: 20, atraso_proyectado_dias: 81,
+      cronograma_vencido: false, fin_programado: '2026-12-01', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: 'rojo', motivos: ['SPI 0,60'], datos_por_completar: [] }, 'meseta: 20 días, y el atraso no es motivo de rojo');
+    assert(seccionDe(md, 'ZZZ-CON-2026-027').includes('**Avance.** Avance (valor ganado) 50,0 % · programado 83,3 % (LB-1) · SPI 0,60 · atraso a la fecha 20 días · atraso proyectado 81 días\nEjecutado por cantidades: 50,0 %\nSemáforo rojo: SPI 0,60\n'), '.md del 027');
+    // Durante la meseta (rubro B del 1 al 31-dic: el plan a hoy sigue en 50 %) no hay atraso: SPI 1,00 y verde.
+    const e = con(f => { const id = proyectoDe(f, 'ZZZ-CON-2026-027').id; const b = f.rubros.find(x => x.proyecto_id === id && x.codigo === '2'); const c = f.cronograma_rubros.find(x => x.rubro_id === b.id); c.fecha_inicio = '2026-12-01'; c.fecha_fin = '2026-12-31'; });
+    const a = PD(e, 'ZZZ-CON-2026-027').avance;
+    igual([a.programado_pct, a.spi, a.atraso_fecha_dias, a.atraso_proyectado_dias, a.semaforo, a.motivos], [50, 1, 0, 0, 'verde', []], 'en plena meseta: sin atraso');
+    assert(seccionDe(estadoAMarkdown(e), 'ZZZ-CON-2026-027').includes(' · SPI 1,00 · sin atraso\n'), '.md en plena meseta');
+  });
+
+  await prueba('semáforo SOLO en ejecución: un proyecto de cada estado; los demás salen sin color, con su estado y sus pendientes, y sin atrasos', () => {
+    const porEstado = {};
+    estado.proyectos.forEach(p => { const k = p.identidad.estado === null ? '(sin estado)' : p.identidad.estado; (porEstado[k] = porEstado[k] || []).push(p.identidad.codigo); });
+    igual(Object.keys(porEstado), ['ejecucion', 'pausado', 'planificacion', 'finalizado', 'cancelado', '(sin estado)'], 'los cinco estados y el que no tiene, en el orden de salida');
+    igual(porEstado.ejecucion, EN_EJECUCION, 'en ejecución');
+    estado.proyectos.forEach(p => {
+      const a = p.avance, c = p.identidad.codigo;
+      if(p.identidad.estado === 'ejecucion') assert(['rojo', 'amarillo', 'verde'].includes(a.semaforo), c + ' en ejecución debe llevar color');
+      else igual([a.semaforo, a.motivos, a.atraso_fecha_dias, a.atraso_proyectado_dias], [null, [], null, null], c + ' no está en ejecución: sin color, sin motivos y sin atrasos');
+    });
+    igual(P('ZZZ-CON-2026-003').avance, sinCronograma(0, 0), 'pausado');
+    igual(P('ZZZ-GER-2026-017').avance, sinCronograma(0, 0), 'en planificación');
+    igual(P('ZZZ-DIS-2026-013').avance, sinCronograma(0, 0), 'cancelado');
+    igual(P('ZZZ-FIS-2024-008').avance, sinCronograma(100, 100, { rubros_sin_cronograma: 1 }), 'finalizado');
+    // Sin color, pero con sus pendientes: el pausado conserva su garantía y su observación; el cancelado, sus decisiones.
+    igual([P('ZZZ-CON-2026-003').garantias.length, P('ZZZ-CON-2026-003').observaciones.abiertas, P('ZZZ-CON-2026-003').observaciones.en_proceso], [1, 1, 1], 'pendientes del pausado');
+    igual(estado.resumen.esperan_decision.filter(d => d.proyecto === 'ZZZ-DIS-2026-013').length, 2, 'decisiones del cancelado');
+    // Ningún proyecto sin semáforo habla de atraso ni de cronograma vencido en el .md.
+    SIN_SEMAFORO.forEach(c => assert(!/atraso|cronograma vencido/.test(seccionDe(md, c)), 'el .md de ' + c + ' no habla de atraso ni de cronograma vencido'));
+
+    // 025: pausado con el cronograma atrasado y vencido (1-ago a 30-oct, 30 % ganado, SPI 0,30). Conserva
+    // sus cifras de avance, el SPI y el dato «cronograma_vencido», pero no lleva atrasos.
+    igual(P('ZZZ-CON-2026-025').avance, { avance_pct: 30, valor_ganado_cronograma_pct: 30, ejecutado_cantidades_pct: 30, programado_pct: 100, spi: 0.3, spi_texto: '0,30', atraso_fecha_dias: null, atraso_proyectado_dias: null,
+      cronograma_vencido: true, fin_programado: '2026-10-30', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: null, motivos: [], datos_por_completar: [] }, 'pausado con cronograma atrasado');
+    const s25 = seccionDe(md, 'ZZZ-CON-2026-025');
+    assert(s25.startsWith('## ⚪ ZZZ-CON-2026-025 — ZZZ Pausado con cronograma atrasado (pausado)\n') && s25.includes('**Avance.** Avance (valor ganado) 30,0 % · programado 100,0 % (LB-1) · SPI 0,30\nEjecutado por cantidades: 30,0 %\nSin semáforo: proyecto pausado\n'), '.md del 025: ' + s25.split('\n').filter(x => /Avance|emáforo/.test(x)).join(' / '));
+    // El mismo proyecto, en ejecución, sí los lleva: el plan (90 días) preveía el 30 % el día 27 (28-ago), 85 días
+    // de atraso; proyectado 90 × (1/0,3 − 1) = 210.
+    const e25 = con(f => { proyectoDe(f, 'ZZZ-CON-2026-025').estado = 'ejecucion'; });
+    const a25 = PD(e25, 'ZZZ-CON-2026-025').avance;
+    igual([a25.atraso_fecha_dias, a25.atraso_proyectado_dias, a25.semaforo, a25.motivos], [85, 210, 'rojo', ['SPI 0,30', 'cronograma vencido el 2026-10-30 con 30,0 % de lo programado', 'atraso a la fecha de 85 días']], 'el 025 en ejecución');
+    assert(seccionDe(estadoAMarkdown(e25), 'ZZZ-CON-2026-025').includes(' · SPI 0,30 · atraso a la fecha 85 días · atraso proyectado 210 días · cronograma vencido el 2026-10-30\n'), '.md del 025 en ejecución');
+
+    // El mismo proyecto cambia de grupo con su estado: el rojo 002, pausado, pierde el color y los atrasos y pasa al grupo de pausados.
+    const e = con(f => { proyectoDe(f, 'ZZZ-PIL-2026-002').estado = 'pausado'; });
+    const a = PD(e, 'ZZZ-PIL-2026-002').avance;
+    igual([a.semaforo, a.motivos, a.spi, a.spi_texto, a.atraso_fecha_dias, a.atraso_proyectado_dias, a.avance_pct, a.cronograma_vencido], [null, [], 0.2222, '0,22', null, null, 20, false], 'pausado: sin color ni atrasos, con sus cifras');
+    igual(codigos(e).slice(9, 13), ['ZZZ-CON-2026-003', 'ZZZ-CON-2026-025', 'ZZZ-PIL-2026-002', 'ZZZ-GER-2026-017'], 'pausados por código, antes del de planificación');
+    igual(e.resumen.semaforo, { ...SEMAFORO, rojo: 3, sin_semaforo: { ...SEMAFORO.sin_semaforo, pausado: 3 } }, 'recuento');
+    assert(e.resumen.esperan_decision.some(d => d.proyecto === 'ZZZ-PIL-2026-002' && d.clase === 'garantia_vencida'), 'su garantía vencida sigue esperando decisión');
     const s = seccionDe(estadoAMarkdown(e), 'ZZZ-PIL-2026-002');
-    assert(s.includes('· SPI 0,00 · atraso no estimable (nada ejecutado de lo programado)'), '.md con SPI 0: ' + s.split('\n').find(x => x.startsWith('**Avance')));
-    assert(!/atraso (estimado )?0 d[ií]as/.test(estadoAMarkdown(e)) && !/atraso (estimado )?0 d[ií]as/.test(md), 'nunca «atraso 0 días»');
-    assert(!md.includes('atraso no estimable'), 'con SPI mayor que 0 no se dice «no estimable»');
+    assert(s.startsWith('## ⚪ ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo (pausado)\n') && s.includes('\nSin semáforo: proyecto pausado\n') && !s.includes('Semáforo rojo'), '.md del pausado');
+    assert(s.includes('**Avance.** Avance (valor ganado) 20,0 % · programado 90,0 % (LB-1) · SPI 0,22\n') && !/atraso|cronograma vencido/.test(s), '.md del pausado: sin atrasos');
+  });
+
+  await prueba('proyecto sin estado: sin color, al final, con su bloque de avance y el aviso del núcleo en «datos por completar»', () => {
+    // 026: estado null. Cronograma del 1-oct al 31-dic (91 días): plan a hoy 51/91 = 56,04 %; 25 % ganado; SPI 0,4461.
+    const p = P('ZZZ-GER-2026-026');
+    igual([indice(estado, 'ZZZ-GER-2026-026'), estado.proyectos.length - 1, p.identidad.estado], [22, 22, null], 'sale el último y con estado null');
+    igual(p.avance, { avance_pct: 25, valor_ganado_cronograma_pct: 25, ejecutado_cantidades_pct: 25, programado_pct: 56.04, spi: 0.4461, spi_texto: '0,44', atraso_fecha_dias: null, atraso_proyectado_dias: null,
+      cronograma_vencido: false, fin_programado: '2026-12-31', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: null, motivos: [], datos_por_completar: [SIN_ESTADO] }, 'conserva su bloque de avance, sin color ni atrasos');
+    assert(!estado.bloques_fallidos.some(x => x.proyecto === 'ZZZ-GER-2026-026'), 'no queda ningún bloque fallido por no tener estado');
+    BLOQUES.forEach(b => assert(p[b] !== null, 'el bloque ' + b + ' del proyecto sin estado se calcula'));
+    igual(estado.resumen.semaforo.sin_semaforo.sin_estado, 1, 'el resumen lo cuenta aparte');
+    assert(estado.resumen.datos_por_completar.some(x => x.proyecto === 'ZZZ-GER-2026-026' && x.avisos.includes(SIN_ESTADO)), 'y está en resumen.datos_por_completar');
+    const s = seccionDe(md, 'ZZZ-GER-2026-026');
+    assert(s.startsWith('## ⚪ ZZZ-GER-2026-026 — ZZZ Proyecto sin estado (sin estado)\n') && s.includes(' · gerencia de proyecto · sin estado\n'), '.md: título e identidad');
+    assert(s.includes('**Avance.** Avance (valor ganado) 25,0 % · programado 56,0 % (LB-1) · SPI 0,44\nEjecutado por cantidades: 25,0 %\n⚠ Datos por completar: ' + SIN_ESTADO + '\nSin semáforo: proyecto sin estado\n'), '.md: avance: ' + s.split('\n').filter(x => /Avance|emáforo|Datos/.test(x)).join(' / '));
+    // Un proyecto en ejecución que pierde el estado (null o texto vacío): pierde el color y los atrasos y va al final.
+    [null, '', '  '].forEach(valor => {
+      const e = con(f => { proyectoDe(f, 'ZZZ-FIS-2026-001').estado = valor; });
+      const a = PD(e, 'ZZZ-FIS-2026-001').avance;
+      igual(codigos(e).slice(-2), ['ZZZ-FIS-2026-001', 'ZZZ-GER-2026-026'], 'sin estado: los dos al final, por código');
+      igual([PD(e, 'ZZZ-FIS-2026-001').identidad.estado, a.semaforo, a.motivos, a.avance_pct, a.spi, a.atraso_fecha_dias, a.atraso_proyectado_dias, a.datos_por_completar], [null, null, [], 61.67, 0.9259, null, null, [SIN_ESTADO]], 'sin estado: sin color, con avance y con el aviso');
+      igual(e.bloques_fallidos.filter(x => x.bloque === 'avance'), [], 'no es un bloque fallido');
+      igual(e.resumen.semaforo, { ...SEMAFORO, amarillo: 0, sin_semaforo: { ...SEMAFORO.sin_semaforo, sin_estado: 2 } }, 'recuento con dos sin estado');
+      const m = estadoAMarkdown(e);
+      assert(m.includes('## ⚪ ZZZ-FIS-2026-001 — ZZZ Edificio de ejemplo (sin estado)') && m.includes('· 1 cancelado · 2 sin estado'), '.md sin estado');
+    });
+    // Si los datos no traen siquiera la columna «estado», el núcleo se niega a dar semáforo: el avance
+    // queda en null y anotado (nunca un «sin color» por un olvido de la consulta).
+    const e3 = con(f => { delete proyectoDe(f, 'ZZZ-FIS-2026-001').estado; });
+    igual([indice(e3, 'ZZZ-FIS-2026-001'), PD(e3, 'ZZZ-FIS-2026-001').avance], [21, null], 'sin la columna: avance null');
+    igual(e3.bloques_fallidos.filter(x => x.bloque === 'avance'), [{ bloque: 'avance', proyecto: 'ZZZ-FIS-2026-001', indice: 21, motivo: 'El semáforo necesita el estado del proyecto' }], 'anotado');
+  });
+
+  await prueba('en ejecución, «cronograma vencido» sin haber terminado lo programado es un motivo PROPIO de rojo; con 100 % de valor ganado no', () => {
+    // 018: 97 % ganado de un cronograma de 91 días (1-ago a 31-oct). El plan no superaba el 97 % hasta el
+    // día 88 (28-oct): 24 días de atraso a la fecha (no pasa de 30). SPI 0,97 (no llega al amarillo).
+    // Proyectado: 91 × (1/0,97 − 1) = 3, pero ya lleva 21 días pasado del fin: 21.
+    igual(P('ZZZ-CON-2026-018').avance, { avance_pct: 97, valor_ganado_cronograma_pct: 97, ejecutado_cantidades_pct: 97, programado_pct: 100, spi: 0.97, spi_texto: '0,97', atraso_fecha_dias: 24, atraso_proyectado_dias: 21, cronograma_vencido: true,
+      fin_programado: '2026-10-31', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: 'rojo', motivos: ['cronograma vencido el 2026-10-31 con 97,0 % de lo programado'], datos_por_completar: [] }, 'vencido y sin terminar: rojo por ese único motivo');
+    const s18 = seccionDe(md, 'ZZZ-CON-2026-018');
+    assert(s18.startsWith('## 🔴 ZZZ-CON-2026-018 — ZZZ Cronograma vencido sin terminar\n'), 'título');
+    assert(s18.includes('**Avance.** Avance (valor ganado) 97,0 % · programado 100,0 % (LB-1) · SPI 0,97 · atraso a la fecha 24 días · atraso proyectado 21 días · cronograma vencido el 2026-10-31\nEjecutado por cantidades: 97,0 %\nSemáforo rojo: cronograma vencido el 2026-10-31 con 97,0 % de lo programado\n'), '.md del 018: ' + s18.split('\n').filter(x => /Avance|Semáforo/.test(x)).join(' / '));
+    // 019: vencido, pero con el 100 % de valor ganado: verde.
+    igual(P('ZZZ-CON-2026-019').avance, { avance_pct: 100, valor_ganado_cronograma_pct: 100, ejecutado_cantidades_pct: 100, programado_pct: 100, spi: 1, spi_texto: '1,00', atraso_fecha_dias: 0, atraso_proyectado_dias: 0, cronograma_vencido: true,
+      fin_programado: '2026-10-31', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: 'verde', motivos: [], datos_por_completar: [] }, 'vencido y terminado: verde');
+    assert(seccionDe(md, 'ZZZ-CON-2026-019').includes('**Avance.** Avance (valor ganado) 100,0 % · programado 100,0 % (LB-1) · SPI 1,00 · sin atraso · cronograma vencido el 2026-10-31\nEjecutado por cantidades: 100,0 %\nSemáforo verde\n'), '.md del 019');
+    // Fuera de ejecución el cronograma vencido no da color ni se escribe: el 009 (finalizado) y el 018 si se pausa.
+    // El dato «cronograma_vencido» sigue en el .json; los atrasos van a null.
+    igual(P('ZZZ-FIS-2024-009').avance, { avance_pct: 100, valor_ganado_cronograma_pct: 100, ejecutado_cantidades_pct: 100, programado_pct: 100, spi: 1, spi_texto: '1,00', atraso_fecha_dias: null, atraso_proyectado_dias: null, cronograma_vencido: true,
+      fin_programado: '2024-06-30', linea_base: 'LB-1', rubros_sin_cronograma: 0, semaforo: null, motivos: [], datos_por_completar: [] }, 'finalizado con cronograma vencido');
+    assert(seccionDe(md, 'ZZZ-FIS-2024-009').includes('**Avance.** Avance (valor ganado) 100,0 % · programado 100,0 % (LB-1) · SPI 1,00\nEjecutado por cantidades: 100,0 %\nSin semáforo: proyecto finalizado\n'), '.md del 009');
+    const e = con(f => { proyectoDe(f, 'ZZZ-CON-2026-018').estado = 'pausado'; });
+    const a18 = PD(e, 'ZZZ-CON-2026-018').avance;
+    igual([a18.semaforo, a18.motivos, a18.cronograma_vencido, a18.atraso_fecha_dias, a18.atraso_proyectado_dias], [null, [], true, null, null], 'pausado con cronograma vencido: sin color ni atrasos');
+    assert(seccionDe(estadoAMarkdown(e), 'ZZZ-CON-2026-018').includes('**Avance.** Avance (valor ganado) 97,0 % · programado 100,0 % (LB-1) · SPI 0,97\nEjecutado por cantidades: 97,0 %\nSin semáforo: proyecto pausado\n'), '.md del 018 pausado: sin atrasos ni «cronograma vencido»');
+    igual(md.split('\n').filter(x => x.includes('cronograma vencido el ') && x.startsWith('**Avance.**')).length, 3, '«cronograma vencido» en la línea de avance: solo en los tres en ejecución que lo tienen (018, 019 y 028)');
+    assert(md.includes('**Avance.** Avance (valor ganado) 20,0 % · programado 90,0 % (LB-1) · SPI 0,22 · atraso a la fecha 63 días · atraso proyectado 315 días\n'), '.md con los dos atrasos');
+    assert(md.includes('**Avance.** Avance (valor ganado) 0,0 % · sin cronograma\n'), '.md sin cronograma: no se habla de SPI ni de atraso');
+  });
+
+  await prueba('garantía vencida: en ejecución cuenta para el rojo; en un finalizado no da color y va como pendiente', () => {
+    const p = P('ZZZ-FIS-2024-020');
+    igual([p.identidad.estado, p.avance.semaforo, p.avance.motivos], ['finalizado', null, []], 'finalizado con garantía vencida: sin color');
+    igual(p.garantias, [{ tipo: 'buena_calidad_materiales', vigencia_hasta: '2026-10-01', dias_para_vencer: -51, estado: 'vigente', vencida: true }], 'sigue en su bloque de garantías');
+    igual(decision('garantia_vencida', 'ZZZ-FIS-2024-020'), [{ clase: 'garantia_vencida', proyecto: 'ZZZ-FIS-2024-020', detalle: 'Buena calidad de materiales, venció el 2026-10-01', desde: '2026-10-01', dias: 51, sentido: 'vencida_hace', monto: null }], 'y en «Esperan decisión»');
+    const s = seccionDe(md, 'ZZZ-FIS-2024-020');
+    assert(s.startsWith('## ⚪ ZZZ-FIS-2024-020 — ZZZ Finalizado con garantia vencida (finalizado)\n') && s.includes('\nSin semáforo: proyecto finalizado\n') && s.includes('**Garantías.** Buena calidad de materiales hasta 2026-10-01 (vencida hace 51 días)'), '.md del 020');
+    assert(md.includes('| Garantía vencida | ZZZ-FIS-2024-020 | Buena calidad de materiales, venció el 2026-10-01 | 2026-10-01 | vencida hace 51 |'), 'fila de la tabla');
+    // Es su único pendiente: al devolverla, el proyecto deja de salir.
+    assert(!codigos(con(f => { f.garantias.find(g => g.proyecto_id === proyectoDe(f, 'ZZZ-FIS-2024-020').id).estado = 'devuelta'; })).includes('ZZZ-FIS-2024-020'), 'sin la garantía queda fuera');
+    // El mismo proyecto, en ejecución: la garantía vencida lo pone en rojo.
+    const e = con(f => { proyectoDe(f, 'ZZZ-FIS-2024-020').estado = 'ejecucion'; });
+    igual([PD(e, 'ZZZ-FIS-2024-020').avance.semaforo, PD(e, 'ZZZ-FIS-2024-020').avance.motivos], ['rojo', ['1 garantía vencida']], 'en ejecución: rojo');
+    igual(e.resumen.esperan_decision, estado.resumen.esperan_decision, '«Esperan decisión» es la misma en los dos casos');
+    // Y el rojo 002 (en ejecución) la lleva entre sus motivos.
+    assert(P('ZZZ-PIL-2026-002').avance.motivos.includes('1 garantía vencida'), 'motivo del 002');
+  });
+
+  await prueba('«datos por completar»: más de 10 puntos entre el valor ganado y las cantidades, finalizado sin producción y proyecto sin estado (textos del núcleo)', () => {
+    // 022: rubro marcado «terminado» (100 % de valor ganado) con el 40 % de producción.
+    igual(P('ZZZ-CON-2026-022').avance, sinCronograma(100, 40, { rubros_sin_cronograma: 1, semaforo: 'verde', motivos: ['sin cronograma: no hay SPI'], datos_por_completar: [DIF_022] }), 'diferencia de 60 puntos');
+    // 021 y 024: finalizados sin producción registrada.
+    igual(P('ZZZ-FIS-2024-021').avance, sinCronograma(0, 0, { rubros_sin_cronograma: 1, datos_por_completar: [SIN_PRODUCCION] }), 'finalizado sin producción');
+    igual(P('ZZZ-FIS-2024-024').avance, sinCronograma(0, 0, { rubros_sin_cronograma: 1, datos_por_completar: [SIN_PRODUCCION] }), 'finalizado sin producción y sin otros pendientes');
+    const ESPERADO = [{ proyecto: 'ZZZ-CON-2026-022', avisos: [DIF_022] }, { proyecto: 'ZZZ-FIS-2024-021', avisos: [SIN_PRODUCCION] }, { proyecto: 'ZZZ-FIS-2024-024', avisos: [SIN_PRODUCCION] }, { proyecto: 'ZZZ-GER-2026-026', avisos: [SIN_ESTADO] }];
+    igual(estado.resumen.datos_por_completar, ESPERADO, 'resumen, en el orden de salida');
+    igual(estado.proyectos.filter(p => p.avance.datos_por_completar.length).map(p => p.identidad.codigo), ESPERADO.map(x => x.proyecto), 'solo esos cuatro');
+    const s22 = seccionDe(md, 'ZZZ-CON-2026-022'), s21 = seccionDe(md, 'ZZZ-FIS-2024-021');
+    assert(s22.includes('**Avance.** Avance (valor ganado) 100,0 % · sin cronograma\nEjecutado por cantidades: 40,0 %\n⚠ Datos por completar: ' + DIF_022 + '\nSemáforo verde: sin cronograma: no hay SPI\n'), '.md del 022: ' + s22.split('\n').slice(8, 14).join(' / '));
+    assert(s21.includes('Ejecutado por cantidades: 0,0 %\n⚠ Datos por completar: ' + SIN_PRODUCCION + '\nSin semáforo: proyecto finalizado\n'), '.md del 021');
+    igual(md.split('\n').filter(x => x.startsWith('⚠ Datos por completar: ')).length, 4, 'la línea de aviso solo en esos cuatro');
+    ['- Datos por completar: 4 proyectos', '  - ZZZ-CON-2026-022: ' + DIF_022, '  - ZZZ-FIS-2024-021: ' + SIN_PRODUCCION, '  - ZZZ-FIS-2024-024: ' + SIN_PRODUCCION, '  - ZZZ-GER-2026-026: ' + SIN_ESTADO].forEach(x => assert(md.split('\n').includes(x), 'falta en el resumen del .md: ' + x));
+    // Justo 10 puntos no avisa; algo más, sí. (Rubro terminado de 50.000: 45.000 = 90 %; 44.900 = 89,8 %.)
+    const con22 = prod => PD(con(f => { f.rubros.find(r => r.proyecto_id === proyectoDe(f, 'ZZZ-CON-2026-022').id).total_produccion = prod; }), 'ZZZ-CON-2026-022').avance;
+    igual([con22(45000).datos_por_completar, con22(44900).datos_por_completar.length], [[], 1], 'umbral de 10 puntos');
+    // Un finalizado sin producción y con el rubro «terminado» lleva los dos avisos.
+    const e = con(f => { f.rubros.find(r => r.proyecto_id === proyectoDe(f, 'ZZZ-FIS-2024-021').id).estado = 'terminado'; });
+    igual(PD(e, 'ZZZ-FIS-2024-021').avance.datos_por_completar, ['el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos', SIN_PRODUCCION], 'los dos avisos');
+    // Sin avisos, el resumen lo dice. (Al 024, con su producción registrada, no le queda nada pendiente: sale de la exportación.)
+    const limpio = con(f => { const rubroDe = c => f.rubros.find(r => r.proyecto_id === proyectoDe(f, c).id);
+      rubroDe('ZZZ-CON-2026-022').total_produccion = 50000; rubroDe('ZZZ-FIS-2024-021').total_produccion = 10000; rubroDe('ZZZ-FIS-2024-024').total_produccion = 10000;
+      proyectoDe(f, 'ZZZ-GER-2026-026').estado = 'pausado'; });
+    igual(limpio.resumen.datos_por_completar, [], 'sin avisos');
+    assert(estadoAMarkdown(limpio).includes('- Datos por completar: ninguno\n') && !estadoAMarkdown(limpio).includes('⚠'), '.md sin avisos');
+  });
+
+  await prueba('D9 + datos por completar: un finalizado o cancelado cuyo ÚNICO pendiente es un aviso de «datos por completar» SÍ entra', () => {
+    // 024: finalizado, con las dos actas y la liquidación, sin garantías, planillas, observaciones ni órdenes
+    // de cambio. Lo único que tiene por resolver es que no registra producción.
+    const f0 = fixture(), id24 = proyectoDe(f0, 'ZZZ-FIS-2024-024').id;
+    igual([proyectoDe(f0, 'ZZZ-FIS-2024-024').estado, proyectoDe(f0, 'ZZZ-FIS-2024-024').estado_cierre, f0.liquidaciones.filter(x => x.proyecto_id === id24).length,
+      ['garantias', 'planillas_pago', 'observaciones', 'ordenes_cambio'].map(t => f0[t].filter(x => x.proyecto_id === id24).length)], ['finalizado', 'recepcion_definitiva', 1, [0, 0, 0, 0]], 'el 024 del fixture no tiene ningún otro pendiente');
+    assert(codigos(estado).includes('ZZZ-FIS-2024-024'), 'entra por su aviso');
+    const p = P('ZZZ-FIS-2024-024');
+    igual([p.avance.datos_por_completar, p.garantias, p.planillas, p.observaciones.abiertas + p.observaciones.en_proceso, p.ordenes_cambio.solicitadas], [[SIN_PRODUCCION], [], { ultima: null, en_revision: [], aprobadas_sin_pagar: [] }, 0, []], 'sus bloques');
+    assert(!estado.resumen.esperan_decision.some(d => d.proyecto === 'ZZZ-FIS-2024-024'), 'no tiene nada en «Esperan decisión»');
+    assert(estado.resumen.datos_por_completar.some(x => x.proyecto === 'ZZZ-FIS-2024-024'), 'y aparece en resumen.datos_por_completar');
+    const s = seccionDe(md, 'ZZZ-FIS-2024-024');
+    assert(s.startsWith('## ⚪ ZZZ-FIS-2024-024 — ZZZ Finalizado sin produccion ni pendientes (finalizado)\n') && s.includes('**Avance.** Avance (valor ganado) 0,0 % · sin cronograma\nEjecutado por cantidades: 0,0 %\n⚠ Datos por completar: ' + SIN_PRODUCCION + '\nSin semáforo: proyecto finalizado\n'), '.md del 024');
+    // Al registrar la producción ya no le queda nada: sale.
+    const e = con(f => { f.rubros.find(r => r.proyecto_id === proyectoDe(f, 'ZZZ-FIS-2024-024').id).total_produccion = 10000; });
+    assert(!codigos(e).includes('ZZZ-FIS-2024-024'), 'con producción registrada queda fuera');
+    igual([e.proyectos_incluidos, e.proyectos_excluidos.cerrados_sin_pendientes], [22, 4], 'conteos sin el 024');
+    // Los demás avisos del núcleo también cuentan. Un finalizado sin pendientes al que se le quitan los rubros:
+    const e2 = con(f => { const id = proyectoDe(f, 'ZZZ-FIS-2024-007').id; f.rubros = f.rubros.filter(r => r.proyecto_id !== id); });
+    igual([codigos(e2).includes('ZZZ-FIS-2024-007'), PD(e2, 'ZZZ-FIS-2024-007').avance.datos_por_completar], [true, ['proyecto finalizado sin rubros']], 'finalizado sin rubros: entra');
+    // Un cancelado sin pendientes con un rubro «terminado» sin producción (100 % ganado, 0 % por cantidades):
+    const e3 = con(f => { f.rubros.push({ id: 'aaaaaaaa-0000-4000-8000-999999999999', proyecto_id: proyectoDe(f, 'ZZZ-FIS-2025-012').id, codigo: '1', descripcion: 'ZZZ Obra civil', monto_contrato: 5000, total_produccion: 0, estado: 'terminado' }); });
+    igual([codigos(e3).includes('ZZZ-FIS-2025-012'), PD(e3, 'ZZZ-FIS-2025-012').avance.datos_por_completar], [true, ['el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos']], 'cancelado con diferencia grande: entra');
+    // Un cancelado sin producción NO lleva aviso (la regla es de los finalizados): sigue fuera.
+    assert(!codigos(estado).includes('ZZZ-FIS-2025-012'), 'cancelado sin rubros ni pendientes: fuera');
+    // Si no se puede saber (rubro corrupto en un finalizado sin pendientes), el proyecto entra y queda anotado.
+    const e4 = con(f => { f.rubros.find(r => r.proyecto_id === proyectoDe(f, 'ZZZ-FIS-2024-007').id).monto_contrato = 'xx'; });
+    assert(codigos(e4).includes('ZZZ-FIS-2024-007') && e4.bloques_fallidos.some(x => x.bloque === 'inclusion' && x.proyecto === 'ZZZ-FIS-2024-007' && x.motivo === 'número inválido en rubros.monto_contrato'), 'duda en la inclusión: entra y se anota');
   });
 
   await prueba('sin línea base activa y con dos líneas base: cuenta la fila más reciente de cada rubro, llegue en el orden que llegue', () => {
     const quince = f => proyectoDe(f, 'ZZZ-PUE-2026-015').id;
     const f0 = fixture();
     igual(f0.lineas_base.filter(l => l.proyecto_id === quince(f0)).map(l => l.activa), [false, false], 'el 015 tiene dos líneas base y ninguna activa');
-    const esperado = { ejecutado_pct: 50, programado_pct: 50, valor_ganado_pct: 50, spi: 1, dias_atraso: 0, cronograma_vencido: false, linea_base: null, semaforo: 'verde', motivos: [] };
+    const esperado = { avance_pct: 50, valor_ganado_cronograma_pct: 50, ejecutado_cantidades_pct: 50, programado_pct: 50, spi: 1, spi_texto: '1,00', atraso_fecha_dias: 0, atraso_proyectado_dias: 0, cronograma_vencido: false, fin_programado: '2026-12-11',
+      linea_base: null, rubros_sin_cronograma: 0, semaforo: 'verde', motivos: [], datos_por_completar: [] };
     igual(P('ZZZ-PUE-2026-015').avance, esperado, 'con la fila antigua al final de la entrada');
     igual(P('ZZZ-PUE-2026-015').proximos_14_dias, [{ rubro_codigo: '1', rubro: 'ZZZ Tablero', inicio: '2026-11-01', fin: '2026-12-11' }], 'próximos: las fechas de la fila reciente');
     const alReves = con(f => { f.cronograma_rubros.reverse(); });
@@ -268,7 +592,8 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     // Si la activa es la LB-1, se usa su fila aunque sea la más antigua.
     const unoActiva = con(f => { f.lineas_base.find(l => l.proyecto_id === quince(f) && l.numero === 1).activa = true; });
     const av = unoActiva.proyectos.find(p => p.identidad.codigo === 'ZZZ-PUE-2026-015').avance;
-    igual([av.linea_base, av.programado_pct, av.spi, av.semaforo, av.cronograma_vencido], ['LB-1', 100, 0.5, 'rojo', true], 'LB-1 activa');
+    igual([av.linea_base, av.programado_pct, av.spi, av.semaforo, av.cronograma_vencido, av.fin_programado, av.atraso_fecha_dias, av.atraso_proyectado_dias], ['LB-1', 100, 0.5, 'rojo', true, '2026-10-31', 51, 60], 'LB-1 activa');
+    igual(av.motivos, ['SPI 0,50', 'cronograma vencido el 2026-10-31 con 50,0 % de lo programado', 'atraso a la fecha de 51 días'], 'motivos con la LB-1 activa');
   });
 
   await prueba('próximos 14 días: solo la línea base activa, sin rubros terminados y con los bordes de la ventana', () => {
@@ -328,29 +653,37 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     igual(P('ZZZ-PIL-2026-002').equipo, [{ nombre: 'Eva Zzzleon', rol: 'fiscalizador' }, { nombre: '(perfil no encontrado)', rol: 'residente' }], 'equipo por perfil_id y perfil ausente');
   });
 
-  await prueba('resumen por gestora, emisor, tipo y semáforo: totales de los proyectos INCLUIDOS', () => {
+  await prueba('resumen por gestora, emisor, tipo y semáforo: totales de los proyectos INCLUIDOS; el semáforo cuenta aparte los que no llevan color', () => {
     const r = estado.resumen;
-    igual(Object.keys(r), ['por_gestora', 'por_emisor', 'por_tipo', 'semaforo', 'esperan_decision'], 'partes del resumen');
-    igual(r.por_gestora, [{ sigla: 'ZZG', nombre: 'ZZZ GESTORA', proyectos: 10, monto_vigente: 748600, proyectos_sin_monto: 0 }, { sigla: 'ZZH', nombre: 'ZZZ SEGUNDA', proyectos: 1, monto_vigente: 0, proyectos_sin_monto: 0 }], 'por gestora');
-    igual(r.por_emisor.map(x => [x.sigla, x.proyectos, x.monto_vigente]), [['ZZG', 8, 598600], ['ZZE', 2, 150000], ['ZZH', 1, 0]], 'por emisor');
-    igual(r.por_tipo.map(x => [x.tipo, x.proyectos]), [['fiscalizacion', 6], ['construccion', 1], ['disenos', 1], ['muros_pantalla', 1], ['pilotes', 1], ['puentes', 1]], 'por tipo');
-    igual(r.semaforo, { rojo: 1, amarillo: 1, verde: 9, sin_datos: 0 }, 'semáforo');
-    [r.por_gestora, r.por_emisor, r.por_tipo].forEach(lista => igual(lista.reduce((s, x) => s + x.proyectos, 0), estado.proyectos_incluidos, 'la suma es la de los incluidos, no la de la cartera'));
+    igual(Object.keys(r), ['por_gestora', 'por_emisor', 'por_tipo', 'semaforo', 'datos_por_completar', 'esperan_decision'], 'partes del resumen');
+    igual(r.por_gestora, [{ sigla: 'ZZG', nombre: 'ZZZ GESTORA', proyectos: 22, monto_vigente: 1178600, proyectos_sin_monto: 0 }, { sigla: 'ZZH', nombre: 'ZZZ SEGUNDA', proyectos: 1, monto_vigente: 0, proyectos_sin_monto: 0 }], 'por gestora');
+    igual(r.por_emisor.map(x => [x.sigla, x.proyectos, x.monto_vigente]), [['ZZG', 20, 1028600], ['ZZE', 2, 150000], ['ZZH', 1, 0]], 'por emisor');
+    igual(r.por_tipo.map(x => [x.tipo, x.proyectos]), [['fiscalizacion', 9], ['construccion', 7], ['gerencia', 2], ['muros_pantalla', 2], ['disenos', 1], ['pilotes', 1], ['puentes', 1]], 'por tipo');
+    igual(r.semaforo, SEMAFORO, 'semáforo');
+    igual(Object.keys(r.semaforo), ['rojo', 'amarillo', 'verde', 'sin_semaforo', 'sin_datos'], 'claves del semáforo');
+    igual(Object.keys(r.semaforo.sin_semaforo), ['planificacion', 'pausado', 'finalizado', 'cancelado', 'sin_estado'], 'claves de sin_semaforo');
+    const s = r.semaforo;
+    igual([s.rojo + s.amarillo + s.verde + s.sin_datos, Object.values(s.sin_semaforo).reduce((a, b) => a + b, 0)], [EN_EJECUCION.length, SIN_SEMAFORO.length], 'colores = en ejecución; sin semáforo = los demás');
+    [r.por_gestora, r.por_emisor, r.por_tipo].forEach(lista => igual(lista.reduce((t, x) => t + x.proyectos, 0), estado.proyectos_incluidos, 'la suma es la de los incluidos, no la de la cartera'));
     igual(estadoDelResumen(estado), 'ok', 'resumen completo');
-    assert(md.includes('Los totales por gestora, emisor y tipo cuentan solo los 11 proyectos incluidos en este archivo, no toda la cartera.'), 'el .md lo dice');
+    assert(md.includes('Los totales por gestora, emisor y tipo cuentan solo los 23 proyectos incluidos en este archivo, no toda la cartera.'), 'el .md lo dice');
+    // Sin ningún proyecto fuera de ejecución, el .md lo dice.
+    const soloEjecucion = con(f => { f.proyectos = f.proyectos.filter(p => p.estado === 'ejecucion'); });
+    igual(soloEjecucion.resumen.semaforo, { ...SEMAFORO, sin_semaforo: { planificacion: 0, pausado: 0, finalizado: 0, cancelado: 0, sin_estado: 0 } }, 'todos en ejecución');
+    assert(estadoAMarkdown(soloEjecucion).includes('- Sin semáforo (no están en ejecución): ninguno\n'), '.md sin proyectos fuera de ejecución');
   });
 
   await prueba('resumen: una empresa que falta en el catálogo se agrupa como «(empresa no encontrada)» y no tumba nada', () => {
     const e = con(f => { f.empresas = f.empresas.filter(x => x.sigla !== 'ZZE'); });
-    igual(estadoDelResumen(e), 'ok', 'las cinco partes se calculan');
-    igual(e.resumen.por_emisor.map(x => [x.sigla, x.nombre, x.proyectos, x.monto_vigente]), [['ZZG', 'ZZZ GESTORA', 8, 598600], [null, '(empresa no encontrada)', 2, 150000], ['ZZH', 'ZZZ SEGUNDA', 1, 0]], 'por emisor');
+    igual(estadoDelResumen(e), 'ok', 'las seis partes se calculan');
+    igual(e.resumen.por_emisor.map(x => [x.sigla, x.nombre, x.proyectos, x.monto_vigente]), [['ZZG', 'ZZZ GESTORA', 20, 1028600], [null, '(empresa no encontrada)', 2, 150000], ['ZZH', 'ZZZ SEGUNDA', 1, 0]], 'por emisor');
     igual(e.resumen.por_gestora, estado.resumen.por_gestora, 'por gestora no cambia');
-    igual([e.resumen.por_tipo, e.resumen.semaforo, e.resumen.esperan_decision], [estado.resumen.por_tipo, estado.resumen.semaforo, estado.resumen.esperan_decision], 'el resto del resumen no cambia');
-    igual(e.bloques_fallidos.filter(x => x.bloque === 'identidad.empresa').map(x => [x.proyecto, x.indice, x.motivo]), [['ZZZ-PUE-2026-015', 10, 'empresa no encontrada en el catálogo'], ['ZZZ-PIL-2026-002', 0, 'empresa no encontrada en el catálogo']], 'queda anotado en los dos proyectos');
-    const id = e.proyectos[0].identidad;
+    igual([e.resumen.por_tipo, e.resumen.semaforo, e.resumen.datos_por_completar, e.resumen.esperan_decision], [estado.resumen.por_tipo, estado.resumen.semaforo, estado.resumen.datos_por_completar, estado.resumen.esperan_decision], 'el resto del resumen no cambia');
+    igual(e.bloques_fallidos.filter(x => x.bloque === 'identidad.empresa').map(x => [x.proyecto, x.indice, x.motivo]), [['ZZZ-PUE-2026-015', 9, 'empresa no encontrada en el catálogo'], ['ZZZ-PIL-2026-002', 3, 'empresa no encontrada en el catálogo']], 'queda anotado en los dos proyectos');
+    const id = e.proyectos[3].identidad;
     igual([id.codigo, id.gestora, id.emisor, id.tipo], ['ZZZ-PIL-2026-002', 'ZZG', '(empresa no encontrada)', 'pilotes'], 'identidad del proyecto afectado');
     const m = estadoAMarkdown(e);
-    assert(m.includes('- Por emisor: ZZZ GESTORA 8 · (empresa no encontrada) 2 · ZZZ SEGUNDA 1'), '.md, resumen');
+    assert(m.includes('- Por emisor: ZZZ GESTORA 20 · (empresa no encontrada) 2 · ZZZ SEGUNDA 1'), '.md, resumen');
     assert(m.includes('**Identidad.** Gestora ZZZ GESTORA · emisor (empresa no encontrada) · pilotes · en ejecución'), '.md, identidad');
     assert(m.includes('| Garantía vencida | ZZZ-PIL-2026-002 |'), 'la tabla de decisiones sigue completa');
   });
@@ -359,7 +692,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     const f = fixture(); delete f.empresas;
     const e = construirEstado(f, OPCIONES);
     igual([e.resumen.por_gestora, e.resumen.por_emisor], [null, null], 'sin la tabla de empresas no hay agrupación por empresa');
-    igual([e.resumen.por_tipo, e.resumen.semaforo, e.resumen.esperan_decision], [estado.resumen.por_tipo, estado.resumen.semaforo, estado.resumen.esperan_decision], 'tipo, semáforo y decisiones se calculan igual');
+    igual([e.resumen.por_tipo, e.resumen.semaforo, e.resumen.datos_por_completar, e.resumen.esperan_decision], [estado.resumen.por_tipo, estado.resumen.semaforo, estado.resumen.datos_por_completar, estado.resumen.esperan_decision], 'tipo, semáforo, datos por completar y decisiones se calculan igual');
     igual(e.bloques_fallidos.filter(x => x.bloque.startsWith('resumen.')), [
       { bloque: 'resumen.por_gestora', proyecto: null, indice: null, motivo: 'falta la tabla «empresas» en los datos' },
       { bloque: 'resumen.por_emisor', proyecto: null, indice: null, motivo: 'falta la tabla «empresas» en los datos' }], 'una entrada por parte fallida');
@@ -368,15 +701,18 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     assert(e.proyectos.every(p => p.identidad.gestora === null && p.identidad.nombre && p.identidad.tipo !== undefined), 'identidad sin empresas pero con lo demás');
     const m = estadoAMarkdown(e);
     assert(m.includes('- Por gestora: no se pudo calcular: falta la tabla «empresas» en los datos') && m.includes('- Por emisor: no se pudo calcular: falta la tabla «empresas» en los datos'), '.md, partes fallidas');
-    assert(m.includes('- Por tipo: fiscalización 6 ·') && m.includes('- Semáforo: 1 rojo · 1 amarillo · 9 verdes') && m.includes('| Garantía vencida | ZZZ-PIL-2026-002 |'), '.md, partes calculadas');
+    assert(m.includes('- Por tipo: fiscalización 9 ·') && m.includes('- Semáforo (solo proyectos en ejecución): 4 rojos · 1 amarillo · 5 verdes') && m.includes('| Garantía vencida | ZZZ-PIL-2026-002 |'), '.md, partes calculadas');
     assert(m.includes('**Identidad.** Gestora y emisor: no se pudo calcular: falta la tabla «empresas» en los datos · pilotes · en ejecución'), '.md, identidad');
-    igual([estadoDelResumen({ resumen: null }), estadoDelResumen({ resumen: { por_gestora: null, por_emisor: null, por_tipo: null, semaforo: null, esperan_decision: null } }), estadoDelResumen({ resumen: { ...estado.resumen, semaforo: null } })], ['null', 'null', 'parcial'], 'estadoDelResumen');
-    assert(estadoAMarkdown({ ...estado, resumen: { ...estado.resumen, esperan_decision: null, semaforo: null } }).includes('- Semáforo: no se pudo calcular: motivo no registrado'), 'el .md no se rompe con partes en null');
+    igual([estadoDelResumen({ resumen: null }), estadoDelResumen({ resumen: { por_gestora: null, por_emisor: null, por_tipo: null, semaforo: null, datos_por_completar: null, esperan_decision: null } }), estadoDelResumen({ resumen: { ...estado.resumen, semaforo: null } }),
+      estadoDelResumen({ resumen: { ...estado.resumen, datos_por_completar: null } })], ['null', 'null', 'parcial', 'parcial'], 'estadoDelResumen (seis partes)');
+    const mNulo = estadoAMarkdown({ ...estado, resumen: { ...estado.resumen, esperan_decision: null, semaforo: null, datos_por_completar: null } });
+    assert(mNulo.includes('- Semáforo (solo proyectos en ejecución): no se pudo calcular: motivo no registrado') && mNulo.includes('- Datos por completar: no se pudo calcular: motivo no registrado') && !mNulo.includes('- Sin semáforo'), 'el .md no se rompe con partes en null');
   });
 
   await prueba('«Esperan decisión»: D5 (más de 15 días), D7 (15 días o menos) y orden por urgencia con «dias» y «sentido»', () => {
     const d = estado.resumen.esperan_decision;
     igual(d.map(x => [x.clase, x.proyecto, x.dias, x.sentido]), [
+      ['garantia_vencida', 'ZZZ-FIS-2024-020', 51, 'vencida_hace'],     // de un finalizado: sin color, pero espera decisión
       ['garantia_vencida', 'ZZZ-PIL-2026-002', 11, 'vencida_hace'],
       ['garantia_por_vencer', 'ZZZ-FIS-2026-001', 4, 'faltan'],
       ['garantia_por_vencer', 'ZZZ-FIS-2025-004', 15, 'faltan'],
@@ -391,9 +727,9 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       ['acta_definitiva_pendiente', 'ZZZ-MUR-2026-016', null, 'esperando']], 'lista y orden');
     d.forEach(x => igual(Object.keys(x), ['clase', 'proyecto', 'detalle', 'desde', 'dias', 'sentido', 'monto'], 'claves de la fila'));
     igual(decision('planilla_en_revision')[0], { clase: 'planilla_en_revision', proyecto: 'ZZZ-FIS-2026-001', detalle: 'Planilla 4', desde: '2026-11-12', dias: 9, sentido: 'esperando', monto: 48250 }, 'planilla');
-    igual(decision('garantia_vencida')[0], { clase: 'garantia_vencida', proyecto: 'ZZZ-PIL-2026-002', detalle: 'Fiel cumplimiento, venció el 2026-11-10', desde: '2026-11-10', dias: 11, sentido: 'vencida_hace', monto: null }, 'garantía vencida');
+    igual(decision('garantia_vencida', 'ZZZ-PIL-2026-002')[0], { clase: 'garantia_vencida', proyecto: 'ZZZ-PIL-2026-002', detalle: 'Fiel cumplimiento, venció el 2026-11-10', desde: '2026-11-10', dias: 11, sentido: 'vencida_hace', monto: null }, 'garantía vencida');
     igual(decision('observacion_antigua', 'ZZZ-FIS-2026-001')[0], { clase: 'observacion_antigua', proyecto: 'ZZZ-FIS-2026-001', detalle: 'Observación n.º 12 «ZZZ Curado deficiente», creada por Ana Zzzperez', desde: '2026-10-18', dias: 34, sentido: 'esperando', monto: null }, 'D5: se muestra «creada por»');
-    assert(!d.some(x => /Señalética|Acero expuesto|Andamio|Sello de junta/.test(x.detalle)), 'las observaciones de 15 días o menos no entran');
+    assert(!d.some(x => /Señalética|Acero expuesto|Andamio|Sello de junta|registro de cantidades/.test(x.detalle)), 'las observaciones de 15 días o menos no entran');
     assert(!d.some(x => x.proyecto === 'ZZZ-CON-2026-003' && /garantia/.test(x.clase)), 'una garantía que vence en 16 días no entra');
     assert(!d.some(x => x.clase === 'garantia_por_vencer' && x.proyecto === 'ZZZ-PIL-2026-002'), 'una vencida no es «por vencer»');
   });
@@ -405,8 +741,9 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       f.garantias.push({ proyecto_id: proyectoDe(f, 'ZZZ-FIS-2024-008').id, tipo: 'otra', vigencia_hasta: null, estado: 'vigente' });   // por definir: no cuenta
       f.garantias.push({ proyecto_id: proyectoDe(f, 'ZZZ-FIS-2024-008').id, tipo: 'otra', vigencia_hasta: '2026-11-01', estado: 'devuelta' });   // no vigente: no cuenta
     });
-    igual(e.resumen.esperan_decision.slice(0, 6).map(x => [x.clase, x.proyecto, x.dias, x.sentido]), [
+    igual(e.resumen.esperan_decision.slice(0, 7).map(x => [x.clase, x.proyecto, x.dias, x.sentido]), [
       ['garantia_vencida', 'ZZZ-FIS-2024-008', 112, 'vencida_hace'],
+      ['garantia_vencida', 'ZZZ-FIS-2024-020', 51, 'vencida_hace'],
       ['garantia_vencida', 'ZZZ-PIL-2026-002', 11, 'vencida_hace'],
       ['garantia_por_vencer', 'ZZZ-CON-2026-003', 0, 'faltan'],
       ['garantia_por_vencer', 'ZZZ-FIS-2026-001', 4, 'faltan'],
@@ -429,11 +766,12 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     igual(P('ZZZ-DIS-2026-013').ordenes_cambio.solicitadas[0].titulo, 'ZZZ Ajuste ref. (dato omitido)', 'título de orden de cambio');
     igual(estado.resumen.esperan_decision.filter(d => d.proyecto === 'ZZZ-DIS-2026-013').map(d => d.detalle), ['Observación n.º 7 «ZZZ Avisar a (dato omitido)», creada por Luis Zzzmora', 'OC-02 «ZZZ Ajuste ref. (dato omitido)»'], 'detalle de «Esperan decisión»');
     // Un correo en cualquier otro texto libre, y en el motivo de un fallo, tampoco pasa.
-    const e = con(f => { const p = proyectoDe(f, 'ZZZ-FIS-2026-001'); p.nombre = 'ZZZ Obra de n@zzz.test'; p.contratista = 'ZZZ c@zzz.test'; p.ubicacion = 'ZZZ u@zzz.test'; p.latitud = 'l@zzz.test';
+    const e = con(f => { const p = proyectoDe(f, 'ZZZ-FIS-2026-001'); p.nombre = 'ZZZ Obra de n@zzz.test'; p.contratista = 'ZZZ c@zzz.test'; p.ubicacion = 'ZZZ u@zzz.test'; p.fecha_inicio = 'f@zzz.test';
       f.rubros.find(r => r.codigo === '1.02').descripcion = 'ZZZ r@zzz.test'; f.perfiles[0].apellido = 'p@zzz.test'; f.empresas[0].nombre = 'ZZZ e@zzz.test'; });
     const t = JSON.stringify(e) + estadoAMarkdown(e);
     assert(!t.includes('@') && !t.includes('zzz.test'), 'ningún correo en la salida');
-    igual(e.proyectos[1].identidad.nombre, 'ZZZ Obra de (dato omitido)', 'nombre del proyecto limpio');
+    igual(PD(e, 'ZZZ-FIS-2026-001').identidad.nombre, 'ZZZ Obra de (dato omitido)', 'nombre del proyecto limpio');
+    igual(e.bloques_fallidos.filter(x => x.bloque === 'identidad').map(x => x.motivo), ['fecha inválida en proyectos.fecha_inicio'], 'el motivo del fallo no arrastra el valor');
   });
 
   await prueba('la salida no lleva identificadores internos ni correos', () => {
@@ -446,9 +784,12 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
   await prueba('.md: primera línea, cabecera, resumen y tabla de decisiones rotulada', () => {
     const l = md.split('\n');
     igual(l[0], '# Estado de proyectos GdO — válido para el 2026-11-21', 'primera línea');
-    igual(l[2], 'Generado: 2026-11-21 03:14 (America/Guayaquil) · formato 1 · app hidivo-vZZ · 11 proyectos de 17 · excluidos: 1 sin código, 2 liquidados, 3 finalizados o cancelados sin pendientes', 'cabecera');
-    ['- Por gestora: ZZZ GESTORA 10 proyectos · ZZZ SEGUNDA 1 proyecto', '- Por emisor: ZZZ GESTORA 8 · ZZZ EMISOR 2 · ZZZ SEGUNDA 1',
-      '- Por tipo: fiscalización 6 · construcción 1 · diseños 1 · muros pantalla 1 · pilotes 1 · puentes 1', '- Semáforo: 1 rojo · 1 amarillo · 9 verdes', '### Esperan decisión de Nicolás',
+    igual(l[2], 'Generado: 2026-11-21 03:14 (America/Guayaquil) · formato 2 · app hidivo-vZZ · 23 proyectos de 29 · excluidos: 1 sin código, 2 liquidados, 3 finalizados o cancelados sin pendientes', 'cabecera');
+    ['- Por gestora: ZZZ GESTORA 22 proyectos · ZZZ SEGUNDA 1 proyecto', '- Por emisor: ZZZ GESTORA 20 · ZZZ EMISOR 2 · ZZZ SEGUNDA 1',
+      '- Por tipo: fiscalización 9 · construcción 7 · gerencia de proyecto 2 · muros pantalla 2 · diseños 1 · pilotes 1 · puentes 1',
+      '- Semáforo (solo proyectos en ejecución): 4 rojos · 1 amarillo · 5 verdes',
+      '- Sin semáforo (no están en ejecución): 2 pausados · 1 en planificación · 8 finalizados · 1 cancelado · 1 sin estado',
+      '- Datos por completar: 4 proyectos', '### Esperan decisión de Nicolás',
       '| Qué | Proyecto | Detalle | Desde | Días |',
       '| Planilla en revisión | ZZZ-FIS-2026-001 | Planilla 4, $ 48.250,00 | 2026-11-12 | 9 días |',
       '| Orden de cambio solicitada | ZZZ-FIS-2026-001 | OC-03 «ZZZ Refuerzo de losa», $ 12.000,00 | 2026-11-15 | 6 días |',
@@ -458,11 +799,11 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       '| Acta definitiva pendiente | ZZZ-MUR-2026-016 | Con acta provisional y sin acta definitiva | — | — |'
     ].forEach(x => assert(l.includes(x), 'falta la línea: ' + x));
     const dias = l.filter(x => /^\| (?!Qué|---)/.test(x)).map(x => x.split(' | ').pop().replace(' |', ''));
-    igual(dias, ['vencida hace 11', 'vence en 4', 'vence en 15', '40 días', '34 días', '20 días', '20 días', '20 días', '16 días', '9 días', '6 días', '—'], 'columna Días, por urgencia');
+    igual(dias, ['vencida hace 51', 'vencida hace 11', 'vence en 4', 'vence en 15', '40 días', '34 días', '20 días', '20 días', '20 días', '16 días', '9 días', '6 días', '—'], 'columna Días, por urgencia');
     // Un solo excluido de cada clase, y ninguno.
     const uno = { ...estado, proyectos_excluidos: { sin_codigo: 0, liquidados: 1, cerrados_sin_pendientes: 1 } };
-    assert(estadoAMarkdown(uno).split('\n')[2].endsWith('· 11 proyectos de 17 · excluidos: 1 liquidado, 1 finalizado o cancelado sin pendientes'), 'singular');
-    assert(estadoAMarkdown({ ...estado, proyectos_excluidos: { sin_codigo: 0, liquidados: 0, cerrados_sin_pendientes: 0 } }).split('\n')[2].endsWith('· 11 proyectos de 17'), 'sin excluidos');
+    assert(estadoAMarkdown(uno).split('\n')[2].endsWith('· 23 proyectos de 29 · excluidos: 1 liquidado, 1 finalizado o cancelado sin pendientes'), 'singular');
+    assert(estadoAMarkdown({ ...estado, proyectos_excluidos: { sin_codigo: 0, liquidados: 0, cerrados_sin_pendientes: 0 } }).split('\n')[2].endsWith('· 23 proyectos de 29'), 'sin excluidos');
     // Sin nada que decidir y sin bloques fallidos.
     const limpio = con(sanear);
     igual(limpio.bloques_fallidos, [], 'sin la fecha corrupta no falla nada');
@@ -472,18 +813,31 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
   });
 
   await prueba('.md: una sección por proyecto con sus 11 bloques y números es-EC', () => {
-    igual(md.split('\n').filter(x => x.startsWith('## ') && x !== '## Resumen'), ['## 🔴 ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo', '## 🟡 ZZZ-FIS-2026-001 — ZZZ Edificio de ejemplo',
-      '## 🟢 ZZZ-CON-2026-003 — ZZZ Obra pausada', '## 🟢 ZZZ-DIS-2026-013 — ZZZ Cancelado con pendientes', '## 🟢 ZZZ-FIS-2024-008 — ZZZ Solo garantia vigente',
-      '## 🟢 ZZZ-FIS-2024-009 — ZZZ Solo planilla aprobada', '## 🟢 ZZZ-FIS-2024-010 — ZZZ Solo observacion en proceso', '## 🟢 ZZZ-FIS-2025-004 — ZZZ Finalizado sin acta',
-      '## 🟢 ZZZ-FIS-2025-005 — ZZZ Finalizado sin liquidar', '## 🟢 ZZZ-MUR-2026-016 — ZZZ Muro con recepcion provisional', '## 🟢 ZZZ-PUE-2026-015 — ZZZ Puente sin linea base activa'], 'secciones');
+    igual(md.split('\n').filter(x => x.startsWith('## ') && x !== '## Resumen'), [
+      // En ejecución: el emoji de su color.
+      '## 🔴 ZZZ-CON-2026-018 — ZZZ Cronograma vencido sin terminar', '## 🔴 ZZZ-CON-2026-027 — ZZZ Plan con meseta', '## 🔴 ZZZ-MUR-2026-023 — ZZZ Muro sin nada ejecutado', '## 🔴 ZZZ-PIL-2026-002 — ZZZ Pilotes de ejemplo',
+      '## 🟡 ZZZ-FIS-2026-001 — ZZZ Edificio de ejemplo',
+      '## 🟢 ZZZ-CON-2026-019 — ZZZ Cronograma vencido y obra terminada', '## 🟢 ZZZ-CON-2026-022 — ZZZ Avance y cantidades distintos', '## 🟢 ZZZ-CON-2026-028 — ZZZ Programado terminado y rubro sin cronograma', '## 🟢 ZZZ-MUR-2026-016 — ZZZ Muro con recepcion provisional',
+      '## 🟢 ZZZ-PUE-2026-015 — ZZZ Puente sin linea base activa',
+      // Los demás: ⚪ y el estado.
+      '## ⚪ ZZZ-CON-2026-003 — ZZZ Obra pausada (pausado)', '## ⚪ ZZZ-CON-2026-025 — ZZZ Pausado con cronograma atrasado (pausado)', '## ⚪ ZZZ-GER-2026-017 — ZZZ Proyecto en planificacion (en planificación)',
+      '## ⚪ ZZZ-FIS-2024-008 — ZZZ Solo garantia vigente (finalizado)', '## ⚪ ZZZ-FIS-2024-009 — ZZZ Solo planilla aprobada (finalizado)', '## ⚪ ZZZ-FIS-2024-010 — ZZZ Solo observacion en proceso (finalizado)',
+      '## ⚪ ZZZ-FIS-2024-020 — ZZZ Finalizado con garantia vencida (finalizado)', '## ⚪ ZZZ-FIS-2024-021 — ZZZ Finalizado sin produccion (finalizado)', '## ⚪ ZZZ-FIS-2024-024 — ZZZ Finalizado sin produccion ni pendientes (finalizado)',
+      '## ⚪ ZZZ-FIS-2025-004 — ZZZ Finalizado sin acta (finalizado)', '## ⚪ ZZZ-FIS-2025-005 — ZZZ Finalizado sin liquidar (finalizado)',
+      '## ⚪ ZZZ-DIS-2026-013 — ZZZ Cancelado con pendientes (cancelado)', '## ⚪ ZZZ-GER-2026-026 — ZZZ Proyecto sin estado (sin estado)'], 'secciones');
+    // La línea del color: «Semáforo …» en ejecución, «Sin semáforo: proyecto <estado>» en los demás.
+    igual(md.split('\n').filter(x => /^Semáforo (rojo|amarillo|verde)/.test(x)).length, 10, 'diez líneas de color');
+    igual(md.split('\n').filter(x => x.startsWith('Sin semáforo: proyecto ')), ['Sin semáforo: proyecto pausado', 'Sin semáforo: proyecto pausado', 'Sin semáforo: proyecto en planificación'].concat(Array(8).fill('Sin semáforo: proyecto finalizado'), ['Sin semáforo: proyecto cancelado', 'Sin semáforo: proyecto sin estado']), 'trece sin semáforo');
+    igual(md.split('\n').filter(x => x.startsWith('Ejecutado por cantidades: ')).length, 23, 'la segunda línea del avance en todos');
     const seccion = seccionDe(md, 'ZZZ-FIS-2026-001');
     ['**Identidad.** Gestora ZZZ GESTORA · emisor ZZZ GESTORA · fiscalización · en ejecución',
       'Contratante: ZZZ Cliente de Ejemplo S.A. · Contratista: ZZZ Constructora de Ejemplo',
-      'Ubicación: ZZZ Ciudad de Ejemplo (sin coordenadas)',
+      'Ubicación: ZZZ Ciudad de Ejemplo',
       'Firma: no registrada · Inicio: 2026-08-03 · Fin contractual: 2026-12-15',
       'Monto contractual $ 410.000,00 · vigente $ 428.600,00 (órdenes de cambio $ 18.600,00)',
       'Descripción: Construcción de un edificio de dos plantas. Incluye obras exteriores | y cerramiento.',
-      '**Avance.** Ejecutado 61,7 % · programado 63,0 % (LB-2) · valor ganado 58,3 % · SPI 0,92 · atraso estimado 9 días',
+      '**Avance.** Avance (valor ganado) 61,7 % · programado 63,0 % (LB-2) · valor ganado en cronograma 58,3 % (2 rubros sin cronograma) · SPI 0,92 · atraso a la fecha 6 días · atraso proyectado 11 días',
+      'Ejecutado por cantidades: 61,7 %',
       'Semáforo amarillo: SPI 0,92; 1 garantía por vencer en 5 días o menos; 7 pendientes (libro, observaciones y solicitudes)',
       '**Próximos 14 días.** 1.02 ZZZ Mampostería (01-oct a 30-nov) · 4.04 ZZZ Desencofrado (10-nov a 21-nov) · 3.01 ZZZ Instalaciones eléctricas (24-nov a 15-dic) · 4.03 ZZZ Pintura exterior (05-dic a 18-dic)',
       '**Planillas.** Última: n.º 4, 01 a 31-oct, $ 48.250,00, en revisión desde el 2026-11-12 (9 días)',
@@ -498,7 +852,7 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       '**Equipo.** Ana Zzzperez (fiscalizador) · Luis Zzzmora (residente)'
     ].forEach(x => assert(seccion.split('\n').includes(x), 'falta la línea: ' + x + '\n' + seccion));
     assert(md.includes('**Identidad.** Gestora ZZZ GESTORA · emisor ZZZ EMISOR · pilotes · en ejecución'), 'emisor documental en el .md');
-    assert(md.includes('Ubicación: ZZZ Muelle de Ejemplo (-2,190000; -79,880000)'), 'coordenadas');
+    assert(md.includes('\nUbicación: ZZZ Muelle de Ejemplo\n') && md.includes('\nUbicación: no registrada\n'), 'ubicación sin coordenadas (D8)');
     assert(md.includes('**Garantías.** Fiel cumplimiento hasta 2026-11-10 (vencida hace 11 días)'), 'garantía vencida');
     assert(md.includes('· finalizado · recepción definitiva') && md.includes('· diseños · cancelado') && md.includes('· en ejecución · recepción provisional'), 'estado y estado de cierre');
     estado.proyectos.forEach((p, i) => {
@@ -521,6 +875,18 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
     ['id', 'proyecto_id', 'rubro_id', 'linea_base_id', 'fecha_inicio', 'fecha_fin', 'created_at'].forEach(c => assert(new RegExp('\\b' + c + '\\b').test(bloque('cronograma_rubros').split('select')[2]), 'cronograma_rubros trae ' + c));
     assert(/json_agg\(t order by t\.proyecto_id, t\.numero/.test(bloque('lineas_base')), 'lineas_base: por proyecto y número');
     assert(!/\b(insert|update|delete|drop|alter|create|truncate|grant)\b/i.test(codigoSql), 'solo lectura');
+    // Se incrusta tal cual como cuerpo de public.exportacion_estado_datos(): una sola sentencia
+    // SELECT con la columna «datos», un único punto y coma (el final), sin comandos de psql, sin
+    // signo de dólar ni comentarios de bloque, y con todas las tablas calificadas con public.
+    igual((sql.match(/;/g) || []).length, 1, 'un único punto y coma en todo el archivo (comentarios incluidos)');
+    assert(/^select json_build_object\(/.test(codigoSql.trim()) && /\) as datos;$/.test(codigoSql.trim()), 'empieza por select y termina en «) as datos;»');
+    assert(!/^\s*\\/m.test(sql) && !sql.includes('$') && !sql.includes('/*') && !sql.includes('*/'), 'sin comandos de psql, dólares ni comentarios de bloque');
+    const sinFinal = codigoSql.trim().replace(/;$/, '');
+    igual([(sinFinal.match(/\(/g) || []).length - (sinFinal.match(/\)/g) || []).length, (sinFinal.match(/'/g) || []).length % 2], [0, 0], 'paréntesis y comillas equilibrados: vale dentro de «select ( … )»');
+    const tablasLeidas = [...codigoSql.matchAll(/\bfrom\s+([a-z_.]+)/g)].map(m => m[1]).filter(t => t !== '(');
+    igual(tablasLeidas, TABLAS.map(t => 'public.' + t), 'cada tabla se lee una vez y calificada con public.');
+    assert(!/\b(latitud|longitud)\b/.test(sql), 'D8: sin coordenadas');
+    assert(/\bdescripcion\b/.test(bloque('proyectos')) && /\bubicacion\b/.test(bloque('proyectos')) && /\bestado\b/.test(bloque('proyectos')), 'proyectos trae descripción, ubicación y estado');
     // Las columnas del fixture son exactamente las de la consulta (para las tablas sin agregados).
     const f = fixture();
     ['proyectos', 'empresas', 'rubros', 'cronograma_rubros', 'lineas_base', 'planillas_pago', 'planilla_historial', 'garantias', 'ordenes_cambio', 'ensayos', 'sst_incidentes', 'solicitudes', 'proyecto_miembros', 'perfiles', 'actas_recepcion', 'liquidaciones'].forEach(t => {
@@ -531,13 +897,13 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
 
   await prueba('exportar.js: acepta las cuatro envolturas del JSON de entrada', () => {
     const f = fixture();
-    [f, { datos: f }, [{ datos: f }], { rows: [{ datos: f }] }, [{ datos: JSON.stringify(f) }]].forEach((x, i) => igual(desenvolver(x).proyectos.length, 17, 'envoltura ' + i));
+    [f, { datos: f }, [{ datos: f }], { rows: [{ datos: f }] }, [{ datos: JSON.stringify(f) }]].forEach((x, i) => igual(desenvolver(x).proyectos.length, 29, 'envoltura ' + i));
     [{}, [], [{ datos: f }, { datos: f }], { datos: { proyectos: [] } }, 'x', null].forEach((x, i) => {
       let fallo = false; try{ desenvolver(x); }catch(e){ fallo = true; }
       assert(fallo, 'la entrada mala ' + i + ' debe rechazarse');
     });
     // Un JSON de consulta antigua (con la tabla que ya no se pide) sigue valiendo: la clave de más se ignora.
-    igual(desenvolver({ ...f, proyecto_emisor_historial: [] }).proyectos.length, 17, 'clave de más');
+    igual(desenvolver({ ...f, proyecto_emisor_historial: [] }).proyectos.length, 29, 'clave de más');
   });
 
   await prueba('exportar.js: códigos de salida 0 / 3 / 2 / 1, línea RESULTADO, los dos archivos siempre y ningún dato de la entrada en los errores', () => {
@@ -553,12 +919,13 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       fs.writeFileSync(envuelto, '﻿' + JSON.stringify({ rows: [{ datos: fixture() }] }));
       const salida = path.join(tmp, 'salida');
       const r = correr(envuelto, salida, '--ahora', AHORA);
-      igual([r.status, lineas(r)], [3, ['Estado válido para 2026-11-21: 11 proyectos de 17, 1 bloques fallidos', 'RESULTADO proyectos=11 fallidos=1 resumen=ok']], 'corrida degradada');
+      igual([r.status, lineas(r)], [3, ['Estado válido para 2026-11-21: 23 proyectos de 29, 1 bloques fallidos', 'RESULTADO proyectos=23 fallidos=1 resumen=ok']], 'corrida degradada');
       igual(fs.readdirSync(salida).sort(), ['GDO-estado-proyectos.json', 'GDO-estado-proyectos.md'], 'los dos archivos y ningún provisional');
       const escrito = JSON.parse(fs.readFileSync(path.join(salida, 'GDO-estado-proyectos.json'), 'utf8'));
       const sw = fs.readFileSync(path.join(RAIZ, 'service-worker.js'), 'utf8').split(/\r?\n/)[0];
       assert(/^hidivo-v\d+$/.test(escrito.version_app) && sw.includes(`'${escrito.version_app}'`), 'la versión sale de service-worker.js: ' + escrito.version_app);
       igual({ ...escrito, version_app: 'hidivo-vZZ' }, estado, 'el .json escrito es el estado');
+      igual(escrito.formato, 2, 'formato 2 en el archivo');
       igual(fs.readFileSync(path.join(salida, 'GDO-estado-proyectos.md'), 'utf8'), estadoAMarkdown(escrito), 'el .md escrito');
       igual(correr(envuelto, salida, '--ahora', AHORA, '--version-app', 'hidivo-vXX').status, 3, 'con --version-app');
       igual(JSON.parse(fs.readFileSync(path.join(salida, 'GDO-estado-proyectos.json'), 'utf8')).version_app, 'hidivo-vXX', '--version-app manda');
@@ -568,14 +935,14 @@ const sanear = f => { f.planillas_pago.filter(pl => pl.created_at === 'fecha-cor
       const rutaLimpia = path.join(tmp, 'limpio.json'); fs.writeFileSync(rutaLimpia, JSON.stringify(limpio));
       const salidaLimpia = path.join(tmp, 'salida-limpia');
       const r0 = correr(rutaLimpia, salidaLimpia, '--ahora', AHORA);
-      igual([r0.status, lineas(r0), r0.stderr], [0, ['Estado válido para 2026-11-21: 11 proyectos de 17, 0 bloques fallidos', 'RESULTADO proyectos=11 fallidos=0 resumen=ok'], ''], 'corrida buena');
+      igual([r0.status, lineas(r0), r0.stderr], [0, ['Estado válido para 2026-11-21: 23 proyectos de 29, 0 bloques fallidos', 'RESULTADO proyectos=23 fallidos=0 resumen=ok'], ''], 'corrida buena');
       igual(fs.readdirSync(salidaLimpia).sort(), ['GDO-estado-proyectos.json', 'GDO-estado-proyectos.md'], 'archivos de la corrida buena');
 
       // 3 también cuando lo que falta es una empresa del catálogo (el resumen sigue completo).
       const sinEmpresa = fixture(); sinEmpresa.empresas = sinEmpresa.empresas.filter(x => x.sigla !== 'ZZE'); sinEmpresa.planillas_pago = limpio.planillas_pago;
       const rutaSinEmpresa = path.join(tmp, 'sin-empresa.json'); fs.writeFileSync(rutaSinEmpresa, JSON.stringify(sinEmpresa));
       const r3 = correr(rutaSinEmpresa, path.join(tmp, 'salida-sin-empresa'), '--ahora', AHORA);
-      igual([r3.status, lineas(r3)[1]], [3, 'RESULTADO proyectos=11 fallidos=2 resumen=ok'], 'empresa ausente: degradada');
+      igual([r3.status, lineas(r3)[1]], [3, 'RESULTADO proyectos=23 fallidos=2 resumen=ok'], 'empresa ausente: degradada');
       assert(fs.readFileSync(path.join(tmp, 'salida-sin-empresa', 'GDO-estado-proyectos.md'), 'utf8').includes('### Esperan decisión de Nicolás\n\n| Qué |'), 'y el .md trae la tabla de decisiones');
 
       // 1: sin proyectos no se escribe nada.

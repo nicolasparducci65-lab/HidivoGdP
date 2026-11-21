@@ -1,14 +1,21 @@
 -- ============================================================================
 -- Exportación diaria del estado de proyectos: consulta ÚNICA, de solo lectura.
 --
--- Devuelve UNA fila con UNA columna «datos» (json): un objeto con una clave por
--- tabla y, en cada una, SOLO las columnas que usa exportacion/estado-proyectos.js.
+-- Es UNA sola sentencia SELECT que devuelve UNA fila con UNA columna «datos»
+-- (json): un objeto con una clave por tabla y, en cada una, SOLO las columnas que
+-- usa exportacion/estado-proyectos.js. Como el resultado es un único JSON y no
+-- filas, el tope de 1.000 filas de la API no lo corta.
 -- No trae correos, teléfonos, tokens, cédulas ni los textos de los incidentes de
--- SST; tampoco descripciones de observaciones (solo la marca «con antecedente»).
+-- SST. Tampoco descripciones de observaciones (solo la marca «con antecedente»)
+-- ni coordenadas (D8: la ubicación sale de la descripción del proyecto).
 --
--- Uso:   psql "$SUPABASE_DB_URL" -At -f consulta.sql > datos.json
---        o enviada tal cual por una API que ejecuta una sentencia.
--- Luego: node exportar.js datos.json <carpeta-salida>
+-- Es el cuerpo de la función public.exportacion_estado_datos(), que solo puede
+-- ejecutar service_role: se incrusta TAL CUAL, sin el punto y coma final, dentro
+-- de «select ( … )» o como cuerpo de una función SQL. Por eso este archivo no
+-- lleva comandos de psql, tiene un único punto y coma (el último carácter de la
+-- sentencia), no usa el signo de dólar ni comentarios de bloque, y nombra todas
+-- las tablas con el esquema public.
+-- El generador recibe el JSON así: node exportar.js datos.json carpeta-salida
 --
 -- Las columnas empresa_id / emisor_empresa_id / tipo / codigo de proyectos y la
 -- sigla de empresas vienen de las migraciones 20261120_multiempresa_*.
@@ -30,7 +37,7 @@ select json_build_object(
     select coalesce(json_agg(t order by t.codigo nulls last, t.nombre, t.id), '[]'::json) from (
       select id, empresa_id, emisor_empresa_id, codigo, tipo, nombre, descripcion,
              contratante, contratista, monto_contrato, fecha_inicio, fecha_fin_planificada,
-             fecha_fin_real, estado, estado_cierre, ubicacion, latitud, longitud
+             fecha_fin_real, estado, estado_cierre, ubicacion
         from public.proyectos
     ) t),
   'empresas', (

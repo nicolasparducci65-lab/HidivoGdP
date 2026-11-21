@@ -1,18 +1,19 @@
 -- ============================================================================
--- Exportación diaria del estado de proyectos: registro de corridas y vigilante.
+-- Exportación diaria del estado de proyectos: datos, registro de corridas y
+-- vigilante.
 -- NO se aplica sola. Se aplica DESPUÉS de publicar la app que muestra el aviso
--- en la campana y ANTES de subir el workflow estado-diario.yml al repo de
--- respaldos (el workflow llama a exportacion_estado_registrar y falla si no
--- existe). La aplica el rol dueño de la base (postgres): en el SQL Editor, o
--- con un ensayo previo (begin … rollback) y la reversión del pie a mano.
+-- en la campana y ANTES de subir el workflow estado-diario.yml al repo privado
+-- HidivoBackups (el workflow llama por la API a exportacion_estado_datos y a
+-- exportacion_estado_registrar, y falla si no existen). La aplica el rol dueño
+-- de la base (postgres): en el SQL Editor, o con un ensayo previo
+-- (begin … rollback) y la reversión del pie a mano.
 --
 -- Qué hace:
 --   1) Tabla exportaciones_estado: una fila por corrida del workflow (fecha de
 --      Ecuador, ok, detalle, aviso). Solo la lee el admin global; nadie la
 --      escribe desde la app.
 --   2) exportacion_estado_registrar(ok, detalle, aviso): la llama el workflow
---      por psql con la cadena de conexión (rol dueño de la base). Inserta la
---      fila y:
+--      por la API (rpc) con la llave de service_role. Inserta la fila y:
 --        · ok = false: deja un aviso en la campana de cada admin global
 --          (notificaciones, tipo 'exportacion_estado'). El tercer parámetro
 --          no se usa.
@@ -28,11 +29,29 @@
 --   3) exportacion_estado_vigilar(): si hoy (Ecuador) no hay ninguna corrida
 --      buena, deja el aviso a cada admin global que todavía no tenga uno de hoy.
 --      Cubre el caso de que GitHub no llegue a correr.
---   4) Tarea de pg_cron «exportacion-estado-vigilante», '20 10 * * *' (UTC) =
+--   4) exportacion_estado_datos(): los datos de la exportación en UN ÚNICO valor
+--      json (un objeto con una clave por tabla). La llama el workflow por la
+--      API (rpc). Como devuelve un solo valor y no filas, el tope de 1.000
+--      filas de la API no la corta. Su cuerpo es la consulta de
+--      exportacion/consulta.sql; la prueba
+--      tests/exportaciones-estado-migracion.test.js falla si dejan de ser iguales.
+--      Solo lee.
+--   5) Tarea de pg_cron «exportacion-estado-vigilante», '20 10 * * *' (UTC) =
 --      05:20 de Ecuador, todos los días.
+--   6) PRUEBA de permisos, dentro de la misma transacción: comprueba que anon y
+--      authenticated NO pueden ejecutar ninguna de las tres funciones y que
+--      service_role sí. Si algo no cuadra, la migración aborta entera y no
+--      queda nada aplicado.
+--
+-- Permisos: las tres funciones son SECURITY DEFINER con search_path fijo y solo
+-- las puede ejecutar service_role (además del dueño). Supabase concede EXECUTE
+-- por defecto a anon y authenticated sobre cada función nueva del esquema
+-- public: por eso el REVOKE los nombra, no basta con quitárselo a PUBLIC.
 --
 -- Requiere: extensión pg_cron (ya en uso por «resumen-cartera-diario»), la
--- tabla notificaciones (perfil_id, tipo, titulo, mensaje) y sst_es_admin_global().
+-- tabla notificaciones (perfil_id, tipo, titulo, mensaje), sst_es_admin_global()
+-- y las migraciones 20261120_multiempresa_* (columnas codigo, tipo y
+-- emisor_empresa_id de proyectos, y sigla de empresas, que lee la consulta).
 -- Admin global = perfiles.rol = 'admin' (mismo criterio que sst_es_admin_global
 -- y que resumen-cartera).
 -- Efecto sobre datos existentes: ninguno al aplicarla. Después, cada llamada a
@@ -161,7 +180,128 @@ end $$;
 revoke all on function public.exportacion_estado_vigilar() from public, anon, authenticated;
 grant execute on function public.exportacion_estado_vigilar() to service_role;
 
--- ── 4) Tarea de pg_cron (idempotente: si existe, se reprograma) ─────────────
+-- ── 4) Datos de la exportación (lo llama el workflow por la API) ────────────
+-- Un ÚNICO valor json: nada de SETOF ni de filas. El cuerpo es la sentencia de
+-- exportacion/consulta.sql tal cual (sin su cabecera de comentarios). Si se
+-- cambia uno, hay que cambiar el otro: la prueba de la migración los compara.
+-- SECURITY DEFINER: lee con los permisos del dueño, sin depender de los GRANT
+-- de cada tabla. STABLE: no escribe.
+create or replace function public.exportacion_estado_datos()
+  returns json
+  language sql stable security definer
+  set search_path to 'public', 'pg_temp'
+as $datos$
+select json_build_object(
+  'proyectos', (
+    select coalesce(json_agg(t order by t.codigo nulls last, t.nombre, t.id), '[]'::json) from (
+      select id, empresa_id, emisor_empresa_id, codigo, tipo, nombre, descripcion,
+             contratante, contratista, monto_contrato, fecha_inicio, fecha_fin_planificada,
+             fecha_fin_real, estado, estado_cierre, ubicacion
+        from public.proyectos
+    ) t),
+  'empresas', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select id, nombre, sigla
+        from public.empresas
+    ) t),
+  'rubros', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select id, proyecto_id, codigo, descripcion, monto_contrato, total_produccion, estado
+        from public.rubros
+    ) t),
+  'cronograma_rubros', (
+    select coalesce(json_agg(t order by t.proyecto_id, t.rubro_id, t.created_at, t.id), '[]'::json) from (
+      select id, proyecto_id, rubro_id, linea_base_id, fecha_inicio, fecha_fin, created_at
+        from public.cronograma_rubros
+    ) t),
+  'lineas_base', (
+    select coalesce(json_agg(t order by t.proyecto_id, t.numero, t.id), '[]'::json) from (
+      select id, proyecto_id, numero, activa
+        from public.lineas_base
+    ) t),
+  'planillas_pago', (
+    select coalesce(json_agg(t order by t.proyecto_id, t.numero, t.created_at, t.id), '[]'::json) from (
+      select id, proyecto_id, numero, fecha_inicio, fecha_fin, estado, total_monto, total_liquido,
+             fecha_aprobacion, fecha_pago, created_at, updated_at
+        from public.planillas_pago
+    ) t),
+  'planilla_historial', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select planilla_id, accion, created_at
+        from public.planilla_historial
+    ) t),
+  'garantias', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, tipo, vigencia_hasta, estado
+        from public.garantias
+    ) t),
+  'ordenes_cambio', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, numero, titulo, estado, monto_total, created_at
+        from public.ordenes_cambio
+    ) t),
+  'libro_obra', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id,
+             max(fecha) as ultimo_registro,
+             count(*) filter (where estado_aprobacion = 'pendiente') as pendientes_aprobacion
+        from public.libro_obra
+       group by proyecto_id
+    ) t),
+  'observaciones', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, numero, titulo, estado, creado_por, created_at,
+             (coalesce(descripcion, '') ilike '%Antecedente:%') as con_antecedente
+        from public.observaciones
+    ) t),
+  'ensayos', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select id, proyecto_id, cumple, resuelto, reensayo_de
+        from public.ensayos
+    ) t),
+  'sst_incidentes', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, estado
+        from public.sst_incidentes
+    ) t),
+  'solicitudes', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, estado
+        from public.solicitudes
+    ) t),
+  'archivos', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, modulo, count(*) as cantidad
+        from public.archivos
+       group by proyecto_id, modulo
+    ) t),
+  'proyecto_miembros', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id, usuario_id, perfil_id, rol
+        from public.proyecto_miembros
+    ) t),
+  'perfiles', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select id, nombre, apellido
+        from public.perfiles
+    ) t),
+  'actas_recepcion', (
+    select coalesce(json_agg(t order by t.proyecto_id, t.tipo, t.fecha), '[]'::json) from (
+      select proyecto_id, tipo, fecha
+        from public.actas_recepcion
+    ) t),
+  'liquidaciones', (
+    select coalesce(json_agg(t), '[]'::json) from (
+      select proyecto_id
+        from public.liquidaciones
+    ) t)
+) as datos;
+$datos$;
+
+revoke all on function public.exportacion_estado_datos() from public, anon, authenticated;
+grant execute on function public.exportacion_estado_datos() to service_role;
+
+-- ── 5) Tarea de pg_cron (idempotente: si existe, se reprograma) ─────────────
 do $do$
 begin
   if exists (select 1 from cron.job where jobname = 'exportacion-estado-vigilante') then
@@ -174,6 +314,56 @@ begin
   );
 end $do$;
 
+-- ── 6) Prueba de permisos (si falla, no se aplica nada) ─────────────────────
+-- Intento REAL con cada rol: anon y authenticated tienen que recibir «permission
+-- denied» (42501) al llamar a cada una de las tres funciones. La negativa llega
+-- antes de ejecutar nada, así que el intento no escribe. service_role ejecuta de
+-- verdad la de datos (solo lee); para las dos que escriben se comprueba el
+-- privilegio sin llamarlas.
+do $prueba$
+declare
+  v_rol     text;
+  v_llamada text;
+  v_pudo    boolean;
+  v_tipo    text;
+begin
+  foreach v_rol in array array['anon', 'authenticated'] loop
+    foreach v_llamada in array array[
+      'select public.exportacion_estado_datos()',
+      'select public.exportacion_estado_registrar(true, ''zz prueba de permisos'', null)',
+      'select public.exportacion_estado_vigilar()'] loop
+      execute format('set local role %I', v_rol);
+      v_pudo := true;
+      begin
+        execute v_llamada;
+      exception when insufficient_privilege then
+        v_pudo := false;
+      end;
+      reset role;
+      if v_pudo then
+        raise exception 'Permisos mal puestos: el rol % pudo ejecutar «%».', v_rol, v_llamada using errcode = '42501';
+      end if;
+    end loop;
+    if has_function_privilege(v_rol, 'public.exportacion_estado_datos()', 'execute')
+       or has_function_privilege(v_rol, 'public.exportacion_estado_registrar(boolean, text, text)', 'execute')
+       or has_function_privilege(v_rol, 'public.exportacion_estado_vigilar()', 'execute') then
+      raise exception 'Permisos mal puestos: el rol % conserva EXECUTE sobre alguna función de la exportación.', v_rol using errcode = '42501';
+    end if;
+  end loop;
+
+  if not (has_function_privilege('service_role', 'public.exportacion_estado_datos()', 'execute')
+          and has_function_privilege('service_role', 'public.exportacion_estado_registrar(boolean, text, text)', 'execute')
+          and has_function_privilege('service_role', 'public.exportacion_estado_vigilar()', 'execute')) then
+    raise exception 'Permisos mal puestos: service_role no puede ejecutar alguna función de la exportación.' using errcode = '42501';
+  end if;
+  set local role service_role;
+  select json_typeof(public.exportacion_estado_datos()) into v_tipo;
+  reset role;
+  if v_tipo is distinct from 'object' then
+    raise exception 'exportacion_estado_datos() no devolvió un objeto json (devolvió %).', coalesce(v_tipo, 'null');
+  end if;
+end $prueba$;
+
 commit;
 
 -- ── Verificación (cada bloque hace ROLLBACK, no deja nada escrito) ──────────
@@ -183,11 +373,15 @@ commit;
 --   select grantee, privilege_type from information_schema.role_table_grants
 --    where table_schema = 'public' and table_name = 'exportaciones_estado' and grantee in ('anon','authenticated')
 --    order by 1, 2;                                                          -- solo authenticated | SELECT
---   select has_function_privilege('authenticated', 'public.exportacion_estado_registrar(boolean, text, text)', 'execute'),
---          has_function_privilege('anon',          'public.exportacion_estado_registrar(boolean, text, text)', 'execute'),
---          has_function_privilege('authenticated', 'public.exportacion_estado_vigilar()', 'execute'),
---          has_function_privilege('service_role',  'public.exportacion_estado_registrar(boolean, text, text)', 'execute');
---   -- f | f | f | t
+--   select r.rol,
+--          has_function_privilege(r.rol, 'public.exportacion_estado_datos()', 'execute')                         as datos,
+--          has_function_privilege(r.rol, 'public.exportacion_estado_registrar(boolean, text, text)', 'execute') as registrar,
+--          has_function_privilege(r.rol, 'public.exportacion_estado_vigilar()', 'execute')                       as vigilar
+--     from (values ('anon'), ('authenticated'), ('service_role')) as r(rol);
+--   -- anon | f | f | f      authenticated | f | f | f      service_role | t | t | t
+--   select proname, prosecdef, provolatile, proconfig from pg_proc
+--    where proname like 'exportacion\_estado\_%' order by 1;
+--   -- las tres con prosecdef = t y search_path fijo; exportacion_estado_datos con provolatile = s (STABLE)
 --   select count(*) from pg_proc where proname = 'exportacion_estado_registrar';                     -- 1 (una sola firma)
 --   select jobname, schedule, command, active from cron.job where jobname = 'exportacion-estado-vigilante';
 --   -- exportacion-estado-vigilante | 20 10 * * * | select public.exportacion_estado_vigilar(); | t
@@ -211,11 +405,31 @@ commit;
 --     select public.exportacion_estado_vigilar();                             -- 0 (hay corrida buena)
 --   rollback;
 --
--- 4) Un usuario de la app no puede llamar a las funciones:
+-- 4) anon y authenticated NO pueden ejecutar ninguna de las tres funciones. Son
+--    seis intentos, cada uno en su línea y con su propio rollback (tras el error
+--    la transacción queda abortada). Se ejecutan de una en una y TODAS deben dar
+--    «ERROR: 42501: permission denied for function …»:
+--   begin; set local role anon;          select public.exportacion_estado_datos();                    rollback;
+--   begin; set local role anon;          select public.exportacion_estado_registrar(true, 'zz', null); rollback;
+--   begin; set local role anon;          select public.exportacion_estado_vigilar();                  rollback;
+--   begin; set local role authenticated; select public.exportacion_estado_datos();                    rollback;
+--   begin; set local role authenticated; select public.exportacion_estado_registrar(true, 'zz', null); rollback;
+--   begin; set local role authenticated; select public.exportacion_estado_vigilar();                  rollback;
+--    (Si el editor se queda en «transacción abortada» después de un error, ejecutar «rollback;» suelto.)
+--
+-- 4b) service_role SÍ puede ejecutar las tres (con rollback: no deja nada escrito):
 --   begin;
---     set local role authenticated;
---     select public.exportacion_estado_registrar(true, 'zz');                 -- ERROR: permission denied for function
+--     set local role service_role;
+--     select json_typeof(d) as tipo, (select count(*) from json_object_keys(d)) as claves,
+--            json_array_length(d -> 'proyectos') as proyectos
+--       from public.exportacion_estado_datos() as d;                          -- object | 19 | nº de proyectos de la base
+--     select public.exportacion_estado_registrar(true, 'zz prueba de service_role', null);            -- sin error
+--     select public.exportacion_estado_vigilar();                             -- 0 (acaba de registrarse una corrida buena)
 --   rollback;
+--
+-- 4c) La función de datos devuelve UN valor, no filas (por eso la API no la corta):
+--   select prorettype::regtype as devuelve, proretset as devuelve_filas from pg_proc where proname = 'exportacion_estado_datos';
+--   -- json | f
 --
 -- 5) Una corrida degradada queda ok = true, avisa a cada admin global y el vigilante calla:
 --   begin;
@@ -237,10 +451,11 @@ commit;
 --   rollback;
 
 -- ── Reversión ───────────────────────────────────────────────────────────────
--- Antes, desactivar el workflow estado-diario.yml (si no, cada corrida fallará al registrar).
+-- Antes, desactivar el workflow estado-diario.yml (si no, cada corrida fallará al pedir los datos).
 -- begin;
 --   select cron.unschedule('exportacion-estado-vigilante')
 --     where exists (select 1 from cron.job where jobname = 'exportacion-estado-vigilante');
+--   drop function if exists public.exportacion_estado_datos();
 --   drop function if exists public.exportacion_estado_vigilar();
 --   drop function if exists public.exportacion_estado_registrar(boolean, text, text);
 --   drop function if exists public.exportacion_estado_registrar(boolean, text);

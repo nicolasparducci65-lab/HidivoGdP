@@ -1,5 +1,6 @@
-// Núcleo de indicadores de cartera (cartera-nucleo.js): avance, plan a una fecha, SPI, días de
-// atraso, garantías y semáforo. Carga el módulo REAL con require y prueba cada función con datos
+// Núcleo de indicadores de cartera (cartera-nucleo.js): avance principal (valor ganado) y ejecutado
+// por cantidades, plan a una fecha, SPI, atraso a la fecha y atraso proyectado, «datos por
+// completar», garantías y semáforo (solo proyectos en ejecución). Carga el módulo REAL con require y prueba cada función con datos
 // sintéticos (ningún dato de producción).
 //
 //   node cartera-nucleo.test.js
@@ -8,7 +9,7 @@ const path = require('path');
 const { RAIZ, prueba, resumen, assert } = require('./lib/arnes');
 const N = require(path.join(RAIZ, 'cartera-nucleo.js'));
 const { NUCLEO_CARTERA, nucleoHoyEcuador, nucleoMsDeFecha, nucleoSumarDias, nucleoDiasEntre, nucleoLineaBaseActiva, nucleoFilasCronograma,
-  nucleoFraccionPlan, nucleoAvanceRubro, nucleoEvmProyecto, nucleoGarantias, nucleoSpiTruncado, nucleoSemaforo } = N;
+  nucleoFraccionPlan, nucleoAvanceRubro, nucleoEvmProyecto, nucleoDatosPorCompletar, nucleoGarantias, nucleoSpiTruncado, nucleoSemaforo } = N;
 
 const cerca = (a, b, eps = 1e-9) => typeof a === 'number' && Math.abs(a - b) <= eps;
 function igual(real, esperado, que){
@@ -31,7 +32,16 @@ function lanza(fn, que, patron){
 const rubro = (id, monto, prod, estado = 'trabajando') => ({ id, proyecto_id: 'zzz-p', monto_contrato: monto, total_produccion: prod, estado });
 const fila = (rubroId, ini, fin, lb = 'zzz-lb') => ({ proyecto_id: 'zzz-p', rubro_id: rubroId, fecha_inicio: ini, fecha_fin: fin, linea_base_id: lb });
 // EVM «a mano» para probar el semáforo sin pasar por el cálculo
-const evmDe = (extra = {}) => ({ spi: 1, spiValido: true, atrasoDias: 0, sinCronograma: false, sinLineaBase: false, ...extra });
+const evmDe = (extra = {}) => ({ spi: 1, spiValido: true, atrasoFechaDias: 0, atrasoDias: 0, atrasoProyectadoDias: 0, evPct: 50, planFinalPct: 100, rubros: 1,
+  cronogramaVencido: false, obraProgramadaTerminada: false, sinCronograma: false, sinLineaBase: false, ...extra });
+// Generador pseudoaleatorio de semilla fija (mulberry32): las pruebas de propiedades son repetibles
+function azar(semilla){
+  let a = semilla >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// Semáforo de un proyecto EN EJECUCIÓN (el único estado que lleva color)
+const semEjec = datos => nucleoSemaforo({ estado: 'ejecucion', ...datos });
+const SIN_COLOR = ['planificacion', 'pausado', 'finalizado', 'cancelado'];
 // Conteo de garantías «a mano», con el aviso oficial (el único que admite el semáforo)
 const G = (vencidas, porVencer) => ({ vencidas, porVencer, diasAviso: NUCLEO_CARTERA.GARANTIA_AVISO_DIAS });
 const SIN_GAR = G(0, 0);
@@ -47,12 +57,16 @@ const SIN_GAR = G(0, 0);
     igual(NUCLEO_CARTERA.PENDIENTES_AMARILLO, 5, 'PENDIENTES_AMARILLO');
     igual(NUCLEO_CARTERA.GARANTIA_AVISO_DIAS, 5, 'GARANTIA_AVISO_DIAS');
     igual(NUCLEO_CARTERA.PLAN_MINIMO_PCT, 0.5, 'PLAN_MINIMO_PCT');
+    igual(NUCLEO_CARTERA.DIFERENCIA_AVANCE_PUNTOS, 10, 'DIFERENCIA_AVANCE_PUNTOS');
+    igual(NUCLEO_CARTERA.OBRA_TERMINADA_PCT, 99.95, 'OBRA_TERMINADA_PCT');
+    igual(NUCLEO_CARTERA.SPI_MINIMO_PROYECCION, 0.10, 'SPI_MINIMO_PROYECCION');
+    igual(NUCLEO_CARTERA.ESTADO_CON_SEMAFORO, 'ejecucion', 'ESTADO_CON_SEMAFORO');
     igual(NUCLEO_CARTERA.ZONA, 'America/Guayaquil', 'ZONA');
     assert(Object.isFrozen(NUCLEO_CARTERA), 'NUCLEO_CARTERA está congelado');
   });
 
-  await prueba('el módulo exporta las trece piezas y solo esas', () => {
-    const esperadas = ['NUCLEO_CARTERA', 'nucleoAvanceRubro', 'nucleoDiasEntre', 'nucleoEvmProyecto', 'nucleoFilasCronograma', 'nucleoFraccionPlan',
+  await prueba('el módulo exporta las catorce piezas y solo esas', () => {
+    const esperadas = ['NUCLEO_CARTERA', 'nucleoAvanceRubro', 'nucleoDatosPorCompletar', 'nucleoDiasEntre', 'nucleoEvmProyecto', 'nucleoFilasCronograma', 'nucleoFraccionPlan',
       'nucleoGarantias', 'nucleoHoyEcuador', 'nucleoLineaBaseActiva', 'nucleoMsDeFecha', 'nucleoSemaforo', 'nucleoSpiTruncado', 'nucleoSumarDias'];
     igual(Object.keys(N).sort().join(','), esperadas.join(','), 'exportaciones');
   });
@@ -265,8 +279,12 @@ const SIN_GAR = G(0, 0);
     ]){
       igual(e.vigente, 0, 'vigente'); igual(e.ejecutado, 0, 'ejecutado'); igual(e.realPct, 0, 'realPct');
       igual(e.planPct, 0, 'planPct'); igual(e.evPct, 0, 'evPct');
+      igual(e.avancePct, 0, 'avancePct'); igual(e.diferenciaAvancePuntos, 0, 'diferenciaAvancePuntos');
       igual(e.spi, null, 'spi'); igual(e.spiValido, false, 'spiValido'); igual(e.atrasoDias, 0, 'atrasoDias');
-      igual(e.rubrosConCronograma, 0, 'rubrosConCronograma'); igual(e.sinCronograma, true, 'sinCronograma');
+      // Sin cronograma no hay con qué medir ningún atraso: los dos son null (y el alias del semáforo, 0)
+      igual(e.atrasoFechaDias, null, 'atrasoFechaDias'); igual(e.atrasoProyectadoDias, null, 'atrasoProyectadoDias'); igual(e.fechaGanada, null, 'fechaGanada');
+      igual(e.rubros, 0, 'rubros'); igual(e.planFinalPct, 0, 'planFinalPct'); igual(e.obraProgramadaTerminada, false, 'obraProgramadaTerminada');
+      igual(e.rubrosConCronograma, 0, 'rubrosConCronograma'); igual(e.rubrosSinCronograma, 0, 'rubrosSinCronograma'); igual(e.sinCronograma, true, 'sinCronograma');
       igual(e.sinLineaBase, true, 'sinLineaBase'); igual(e.primerInicio, null, 'primerInicio'); igual(e.ultimoFin, null, 'ultimoFin');
       igual(e.cronogramaVencido, false, 'cronogramaVencido');
     }
@@ -282,9 +300,10 @@ const SIN_GAR = G(0, 0);
     casi(t.spi, e.spi, 'mismo SPI que con trabajando'); casi(t.evPct, e.evPct, 'mismo valor ganado');
   });
 
-  await prueba('EVM: rubros sin cronograma → hay avance real pero no SPI', () => {
+  await prueba('EVM: rubros sin cronograma → hay avance pero no SPI', () => {
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 600, 150), rubro('r2', 400, 100)], cronograma: [], lineaBaseActivaId: 'zzz-lb', hoy: '2026-11-21' });
     igual(e.vigente, 1000, 'vigente'); igual(e.ejecutado, 250, 'ejecutado'); igual(e.realPct, 25, 'realPct');
+    casi(e.avancePct, 25, 'avancePct (valor ganado sobre todos los rubros)'); igual(e.rubrosSinCronograma, 2, 'rubrosSinCronograma');
     igual(e.spi, null, 'spi'); igual(e.sinCronograma, true, 'sinCronograma'); igual(e.sinLineaBase, false, 'tiene línea base, pero vacía');
   });
 
@@ -295,7 +314,7 @@ const SIN_GAR = G(0, 0);
     igual(e.atrasoDias, 0, 'atraso'); igual(e.rubrosConCronograma, 1, 'la fila sí cuenta como cronograma'); igual(e.sinCronograma, false, 'sinCronograma');
   });
 
-  await prueba('EVM: caso base — pesos por monto, plan a la fecha, SPI y atraso', () => {
+  await prueba('EVM: caso base — pesos por monto, plan a la fecha, SPI y los dos atrasos', () => {
     // r1 pesa 60 %, va del 1 al 11 de enero; r2 pesa 40 %, del 11 al 21. Hoy 6-ene: r1 a la mitad.
     const e = nucleoEvmProyecto({
       rubros: [rubro('r1', 600, 150), rubro('r2', 400, 0)],
@@ -305,12 +324,19 @@ const SIN_GAR = G(0, 0);
     igual(e.vigente, 1000, 'vigente'); igual(e.ejecutado, 150, 'ejecutado');
     casi(e.realPct, 15, 'realPct'); casi(e.planPct, 30, 'planPct = 60 × 0,5'); casi(e.evPct, 15, 'evPct = 60 × 25 %');
     casi(e.spi, 0.5, 'spi'); igual(e.spiValido, true, 'spiValido');
-    igual(e.atrasoDias, 5, 'atraso = 5 días transcurridos × (1/0,5 − 1)');
+    // Atraso a la fecha: el plan sube 6 puntos por día; el último día en que no superaba el 15 % ganado es el día 2
+    // (12 %; el día 3 ya iba en 18 %) → 3-ene
+    igual(e.fechaGanada, '2026-01-03', 'fechaGanada'); igual(e.atrasoFechaDias, 3, 'atraso a la fecha: del 3 al 6 de enero');
+    igual(e.atrasoDias, e.atrasoFechaDias, 'atrasoDias es el atraso a la fecha');
+    igual(e.atrasoProyectadoDias, 20, 'atraso proyectado = 20 días de cronograma × (1/0,5 − 1)');
+    casi(e.avancePct, 15, 'avance principal = valor ganado'); igual(e.diferenciaAvancePuntos, 0, 'sin diferencia con el ejecutado'); igual(e.rubrosSinCronograma, 0, 'rubrosSinCronograma');
     igual(e.rubrosConCronograma, 2, 'rubrosConCronograma'); igual(e.sinCronograma, false, 'sinCronograma'); igual(e.sinLineaBase, false, 'sinLineaBase');
     igual(e.primerInicio, '2026-01-01', 'primerInicio'); igual(e.ultimoFin, '2026-01-21', 'ultimoFin');
+    igual(e.rubros, 2, 'rubros'); casi(e.planFinalPct, 100, 'planFinalPct: todo el proyecto está programado');
+    igual(e.obraProgramadaTerminada, false, 'obraProgramadaTerminada'); igual(e.cronogramaVencido, false, 'cronogramaVencido');
   });
 
-  await prueba('EVM: el avance real suma TODOS los rubros; el SPI solo los que tienen cronograma', () => {
+  await prueba('EVM: el avance principal y el ejecutado por cantidades suman TODOS los rubros; el SPI, solo los que tienen cronograma', () => {
     const e = nucleoEvmProyecto({
       rubros: [rubro('r1', 600, 150), rubro('r2', 400, 0), rubro('r3', 1000, 1000)],   // r3 completo, sin cronograma
       cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-11', '2026-01-21')],
@@ -319,6 +345,9 @@ const SIN_GAR = G(0, 0);
     igual(e.vigente, 2000, 'vigente'); casi(e.realPct, 57.5, 'realPct incluye r3');
     casi(e.planPct, 15, 'planPct (los pesos son sobre el monto vigente total)'); casi(e.evPct, 7.5, 'evPct no incluye r3');
     casi(e.spi, 0.5, 'spi no cambia por un rubro sin cronograma'); igual(e.rubrosConCronograma, 2, 'rubrosConCronograma');
+    casi(e.avancePct, 57.5, 'avance principal = valor ganado de todos: 30 × 25 % + 20 × 0 % + 50 × 100 % (incluye r3)'); igual(e.rubrosSinCronograma, 1, 'rubrosSinCronograma');
+    igual(e.rubros, 3, 'rubros'); casi(e.planFinalPct, 50, 'planFinalPct: solo la mitad del monto está programada');
+    casi(e.diferenciaAvancePuntos, 0, 'sin diferencia con el ejecutado: ningún rubro terminado ni pasado de monto');
   });
 
   await prueba('EVM: rubro terminado cuenta 100 % en el SPI aunque su producción no llegue', () => {
@@ -346,7 +375,7 @@ const SIN_GAR = G(0, 0);
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 200)], cronograma: [fila('r1', '2026-03-01', '2026-03-31')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-02-15' });
     igual(e.planPct, 0, 'planPct'); casi(e.evPct, 20, 'evPct'); igual(e.spi, null, 'spi'); igual(e.spiValido, false, 'spiValido');
     igual(e.atrasoDias, 0, 'atraso'); igual(e.sinCronograma, false, 'tiene cronograma');
-    igual(nucleoSemaforo({ evm: e, garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'verde');
+    igual(semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'verde');
   });
 
   await prueba('EVM: hoy después del fin → plan 100 %', () => {
@@ -357,7 +386,7 @@ const SIN_GAR = G(0, 0);
   await prueba('EVM: adelantado (SPI > 1) no tiene atraso', () => {
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 800)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-06' });
     casi(e.spi, 1.6, 'spi'); igual(e.atrasoDias, 0, 'atraso');
-    igual(nucleoSemaforo({ evm: e, garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'verde');
+    igual(semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'verde');
   });
 
   await prueba('EVM: hito (inicio = fin) cuenta entero desde su día', () => {
@@ -414,7 +443,7 @@ const SIN_GAR = G(0, 0);
     // r1 pesa 0,4 % y ya debía estar hecho; no se ha ejecutado nada: SPI 0
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 4, 0), rubro('r2', 996, 0)], cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-06-01', '2026-12-01')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01' });
     casi(e.planPct, 0.4, 'planPct'); igual(e.spi, 0, 'spi'); igual(e.spiValido, false, 'spiValido'); igual(e.atrasoDias, 0, 'atraso');
-    const s = nucleoSemaforo({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+    const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
     igual(s.color, 'verde', 'color'); igual(s.motivos.join('|'), 'plan a la fecha todavía menor al 0,5 %', 'motivo');
   });
 
@@ -424,37 +453,369 @@ const SIN_GAR = G(0, 0);
     igual(justo.planPct, 0.5, 'planPct exacto'); igual(justo.spiValido, false, 'con 0,5 % exacto no es válido');
     const pasa = nucleoEvmProyecto({ rubros: [rubro('r1', 6, 0), rubro('r2', 994, 0)], cronograma: cron, lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01' });
     casi(pasa.planPct, 0.6, 'planPct'); igual(pasa.spiValido, true, 'con 0,6 % ya es válido');
-    igual(nucleoSemaforo({ evm: pasa, garantias: SIN_GAR, pendientes: 0 }).color, 'rojo', 'y entonces el SPI 0 pinta rojo');
+    igual(semEjec({ evm: pasa, garantias: SIN_GAR, pendientes: 0 }).color, 'rojo', 'y entonces el SPI 0 pinta rojo');
   });
 
   await prueba('EVM: SPI 0 con plan significativo → rojo, sin división entre cero en el atraso', () => {
     const e = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-06' });
-    igual(e.spi, 0, 'spi'); igual(e.spiValido, true, 'spiValido'); igual(e.atrasoDias, 0, 'atraso (no se estima con SPI 0)');
-    assert(Number.isFinite(e.atrasoDias), 'atraso finito');
-    const s = nucleoSemaforo({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+    igual(e.spi, 0, 'spi'); igual(e.spiValido, true, 'spiValido');
+    igual(e.atrasoFechaDias, 5, 'atraso a la fecha: los 5 días transcurridos desde el inicio'); assert(Number.isFinite(e.atrasoFechaDias), 'atraso finito');
+    igual(e.atrasoProyectadoDias, null, 'atraso proyectado: no estimable con SPI 0');
+    const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
     igual(s.color, 'rojo', 'color'); igual(s.motivos[0], 'SPI 0,00', 'motivo');
   });
 
   await prueba('EVM + semáforo: umbrales exactos 0,85 (amarillo, no rojo) y 0,95 (verde, no amarillo)', () => {
     const con = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 100, prod)], cronograma: [fila('r1', '2026-01-01', '2026-01-02')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-02' });
-    const color = prod => nucleoSemaforo({ evm: con(prod), garantias: SIN_GAR, pendientes: 0 }).color;
+    const color = prod => semEjec({ evm: con(prod), garantias: SIN_GAR, pendientes: 0 }).color;
     igual(con(85).spi, 0.85, 'spi exacto 0,85'); igual(con(95).spi, 0.95, 'spi exacto 0,95');
     igual(color(84), 'rojo', '0,84'); igual(color(85), 'amarillo', '0,85 exacto'); igual(color(94), 'amarillo', '0,94');
     igual(color(95), 'verde', '0,95 exacto'); igual(color(100), 'verde', '1,00');
   });
 
-  await prueba('EVM + semáforo: atraso de 30 días no es rojo; de 31, sí', () => {
-    // Actividad de 270 días, SPI 0,90: atraso = días transcurridos × (1/0,9 − 1). Un hito sin peso
-    // a fin de 2027 mantiene el cronograma sin vencer, para que los días sigan corriendo.
-    const con = hoy => nucleoEvmProyecto({ rubros: [rubro('r1', 100, 90), rubro('r2', 0, 0)],
-      cronograma: [fila('r1', '2026-01-01', '2026-09-28'), fila('r2', '2027-12-31', '2027-12-31')], lineaBaseActivaId: 'zzz-lb', hoy });
-    const a270 = con('2026-09-28'), a279 = con('2026-10-07');
-    igual(a279.cronogramaVencido, false, 'el cronograma no ha vencido');
-    casi(a270.spi, 0.9, 'spi'); igual(a270.atrasoDias, 30, '270 días transcurridos → 30'); igual(a279.atrasoDias, 31, '279 días transcurridos → 31');
-    const s30 = nucleoSemaforo({ evm: a270, garantias: SIN_GAR, pendientes: 0 });
-    igual(s30.color, 'amarillo', '30 días: manda el SPI 0,90'); igual(s30.motivos.join('|'), 'SPI 0,90', 'motivos con 30');
-    const s31 = nucleoSemaforo({ evm: a279, garantias: SIN_GAR, pendientes: 0 });
-    igual(s31.color, 'rojo', '31 días'); igual(s31.motivos.join('|'), 'atraso estimado de 31 días|SPI 0,90', 'motivos con 31: primero el que decide');
+  // ── Avance principal (valor ganado) y ejecutado por cantidades ────────────
+  await prueba('avance principal = valor ganado de TODOS los rubros; evPct (el numerador del SPI), solo de los que tienen cronograma', () => {
+    // r1 (50 %) terminado con 80 % de producción; r2 (30 %) al 50 %; r3 (20 %) completo pero SIN cronograma
+    const e = nucleoEvmProyecto({
+      rubros: [rubro('r1', 500, 400, 'terminado'), rubro('r2', 300, 150), rubro('r3', 200, 200)],
+      cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-01', '2026-01-11')],
+      lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-11'
+    });
+    casi(e.evPct, 65, 'valor ganado en cronograma = 50 × 100 % + 30 × 50 %'); casi(e.avancePct, 85, 'avance principal = 65 + 20 × 100 % del rubro sin cronograma');
+    casi(e.planPct, 80, 'plan'); casi(e.planFinalPct, 80, 'peso con cronograma'); casi(e.spi, 65 / 80, 'SPI = valor ganado en cronograma / plan (no el avance principal / plan)');
+    casi(e.realPct, 75, 'ejecutado por cantidades = 750 / 1000 (se informa aparte)');
+    casi(e.diferenciaAvancePuntos, 10, 'diferencia = |85 − 75|');
+    igual(e.sinCronograma, false, 'sinCronograma'); igual(e.rubrosSinCronograma, 1, 'un rubro sin cronograma'); igual(e.rubros, 3, 'rubros');
+    // Con todos los rubros en el cronograma los dos números son el mismo
+    const todos = nucleoEvmProyecto({
+      rubros: [rubro('r1', 500, 400, 'terminado'), rubro('r2', 300, 150), rubro('r3', 200, 200)],
+      cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-01', '2026-01-11'), fila('r3', '2026-01-01', '2026-01-11')],
+      lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-11'
+    });
+    casi(todos.avancePct, 85, 'todos con cronograma: avance'); igual(todos.avancePct, todos.evPct, 'todos con cronograma: avancePct ES evPct');
+  });
+
+  await prueba('avance principal SIN cronograma = valor ganado sobre todos los rubros (terminado = 100 %, tope 100 % por rubro)', () => {
+    const e = nucleoEvmProyecto({ rubros: [rubro('r1', 600, 150), rubro('r2', 400, 100, 'terminado')], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(e.sinCronograma, true, 'sinCronograma');
+    casi(e.avancePct, 55, 'avance = 60 × 25 % + 40 × 100 %'); casi(e.realPct, 25, 'ejecutado por cantidades = 250 / 1000');
+    casi(e.diferenciaAvancePuntos, 30, 'diferencia'); igual(e.evPct, 0, 'evPct (el del SPI) sigue en 0: no hay cronograma'); igual(e.spi, null, 'sin SPI');
+    // Tope por rubro: producción mayor que el monto no pasa de 100 en el avance principal
+    const pasado = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 1500)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    casi(pasado.avancePct, 100, 'avance principal con tope'); casi(pasado.realPct, 150, 'ejecutado por cantidades sin tope'); casi(pasado.diferenciaAvancePuntos, 50, 'diferencia');
+    // Línea base activa sin filas: también es «sin cronograma»
+    const lbVacia = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 300)], cronograma: [fila('r1', '2026-01-01', '2026-02-01', 'zzz-lb-vieja')], lineaBaseActivaId: 'zzz-lb-nueva', hoy: '2026-11-21' });
+    casi(lbVacia.avancePct, 30, 'línea base activa vacía: avance sobre todos los rubros');
+  });
+
+  await prueba('diferencia con el ejecutado por cantidades: valor absoluto, en los dos sentidos', () => {
+    const base = { cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-11' };
+    // Valor ganado por encima: rubro terminado con poca producción
+    const arriba = nucleoEvmProyecto({ ...base, rubros: [rubro('r1', 1000, 600, 'terminado')] });
+    casi(arriba.avancePct, 100, 'avance'); casi(arriba.realPct, 60, 'ejecutado'); casi(arriba.diferenciaAvancePuntos, 40, 'diferencia +40');
+    // Valor ganado por debajo: producción mayor que el monto (el avance del rubro tiene tope 100 %; el ejecutado, no)
+    const abajo = nucleoEvmProyecto({ ...base, rubros: [rubro('r1', 500, 100), rubro('r2', 500, 900)] });
+    casi(abajo.avancePct, 60, 'avance = 50 × 20 % + 50 × 100 %'); casi(abajo.realPct, 100, 'ejecutado = 1000 / 1000'); casi(abajo.diferenciaAvancePuntos, 40, 'diferencia −40, en valor absoluto');
+    // Un rubro sin cronograma ya no abre diferencia: cuenta en los dos avances
+    const sinCron = nucleoEvmProyecto({ ...base, rubros: [rubro('r1', 500, 100), rubro('r2', 500, 500)] });
+    casi(sinCron.avancePct, 60, 'rubro sin cronograma: avance'); casi(sinCron.realPct, 60, 'rubro sin cronograma: ejecutado'); casi(sinCron.diferenciaAvancePuntos, 0, 'rubro sin cronograma: sin diferencia');
+    // Sin diferencia cuando todo tiene cronograma y nada está «terminado» ni pasado de monto
+    const igualados = nucleoEvmProyecto({ ...base, rubros: [rubro('r1', 1000, 370)] });
+    casi(igualados.diferenciaAvancePuntos, 0, 'sin diferencia');
+  });
+
+  await prueba('nucleoDatosPorCompletar: umbral exacto — 10 puntos no avisa; más de 10, sí', () => {
+    const con = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod, 'terminado')], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-02-01' });
+    igual(con(900).diferenciaAvancePuntos, 10, 'diferencia exacta de 10 puntos (100 − 90)');
+    igual(nucleoDatosPorCompletar({ evm: con(900), estado: 'ejecucion' }).length, 0, '10 puntos exactos: sin aviso');
+    igual(nucleoDatosPorCompletar({ evm: con(950), estado: 'ejecucion' }).length, 0, '5 puntos: sin aviso');
+    const avisos = nucleoDatosPorCompletar({ evm: con(899), estado: 'ejecucion' });
+    igual(avisos.length, 1, '10,1 puntos: un aviso');
+    igual(avisos[0], 'el valor ganado (100,0 %) y el ejecutado por cantidades (89,9 %) difieren en más de 10 puntos', 'texto del aviso');
+    // Con el EVM «a mano», justo en el umbral y un pelo por encima
+    igual(nucleoDatosPorCompletar({ evm: { avancePct: 50, realPct: 40, diferenciaAvancePuntos: NUCLEO_CARTERA.DIFERENCIA_AVANCE_PUNTOS, ejecutado: 1 }, estado: 'ejecucion' }).length, 0, 'umbral exacto a mano');
+    igual(nucleoDatosPorCompletar({ evm: { avancePct: 50, realPct: 39.99, diferenciaAvancePuntos: 10.01, ejecutado: 1 }, estado: 'ejecucion' }).length, 1, '10,01 a mano');
+    // El aviso de diferencia no depende del estado
+    for(const estado of ['ejecucion', ...SIN_COLOR]) assert(nucleoDatosPorCompletar({ evm: con(500), estado }).some(a => /difieren en más de 10 puntos/.test(a)), 'diferencia de 50 puntos en ' + estado);
+  });
+
+  await prueba('nucleoDatosPorCompletar: proyecto finalizado sin producción registrada', () => {
+    const sinProd = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(nucleoDatosPorCompletar({ evm: sinProd, estado: 'finalizado' }).join('|'), 'proyecto finalizado sin producción registrada', 'finalizado sin producción');
+    for(const estado of ['ejecucion', 'planificacion', 'pausado', 'cancelado']) igual(nucleoDatosPorCompletar({ evm: sinProd, estado }).length, 0, estado + ' sin producción: sin aviso');
+    const conProd = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 1)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(nucleoDatosPorCompletar({ evm: conProd, estado: 'finalizado' }).length, 0, 'finalizado con algo de producción: sin aviso');
+    igual(nucleoDatosPorCompletar({ evm: nucleoEvmProyecto({ hoy: '2026-11-21' }), estado: 'finalizado' }).join('|'), 'proyecto finalizado sin rubros', 'finalizado sin rubros: avisa con su propio texto');
+    // Finalizado con los rubros marcados «terminado» y sin producción: los dos avisos, primero la diferencia
+    const marcados = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0, 'terminado')], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(nucleoDatosPorCompletar({ evm: marcados, estado: 'finalizado' }).join('|'),
+      'el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos|proyecto finalizado sin producción registrada', 'los dos avisos');
+    // Sin argumentos o sin EVM no revienta: falta el estado, y eso es justo lo que avisa
+    igual(nucleoDatosPorCompletar().join('|'), 'proyecto sin estado registrado', 'sin argumentos'); igual(nucleoDatosPorCompletar({}).join('|'), 'proyecto sin estado registrado', 'objeto vacío');
+    igual(nucleoDatosPorCompletar({ estado: 'ejecucion' }).length, 0, 'en ejecución sin EVM: sin avisos');
+    igual(nucleoDatosPorCompletar({ estado: 'finalizado' }).join('|'), 'proyecto finalizado sin rubros', 'finalizado sin EVM: no consta ningún rubro');
+  });
+
+  await prueba('nucleoDatosPorCompletar: proyecto finalizado SIN RUBROS (aviso propio, distinto del de sin producción)', () => {
+    const vacio = nucleoEvmProyecto({ rubros: [], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(vacio.rubros, 0, 'EVM: 0 rubros');
+    igual(nucleoDatosPorCompletar({ evm: vacio, estado: 'finalizado' }).join('|'), 'proyecto finalizado sin rubros', 'finalizado sin rubros');
+    // Solo en finalizado: un proyecto en planificación sin rubros es normal
+    for(const estado of ['ejecucion', 'planificacion', 'pausado', 'cancelado']) igual(nucleoDatosPorCompletar({ evm: vacio, estado }).length, 0, estado + ' sin rubros: sin aviso');
+    // Con rubros pero sin producción es el otro aviso, no los dos
+    const conRubro = nucleoEvmProyecto({ rubros: [rubro('r1', 0, 0)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(conRubro.rubros, 1, 'EVM: 1 rubro (de monto 0)');
+    igual(nucleoDatosPorCompletar({ evm: conRubro, estado: 'finalizado' }).join('|'), 'proyecto finalizado sin producción registrada', 'finalizado con un rubro vacío');
+  });
+
+  await prueba('nucleoDatosPorCompletar: proyecto sin estado (null, undefined o vacío) → «proyecto sin estado registrado», primero', () => {
+    const bien = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 500)], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    for(const [que, estado] of [['null', null], ['undefined', undefined], ['texto vacío', '']]){
+      igual(nucleoDatosPorCompletar({ evm: bien, estado }).join('|'), 'proyecto sin estado registrado', 'estado ' + que);
+    }
+    for(const estado of ['ejecucion', ...SIN_COLOR]) assert(!nucleoDatosPorCompletar({ evm: bien, estado }).includes('proyecto sin estado registrado'), estado + ': tiene estado, no avisa');
+    // Se suma a los demás avisos, y va primero
+    const marcados = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0, 'terminado')], cronograma: [], lineaBaseActivaId: null, hoy: '2026-11-21' });
+    igual(nucleoDatosPorCompletar({ evm: marcados, estado: null }).join('|'),
+      'proyecto sin estado registrado|el valor ganado (100,0 %) y el ejecutado por cantidades (0,0 %) difieren en más de 10 puntos', 'sin estado + diferencia');
+    // Sin estado no es «finalizado»: no arrastra los avisos de finalizado
+    igual(nucleoDatosPorCompletar({ evm: nucleoEvmProyecto({ hoy: '2026-11-21' }), estado: null }).join('|'), 'proyecto sin estado registrado', 'sin estado y sin rubros');
+  });
+
+  // ── Atraso a la fecha (cronograma ganado) ─────────────────────────────────
+  // Actividad única de 100 días (1-ene a 11-abr-2026) que vale todo el proyecto: el plan sube 1 punto por día.
+  const lineal = (prod, hoy, estado = 'trabajando') => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod, estado)], cronograma: [fila('r1', '2026-01-01', '2026-04-11')], lineaBaseActivaId: 'zzz-lb', hoy });
+
+  await prueba('atraso a la fecha, caso lineal a mano: del ÚLTIMO día en que el plan no superaba el valor ganado de hoy', () => {
+    igual(nucleoDiasEntre('2026-01-01', '2026-04-11'), 100, 'el cronograma dura 100 días');
+    // Día 60 (2-mar) con 45 % ganado: el plan preveía 45 % el día 45 (15-feb) → 15 días
+    const e = lineal(450, '2026-03-02');
+    casi(e.planPct, 60, 'plan'); casi(e.evPct, 45, 'valor ganado'); casi(e.spi, 0.75, 'SPI');
+    igual(e.fechaGanada, '2026-02-15', 'fechaGanada'); igual(e.atrasoFechaDias, 15, 'atraso a la fecha'); igual(e.atrasoDias, 15, 'atrasoDias (alias)');
+    // Entre dos días se toma el último en que el plan todavía no lo superaba: 45,5 % → día 45 (el 46 ya iba en 46 %) → 15 días
+    const f = lineal(455, '2026-03-02');
+    igual(f.fechaGanada, '2026-02-15', 'fechaGanada con 45,5 %'); igual(f.atrasoFechaDias, 15, 'atraso con 45,5 %');
+    // …y un pelo por debajo de 45 % ya es el día 44 → 16 días
+    const g = lineal(449, '2026-03-02');
+    igual(g.fechaGanada, '2026-02-14', 'fechaGanada con 44,9 %'); igual(g.atrasoFechaDias, 16, 'atraso con 44,9 %');
+    // Cualquier valor por debajo del plan de hoy es al menos un día: 59,9 % el día 60 → día 59
+    igual(lineal(599, '2026-03-02').atrasoFechaDias, 1, '59,9 % el día 60');
+    // Un punto por debajo del plan = un día
+    igual(lineal(590, '2026-03-02').atrasoFechaDias, 1, '59 % el día 60');
+    // Cada día sin producir es un día más de atraso
+    igual(lineal(450, '2026-03-03').atrasoFechaDias, 16, 'al día siguiente, 16');
+    igual(lineal(450, '2026-03-12').atrasoFechaDias, 25, 'diez días después, 25');
+  });
+
+  await prueba('atraso a la fecha: 0 si va al día o adelantado; null (no medible) antes de empezar y sin cronograma', () => {
+    for(const [que, e] of [['al día (60 % el día 60)', lineal(600, '2026-03-02')], ['adelantado (80 % el día 60)', lineal(800, '2026-03-02')],
+      ['completo antes de tiempo', lineal(1000, '2026-03-02')], ['terminado', lineal(0, '2026-03-02', 'terminado')]]){
+      igual(e.atrasoFechaDias, 0, que + ': atraso a la fecha'); igual(e.fechaGanada, null, que + ': sin fecha ganada'); igual(e.atrasoProyectadoDias, 0, que + ': atraso proyectado');
+      igual(e.atrasoDias, 0, que + ': atrasoDias');
+    }
+    // Sin plan a la fecha (o sin cronograma) no hay con qué medir: null en los dos atrasos, y 0 en el que usa el semáforo
+    const sinCron = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0)], cronograma: [], lineaBaseActivaId: 'zzz-lb', hoy: '2030-01-01' });
+    for(const [que, e] of [['antes del inicio', lineal(0, '2025-12-15')], ['el día del inicio', lineal(0, '2026-01-01')], ['sin cronograma', sinCron]]){
+      igual(e.atrasoFechaDias, null, que + ': atraso a la fecha'); igual(e.fechaGanada, null, que + ': sin fecha ganada'); igual(e.atrasoProyectadoDias, null, que + ': atraso proyectado');
+      igual(e.atrasoDias, 0, que + ': atrasoDias = atrasoFechaDias || 0'); igual(e.spiValido, false, que + ': SPI no válido');
+    }
+  });
+
+  await prueba('atraso a la fecha: NUNCA supera los días transcurridos desde el primer inicio (valor ganado 0, y vencido hace meses)', () => {
+    // Sin nada ejecutado el atraso es exactamente lo transcurrido desde el inicio: ni un día más
+    for(const hoy of ['2026-01-02', '2026-01-11', '2026-03-02', '2026-04-11', '2026-04-12', '2026-07-20', '2026-11-21', '2027-11-21']){
+      const e = lineal(0, hoy), transcurridos = nucleoDiasEntre('2026-01-01', hoy);
+      igual(e.fechaGanada, '2026-01-01', hoy + ': con valor ganado 0 la fecha ganada es el primer inicio');
+      igual(e.atrasoFechaDias, transcurridos, hoy + ': atraso = días transcurridos (' + transcurridos + ')');
+    }
+    // Una obra que empezó en septiembre no puede llevar 319 días de atraso en noviembre
+    const sept = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 0)], cronograma: [fila('r1', '2026-09-07', '2026-10-07')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-11-21' });
+    igual(sept.cronogramaVencido, true, 'cronograma de 30 días vencido'); igual(sept.atrasoFechaDias, 75, 'atraso = 75 días desde el 7-sep, no más');
+    // Cronograma vencido hace meses con la obra a medias: sigue acotado, y es hoy − fecha ganada
+    const vencido = lineal(400, '2026-11-21');
+    igual(vencido.cronogramaVencido, true, 'vencido'); igual(vencido.fechaGanada, '2026-02-10', 'el 40 % se preveía el día 40');
+    igual(vencido.atrasoFechaDias, nucleoDiasEntre('2026-02-10', '2026-11-21'), 'atraso = de la fecha ganada a hoy'); igual(vencido.atrasoFechaDias, 284, 'son 284 días');
+    assert(vencido.atrasoFechaDias <= nucleoDiasEntre('2026-01-01', '2026-11-21'), 'no supera los 324 transcurridos');
+    // Barrido: muchas combinaciones de producción y fecha, con rubros escalonados y uno que empieza tarde
+    const cron = [fila('r1', '2026-02-01', '2026-03-01'), fila('r2', '2026-02-15', '2026-06-15'), fila('r3', '2026-09-01', '2026-09-01')];
+    let casos = 0, medibles = 0;
+    for(let i = 0; i <= 40; i++){
+      const hoy = nucleoSumarDias('2026-01-20', i * 13);
+      for(const [p1, p2, p3] of [[0, 0, 0], [10, 0, 0], [300, 5, 0], [500, 200, 0], [500, 299, 0], [500, 300, 199], [0, 300, 200]]){
+        const e = nucleoEvmProyecto({ rubros: [rubro('r1', 500, p1), rubro('r2', 300, p2), rubro('r3', 200, p3)], cronograma: cron, lineaBaseActivaId: 'zzz-lb', hoy });
+        const tope = Math.max(0, nucleoDiasEntre('2026-02-01', hoy));
+        // null solo cuando el plan a la fecha aún no llega al mínimo (antes de empezar); si no, un entero acotado
+        if(!e.spiValido){ igual(e.atrasoFechaDias, null, `hoy ${hoy}, producción ${p1}/${p2}/${p3}: sin SPI válido el atraso es null`); assert(e.planPct <= NUCLEO_CARTERA.PLAN_MINIMO_PCT, `hoy ${hoy}: plan ${e.planPct} sin SPI válido`); }
+        else assert(Number.isInteger(e.atrasoFechaDias) && e.atrasoFechaDias >= 0 && e.atrasoFechaDias <= tope, `hoy ${hoy}, producción ${p1}/${p2}/${p3}: atraso ${e.atrasoFechaDias} fuera de 0..${tope}`);
+        if(e.fechaGanada !== null) assert(e.fechaGanada >= '2026-02-01' && e.fechaGanada <= hoy, `hoy ${hoy}: fecha ganada ${e.fechaGanada} fuera del intervalo`);
+        igual(e.atrasoDias, e.atrasoFechaDias || 0, 'atrasoDias = atrasoFechaDias || 0');
+        casos++; if(e.spiValido) medibles++;
+      }
+    }
+    igual(casos, 287, 'combinaciones probadas'); assert(medibles >= 270, 'casi todas con atraso medible (' + medibles + ')');
+  });
+
+  await prueba('atraso a la fecha con varios rubros escalonados: el día exacto', () => {
+    // r1 pesa 50 % (1 a 11-ene), r2 30 % (6 a 26-ene), r3 20 % (21 a 31-ene). Plan por día desde el 1-ene:
+    //   día 9: 51 · día 10: 57,5 · día 11: 59 · día 12: 60,5 · … · día 22 (23-ene): 79,5
+    const con = (p2, hoy = '2026-01-23') => nucleoEvmProyecto({
+      rubros: [rubro('r1', 500, 500), rubro('r2', 300, p2), rubro('r3', 200, 0)],
+      cronograma: [fila('r3', '2026-01-21', '2026-01-31'), fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-06', '2026-01-26')],
+      lineaBaseActivaId: 'zzz-lb', hoy
+    });
+    const e = con(60);                       // valor ganado 50 + 6 = 56
+    igual(e.primerInicio, '2026-01-01', 'primerInicio'); igual(e.ultimoFin, '2026-01-31', 'ultimoFin');
+    casi(e.planPct, 79.5, 'plan del 23-ene = 50 + 25,5 + 4'); casi(e.evPct, 56, 'valor ganado');
+    igual(e.fechaGanada, '2026-01-10', 'el último día en que el plan no superaba 56 es el día 9 (51; el día 10 ya iba en 57,5)'); igual(e.atrasoFechaDias, 13, 'del 10 al 23 de enero');
+    igual(con(75).fechaGanada, '2026-01-11', 'con 57,5 exactos ya es el día 10'); igual(con(75).atrasoFechaDias, 12, '57,5: 12 días');
+    igual(con(76).fechaGanada, '2026-01-11', 'con 57,6 sigue siendo el día 10 (el 11 iba en 59)'); igual(con(76).atrasoFechaDias, 12, '57,6: 12 días');
+    igual(con(104).fechaGanada, '2026-01-12', 'con 60,4, el día 11 (59; el 12 iba en 60,5)'); igual(con(104).atrasoFechaDias, 11, '60,4: 11 días');
+    igual(con(105).fechaGanada, '2026-01-13', 'con 60,5 exactos, el día 12'); igual(con(105).atrasoFechaDias, 10, '60,5: 10 días');
+    // El plan a hoy (79,5) exige r2 al 85 % y r3 al 20 %: con r2 completo (80) va adelantado
+    igual(con(300).atrasoFechaDias, 0, 'adelantado: 0');
+    // Un mes después de vencer, con el mismo 56 %: la fecha ganada no se mueve, el atraso sí
+    const tarde = con(60, '2026-03-02');
+    igual(tarde.cronogramaVencido, true, 'vencido'); igual(tarde.fechaGanada, '2026-01-10', 'misma fecha ganada'); igual(tarde.atrasoFechaDias, 51, 'del 10-ene al 2-mar');
+  });
+
+  await prueba('atraso a la fecha con MESETA en el plan (pausa programada de meses): se cuenta desde el fin de la pausa, sin el hueco', () => {
+    // Fase 1 (50 %): 1 a 11-ene. Pausa programada. Fase 2 (50 %): 1 a 11-jul. Entre el 11-ene y el 1-jul el plan está plano en 50 %.
+    const con = (p1, p2, hoy) => nucleoEvmProyecto({ rubros: [rubro('r1', 500, p1), rubro('r2', 500, p2)],
+      cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-07-01', '2026-07-11')], lineaBaseActivaId: 'zzz-lb', hoy });
+    // Durante la pausa, con la fase 1 hecha: al día (valor ganado 50 = plan 50)
+    const enPausa = con(500, 0, '2026-04-01');
+    casi(enPausa.planPct, 50, 'en la pausa: plan'); casi(enPausa.spi, 1, 'en la pausa: SPI 1'); igual(enPausa.atrasoFechaDias, 0, 'en la pausa: sin atraso');
+    // El día en que se reanuda (1-jul) el plan sigue en 50: tampoco hay atraso
+    igual(con(500, 0, '2026-07-01').atrasoFechaDias, 0, 'el día de la reanudación: sin atraso');
+    // 6-jul (día 5 de la fase 2, plan 75 %) sin haber reanudado: 5 días de atraso, NO los 176 que van desde el 11-ene
+    const e = con(500, 0, '2026-07-06');
+    casi(e.planPct, 75, 'plan del 6-jul'); casi(e.evPct, 50, 'valor ganado: solo la fase 1');
+    igual(e.fechaGanada, '2026-07-01', 'fecha ganada: el último día de la meseta, no el primero (11-ene)');
+    igual(e.atrasoFechaDias, 5, 'atraso: del 1 al 6 de julio'); igual(nucleoDiasEntre('2026-01-11', '2026-07-06'), 176, 'con el hueco serían 176');
+    igual(semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 }).motivos.join('|'), 'SPI 0,66', 'rojo por SPI, no por un atraso de meses');
+    // Con algo de la fase 2 hecho (10 % → valor ganado 55 = plan del día 1 de la fase 2) → 2-jul → 4 días
+    const algo = con(500, 50, '2026-07-06');
+    igual(algo.fechaGanada, '2026-07-02', 'con 55 %: fecha ganada'); igual(algo.atrasoFechaDias, 4, 'con 55 %: 4 días');
+    // Ya vencido (11-ago) sin reanudar: 41 días desde el 1-jul
+    igual(con(500, 0, '2026-08-11').atrasoFechaDias, 41, 'un mes después del fin: del 1-jul al 11-ago');
+    // Si la fase 1 quedó sin terminar (90 % → valor ganado 45), el atraso SÍ viene de antes de la pausa:
+    // ese trabajo debía estar hecho el 10-ene (día 9, plan 45 %)
+    const fase1 = con(450, 0, '2026-04-01');
+    igual(fase1.fechaGanada, '2026-01-10', 'fase 1 al 90 %: fecha ganada'); igual(fase1.atrasoFechaDias, 81, 'fase 1 al 90 %: del 10-ene al 1-abr');
+    // Meseta al inicio del proyecto: un hito de peso mínimo y meses después la obra
+    const hito = (p2, hoy) => nucleoEvmProyecto({ rubros: [rubro('r1', 10, 10), rubro('r2', 990, p2)],
+      cronograma: [fila('r1', '2026-01-01', '2026-01-01'), fila('r2', '2026-06-01', '2026-06-11')], lineaBaseActivaId: 'zzz-lb', hoy });
+    const h = hito(0, '2026-06-06');
+    casi(h.planPct, 50.5, 'hito + media obra: plan'); igual(h.fechaGanada, '2026-06-01', 'hito: fecha ganada al final de la meseta'); igual(h.atrasoFechaDias, 5, 'hito: 5 días, no 156');
+  });
+
+  await prueba('atraso a la fecha: tope por fechaInicioProyecto posterior al primer inicio programado (y fecha de inicio futura → 0)', () => {
+    const con = (prod, hoy, fechaInicioProyecto) => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod)], cronograma: [fila('r1', '2026-01-01', '2026-04-11')], lineaBaseActivaId: 'zzz-lb', hoy, fechaInicioProyecto });
+    // Sin nada hecho el día 60 (2-mar): 60 días desde el primer inicio programado
+    igual(con(0, '2026-03-02').atrasoFechaDias, 60, 'sin fecha de inicio: 60');
+    for(const [que, v] of [['null', null], ['undefined', undefined], ['texto vacío', '']]) igual(con(0, '2026-03-02', v).atrasoFechaDias, 60, 'fecha de inicio ' + que + ': 60');
+    // El proyecto empezó de verdad el 20-feb: no puede llevar más de 10 días de atraso
+    const e = con(0, '2026-03-02', '2026-02-20');
+    igual(e.atrasoFechaDias, 10, 'inicio el 20-feb: tope de 10 días'); igual(e.atrasoDias, 10, 'atrasoDias'); igual(e.fechaGanada, '2026-01-01', 'la fecha ganada no cambia');
+    igual(e.primerInicio, '2026-01-01', 'primerInicio sigue siendo el del cronograma'); casi(e.spi, 0, 'el SPI no cambia');
+    igual(con(0, '2026-03-02', '2026-02-20T08:00:00-05:00').atrasoFechaDias, 10, 'fecha de inicio con hora: cuenta el día');
+    igual(con(0, '2026-03-02', '2026-03-01').atrasoFechaDias, 1, 'inicio ayer: 1'); igual(con(0, '2026-03-02', '2026-03-02').atrasoFechaDias, 0, 'inicio hoy: 0');
+    // Fecha de inicio anterior (o igual) al primer inicio programado: manda el cronograma
+    igual(con(0, '2026-03-02', '2025-06-01').atrasoFechaDias, 60, 'inicio anterior al cronograma: 60');
+    igual(con(0, '2026-03-02', '2026-01-01').atrasoFechaDias, 60, 'inicio el mismo día: 60');
+    // Fecha de inicio FUTURA: 0 (no negativo ni null), aunque el SPI siga contando
+    const futuro = con(0, '2026-03-02', '2026-12-01');
+    igual(futuro.atrasoFechaDias, 0, 'inicio futuro: 0'); igual(futuro.atrasoDias, 0, 'inicio futuro: atrasoDias 0'); igual(futuro.spiValido, true, 'inicio futuro: el SPI sigue siendo válido');
+    // El tope solo recorta: si el atraso real es menor, se queda el real (45 % el día 60 → 15 días; tope 29)
+    igual(con(450, '2026-03-02', '2026-02-01').atrasoFechaDias, 15, 'tope de 29 días que no llega a actuar');
+    igual(con(450, '2026-03-02', '2026-02-25').atrasoFechaDias, 5, 'tope de 5 días que sí actúa');
+    // Adelantado: 0 con cualquier fecha de inicio
+    igual(con(800, '2026-03-02', '2026-02-20').atrasoFechaDias, 0, 'adelantado');
+    // El atraso proyectado no depende de la fecha de inicio
+    igual(con(450, '2026-03-02', '2026-02-25').atrasoProyectadoDias, con(450, '2026-03-02').atrasoProyectadoDias, 'proyectado igual');
+    // Una fecha de inicio mal formada LANZA, como cualquier otra fecha
+    lanza(() => con(0, '2026-03-02', '20/02/2026'), 'fecha de inicio dd/mm/aaaa', /^Fecha no válida/);
+    lanza(() => con(0, '2026-03-02', '2026-02-30'), 'fecha de inicio inexistente', /^Fecha inexistente/);
+    lanza(() => con(0, '2026-03-02', new Date('2026-02-20T00:00:00Z')), 'fecha de inicio como Date', /^Fecha no válida/);
+  });
+
+  await prueba('EVM: fila con el fin ANTERIOR al inicio → se toma con las fechas intercambiadas', () => {
+    const rubros = [rubro('r1', 600, 150), rubro('r2', 400, 0)];
+    const derecho = nucleoEvmProyecto({ rubros, cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-01-11', '2026-01-21')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-06' });
+    const invertido = nucleoEvmProyecto({ rubros, cronograma: [fila('r1', '2026-01-11', '2026-01-01'), fila('r2', '2026-01-21', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-06' });
+    casi(invertido.planPct, 30, 'plan a la fecha: 60 × 0,5 (y no 0 ni 60)'); casi(invertido.spi, 0.5, 'SPI');
+    igual(invertido.primerInicio, '2026-01-01', 'primerInicio: la menor de las dos fechas'); igual(invertido.ultimoFin, '2026-01-21', 'ultimoFin: la mayor');
+    igual(invertido.atrasoFechaDias, 3, 'atraso a la fecha'); igual(invertido.atrasoProyectadoDias, 20, 'atraso proyectado (duración 20 días, no negativa)');
+    assert(invertido.filasCronogramaInvertidas > 0, 'las filas invertidas se cuentan'); igual(derecho.filasCronogramaInvertidas, 0, 'y la que está en orden no');
+    igual(JSON.stringify({ ...invertido, filasCronogramaInvertidas: 0 }), JSON.stringify(derecho), 'el resto del resultado es el mismo que con las fechas en su orden');
+    assert(N.nucleoDatosPorCompletar({ evm: invertido, estado: 'ejecucion' }).some(t => /fecha de fin anterior a la de inicio/.test(t)), 'y sale como dato por completar');
+    // Una sola fila invertida, ya vencida: vencido desde la fecha mayor
+    const una = nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 500)], cronograma: [fila('r1', '2026-03-31', '2026-03-01')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-04-10' });
+    igual(una.ultimoFin, '2026-03-31', 'una fila: ultimoFin'); igual(una.cronogramaVencido, true, 'una fila: vencido'); casi(una.planPct, 100, 'una fila: plan 100');
+    igual(una.fechaGanada, '2026-03-16', 'una fila: el 50 % se preveía el día 15'); igual(una.atrasoFechaDias, 25, 'una fila: del 16-mar al 10-abr');
+    // Fechas invertidas con hora
+    igual(nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 500)], cronograma: [fila('r1', '2026-03-31T00:00:00+00:00', '2026-03-01T00:00:00+00:00')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-04-10' }).primerInicio, '2026-03-01', 'con hora');
+  });
+
+  // ── Atraso proyectado ─────────────────────────────────────────────────────
+  await prueba('atraso proyectado = duración del cronograma × (1/SPI − 1); null si no es estimable; 0 si SPI ≥ 1', () => {
+    igual(lineal(400, '2026-02-20').atrasoProyectadoDias, 25, 'día 50 con 40 %: SPI 0,80 → 100 × 0,25');
+    igual(lineal(250, '2026-02-20').atrasoProyectadoDias, 100, 'SPI 0,50 → 100 × 1');
+    igual(lineal(450, '2026-03-02').atrasoProyectadoDias, 33, 'SPI 0,75 → 33,3 redondeado');
+    igual(lineal(0, '2026-02-20').atrasoProyectadoDias, null, 'SPI 0: no es estimable');
+    igual(lineal(0, '2026-02-20').atrasoFechaDias, 50, '…pero el atraso a la fecha sí: 50 días');
+    igual(lineal(500, '2026-02-20').atrasoProyectadoDias, 0, 'SPI 1 exacto'); igual(lineal(700, '2026-02-20').atrasoProyectadoDias, 0, 'SPI 1,4');
+    // La duración es del primer inicio al último fin de las filas que cuentan
+    const dos = nucleoEvmProyecto({ rubros: [rubro('r1', 500, 100), rubro('r2', 500, 0)], cronograma: [fila('r2', '2026-02-01', '2026-02-21'), fila('r1', '2026-01-01', '2026-01-21')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-11' });
+    casi(dos.spi, 0.4, 'spi'); igual(dos.atrasoProyectadoDias, 77, '51 días × (1/0,4 − 1) = 76,5 → 77');
+    // Recién vencido (un día): manda la proyección (11), que es mayor que lo ya pasado del fin (1)
+    igual(lineal(900, '2026-04-12').atrasoProyectadoDias, 11, 'SPI 0,90 → 11,1');
+  });
+
+  await prueba('atraso proyectado: null con SPI menor que 0,10 y con plan insignificante (no estimable)', () => {
+    // Día 60 (plan 60 %) con 3 % ganado: SPI 0,05. La fórmula daría 1.900 días: no se estima
+    const e = lineal(30, '2026-03-02');
+    casi(e.spi, 0.05, 'SPI 0,05'); igual(e.spiValido, true, 'el SPI es válido (y pinta rojo)'); igual(e.atrasoProyectadoDias, null, 'proyectado: no estimable');
+    igual(e.atrasoFechaDias, 57, '…pero el atraso a la fecha sí: el 3 % se preveía el día 3 → 57 días');
+    igual(semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 }).motivos.join('|'), 'SPI 0,05|atraso a la fecha de 57 días', 'el semáforo no depende del proyectado');
+    // A los dos lados del mínimo (día 50, plan 50 %): 0,09 no se estima; 0,11 sí
+    const bajo = lineal(45, '2026-02-20'), sobre = lineal(55, '2026-02-20');
+    casi(bajo.spi, 0.09, 'SPI 0,09'); igual(bajo.atrasoProyectadoDias, null, 'SPI 0,09: null');
+    casi(sobre.spi, 0.11, 'SPI 0,11'); igual(sobre.atrasoProyectadoDias, 809, 'SPI 0,11: 100 × (1/0,11 − 1) = 809,1');
+    assert(bajo.spi < NUCLEO_CARTERA.SPI_MINIMO_PROYECCION && sobre.spi >= NUCLEO_CARTERA.SPI_MINIMO_PROYECCION, 'a cada lado de SPI_MINIMO_PROYECCION');
+    igual(lineal(0, '2026-02-20').atrasoProyectadoDias, null, 'SPI 0: null');
+    // SPI muy bajo con el cronograma vencido: sigue sin estimarse (no se cambia por los días pasados del fin)
+    const vencido = lineal(30, '2026-06-01');
+    igual(vencido.cronogramaVencido, true, 'vencido'); casi(vencido.spi, 0.03, 'SPI 0,03'); igual(vencido.atrasoProyectadoDias, null, 'vencido con SPI 0,03: null');
+    // Plan a la fecha insignificante (0,4 %): el SPI no es válido y no hay ninguno de los dos atrasos
+    const arranque = nucleoEvmProyecto({ rubros: [rubro('r1', 4, 0), rubro('r2', 996, 0)], cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-06-01', '2026-12-01')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01' });
+    casi(arranque.planPct, 0.4, 'arranque: plan 0,4 %'); igual(arranque.spi, 0, 'arranque: hay SPI (0)'); igual(arranque.spiValido, false, 'arranque: no válido');
+    igual(arranque.atrasoProyectadoDias, null, 'arranque: proyectado null'); igual(arranque.atrasoFechaDias, null, 'arranque: atraso a la fecha null'); igual(arranque.atrasoDias, 0, 'arranque: atrasoDias 0');
+    // Con el plan insignificante pero la obra adelantada tampoco se afirma un 0
+    const adelantado = nucleoEvmProyecto({ rubros: [rubro('r1', 4, 4), rubro('r2', 996, 100)], cronograma: [fila('r1', '2026-01-01', '2026-01-11'), fila('r2', '2026-06-01', '2026-12-01')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01' });
+    igual(adelantado.spiValido, false, 'adelantado en el arranque: SPI no válido'); igual(adelantado.atrasoProyectadoDias, null, 'adelantado en el arranque: null');
+    // Sin cronograma
+    igual(nucleoEvmProyecto({ rubros: [rubro('r1', 1000, 10)], cronograma: [], lineaBaseActivaId: 'zzz-lb', hoy: '2026-03-01' }).atrasoProyectadoDias, null, 'sin cronograma: null');
+  });
+
+  await prueba('atraso proyectado con el cronograma VENCIDO: nunca menos que los días que ya lleva pasada del fin', () => {
+    // 100 días (1-ene a 11-abr), obra al 90 %: la fórmula da 11 días
+    igual(lineal(900, '2026-04-11').atrasoProyectadoDias, 11, 'el día del fin: 11 (aún no está vencido)');
+    igual(lineal(900, '2026-04-12').atrasoProyectadoDias, 11, '1 día pasado: sigue mandando la proyección');
+    igual(lineal(900, '2026-04-22').atrasoProyectadoDias, 11, '11 días pasados: empate');
+    igual(lineal(900, '2026-04-23').atrasoProyectadoDias, 12, '12 días pasados: ya manda lo pasado del fin');
+    igual(lineal(900, '2027-04-12').atrasoProyectadoDias, 366, 'un año y un día después: 366, no 11');
+    // Con SPI 0,50 la proyección (100) manda hasta que lo pasado la supera
+    igual(lineal(500, '2026-04-21').atrasoProyectadoDias, 100, 'SPI 0,50, 10 días pasados: 100');
+    igual(lineal(500, '2026-12-31').atrasoProyectadoDias, 264, 'SPI 0,50, 264 días pasados: 264');
+    // Vencido pero con lo programado terminado: 0
+    igual(lineal(1000, '2027-04-12').atrasoProyectadoDias, 0, 'terminada por producción: 0');
+    igual(lineal(100, '2027-04-12', 'terminado').atrasoProyectadoDias, 0, 'rubro terminado: 0');
+    // En todo el recorrido: no vencido = la fórmula; vencido = al menos lo pasado del fin
+    for(let d = 100; d <= 600; d += 7){
+      const hoy = nucleoSumarDias('2026-01-01', d), e = lineal(700, hoy), pasados = nucleoDiasEntre('2026-04-11', hoy);
+      igual(e.atrasoProyectadoDias, Math.max(43, pasados), hoy + ': max(100 × (1/0,7 − 1) = 42,9 → 43, ' + pasados + ' días pasados)');
+    }
   });
 
   await prueba('EVM: el atraso cuenta desde el primer inicio programado, y es 0 si hoy es ese día', () => {
@@ -463,32 +824,66 @@ const SIN_GAR = G(0, 0);
     const e = nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-11' });
     igual(e.primerInicio, '2026-01-01', 'primerInicio'); igual(e.ultimoFin, '2026-02-21', 'ultimoFin');
     casi(e.planPct, 25, 'planPct'); casi(e.evPct, 10, 'evPct'); casi(e.spi, 0.4, 'spi');
-    igual(e.atrasoDias, 15, '10 días × (1/0,4 − 1)');
+    igual(e.fechaGanada, '2026-01-05', 'el plan (2,5 puntos por día) llegaba a 10 % el día 4'); igual(e.atrasoFechaDias, 6, 'del 5 al 11 de enero');
+    const primerDia = nucleoEvmProyecto({ rubros, cronograma, lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-01' });
+    igual(primerDia.atrasoFechaDias, null, 'el día del primer inicio: aún no hay plan, no se mide'); igual(primerDia.atrasoDias, 0, '…y para el semáforo es 0'); igual(primerDia.spi, null, 'sin SPI todavía');
   });
 
-  await prueba('EVM: con el cronograma vencido el atraso deja de crecer (se cuenta hasta el último fin programado)', () => {
-    // 270 días de cronograma (1-ene a 28-sep), obra terminada al 90 % de lo programado: SPI 0,90 → 30 días
-    const con = hoy => nucleoEvmProyecto({ rubros: [rubro('r1', 100, 90)], cronograma: [fila('r1', '2026-01-01', '2026-09-28')], lineaBaseActivaId: 'zzz-lb', hoy });
-    const elDia = con('2026-09-28'), alDiaSiguiente = con('2026-09-29'), aLos9 = con('2026-10-07'), alAnio = con('2027-09-28'), aLos5Anios = con('2031-09-28');
-    igual(elDia.cronogramaVencido, false, 'el día del último fin todavía no está vencido'); igual(elDia.atrasoDias, 30, 'atraso el día del fin');
-    for(const [que, e] of [['al día siguiente', alDiaSiguiente], ['9 días después', aLos9], ['un año después', alAnio], ['cinco años después', aLos5Anios]]){
+  await prueba('EVM + semáforo: cronograma vencido — el atraso a la fecha sigue corriendo y la proyección no baja de lo ya pasado; rojo mientras la obra no termine', () => {
+    // 270 días de cronograma (1-ene a 28-sep), obra detenida al 90 %: el plan preveía 90 % el día 243 (1-sep)
+    const con = (hoy, prod = 90, estado = 'trabajando') => nucleoEvmProyecto({ rubros: [rubro('r1', 100, prod, estado)], cronograma: [fila('r1', '2026-01-01', '2026-09-28')], lineaBaseActivaId: 'zzz-lb', hoy });
+    const elDia = con('2026-09-28');
+    igual(elDia.cronogramaVencido, false, 'el día del último fin todavía no está vencido'); igual(elDia.fechaGanada, '2026-09-01', 'fecha ganada');
+    igual(elDia.atrasoFechaDias, 27, 'atraso a la fecha el día del fin'); igual(elDia.atrasoProyectadoDias, 30, 'proyectado: 270 × (1/0,9 − 1)');
+    const sDia = semEjec({ evm: elDia, garantias: SIN_GAR, pendientes: 0 });
+    igual(sDia.color, 'amarillo', 'el día del fin: amarillo por SPI'); igual(sDia.motivos.join('|'), 'SPI 0,90', 'motivos el día del fin');
+    for(const [que, hoy, atraso, proyectado] of [['al día siguiente', '2026-09-29', 28, 30], ['3 días después', '2026-10-01', 30, 30], ['4 días después', '2026-10-02', 31, 30],
+      ['31 días después', '2026-10-29', 58, 31], ['un año después', '2027-09-28', 392, 365]]){
+      const e = con(hoy);
       igual(e.cronogramaVencido, true, que + ': cronograma vencido'); casi(e.spi, 0.9, que + ': SPI');
-      igual(e.atrasoDias, 30, que + ': el atraso sigue en 30 (con la regla vieja crecía cada día)');
-      const s = nucleoSemaforo({ evm: e, garantias: SIN_GAR, pendientes: 0 });
-      igual(s.color, 'amarillo', que + ': amarillo por SPI, no rojo por atraso'); igual(s.motivos.join('|'), 'SPI 0,90', que + ': motivos');
+      igual(e.atrasoFechaDias, atraso, que + ': atraso a la fecha'); igual(e.atrasoProyectadoDias, proyectado, que + ': proyección = max(30, días pasados del fin)');
+      igual(e.obraProgramadaTerminada, false, que + ': lo programado no está terminado');
+      assert(e.atrasoFechaDias <= nucleoDiasEntre('2026-01-01', hoy), que + ': no supera lo transcurrido');
+      const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+      igual(s.color, 'rojo', que + ': rojo');
+      igual(s.motivos.join('|'), 'cronograma vencido el 2026-09-28 con 90,0 % de lo programado' + (atraso > 30 ? `|atraso a la fecha de ${atraso} días` : '') + '|SPI 0,90', que + ': motivos');
     }
-    // Antes del último fin, los días sí corren con hoy
-    const mitad = con('2026-05-16');   // día 135 de 270: plan 50 %, SPI 1,8 → sin atraso
-    igual(mitad.cronogramaVencido, false, 'a mitad de cronograma'); igual(mitad.atrasoDias, 0, 'adelantado a mitad');
-    // Un atraso ya rojo al vencer se queda rojo, pero tampoco crece: SPI 0,5 → 270 días
-    const rojo = hoy => nucleoEvmProyecto({ rubros: [rubro('r1', 100, 50)], cronograma: [fila('r1', '2026-01-01', '2026-09-28')], lineaBaseActivaId: 'zzz-lb', hoy });
-    igual(rojo('2026-09-28').atrasoDias, 270, 'SPI 0,5 el día del fin'); igual(rojo('2029-01-01').atrasoDias, 270, 'SPI 0,5 años después');
+    // Obra terminada con el cronograma vencido: ni vencido ni atraso
+    for(const [que, e] of [['producción completa', con('2027-09-28', 100)], ['rubro terminado', con('2027-09-28', 40, 'terminado')]]){
+      igual(e.cronogramaVencido, true, que + ': el cronograma sí venció'); igual(e.atrasoFechaDias, 0, que + ': sin atraso');
+      igual(e.obraProgramadaTerminada, true, que + ': lo programado está terminado'); igual(e.atrasoProyectadoDias, 0, que + ': sin atraso proyectado');
+      const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+      igual(s.color, 'verde', que + ': verde'); igual(s.motivos.length, 0, que + ': sin motivos');
+    }
     // El último fin es el de la fila que cuenta (línea base activa), no el de otra línea base
     const otraLb = nucleoEvmProyecto({ rubros: [rubro('r1', 100, 90), rubro('r2', 0, 0)],
       cronograma: [fila('r1', '2026-01-01', '2026-09-28'), fila('r2', '2030-01-01', '2030-01-01', 'zzz-lb-otra')], lineaBaseActivaId: 'zzz-lb', hoy: '2027-09-28' });
-    igual(otraLb.ultimoFin, '2026-09-28', 'ultimoFin de la línea base activa'); igual(otraLb.cronogramaVencido, true, 'vencido'); igual(otraLb.atrasoDias, 30, 'atraso 30');
+    igual(otraLb.ultimoFin, '2026-09-28', 'ultimoFin de la línea base activa'); igual(otraLb.cronogramaVencido, true, 'vencido');
     // Sin cronograma no hay nada que venza
     igual(nucleoEvmProyecto({ rubros: [rubro('r1', 100, 90)], cronograma: [], lineaBaseActivaId: 'zzz-lb', hoy: '2030-01-01' }).cronogramaVencido, false, 'sin cronograma');
+  });
+
+  await prueba('EVM + semáforo: atraso a la fecha de 30 días no es rojo; de 31, sí', () => {
+    // Actividad de 1.000 días (el plan sube 0,1 puntos por día); hoy es el día 700: plan 70 %
+    const fin = nucleoSumarDias('2026-01-01', 1000), hoy = nucleoSumarDias('2026-01-01', 700);
+    const con = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod)], cronograma: [fila('r1', '2026-01-01', fin)], lineaBaseActivaId: 'zzz-lb', hoy });
+    const a30 = con(670), a31 = con(669);
+    igual(a30.cronogramaVencido, false, 'el cronograma no ha vencido');
+    igual(a30.atrasoFechaDias, 30, '67,0 % → se preveía el día 670 → 30'); igual(a31.atrasoFechaDias, 31, '66,9 % → el día 669 → 31');
+    assert(a30.spi >= NUCLEO_CARTERA.SPI_AMARILLO && a31.spi >= NUCLEO_CARTERA.SPI_AMARILLO, 'el SPI de los dos está en verde (' + a31.spi + ')');
+    const s30 = semEjec({ evm: a30, garantias: SIN_GAR, pendientes: 0 });
+    igual(s30.color, 'verde', '30 días: verde'); igual(s30.motivos.length, 0, '30 días: sin motivos');
+    const s31 = semEjec({ evm: a31, garantias: SIN_GAR, pendientes: 0 });
+    igual(s31.color, 'rojo', '31 días: rojo'); igual(s31.motivos.join('|'), 'atraso a la fecha de 31 días', 'motivo con 31');
+    // Con SPI amarillo: a 30 días manda el SPI; a 31, el atraso va primero
+    const hoy500 = nucleoSumarDias('2026-01-01', 500);
+    const con500 = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod)], cronograma: [fila('r1', '2026-01-01', fin)], lineaBaseActivaId: 'zzz-lb', hoy: hoy500 });
+    igual(semEjec({ evm: con500(470), garantias: SIN_GAR, pendientes: 0 }).motivos.join('|'), 'SPI 0,94', 'SPI 0,94 con 30 días: amarillo');
+    const s = semEjec({ evm: con500(469), garantias: SIN_GAR, pendientes: 0 });
+    igual(s.color, 'rojo', 'SPI 0,93 con 31 días'); igual(s.motivos.join('|'), 'atraso a la fecha de 31 días|SPI 0,93', 'motivos: primero el que decide');
+    // El semáforo mira el atraso a la fecha, no el proyectado
+    const soloProyectado = semEjec({ evm: evmDe({ spi: 0.97, atrasoFechaDias: 3, atrasoProyectadoDias: 400 }), garantias: SIN_GAR, pendientes: 0 });
+    igual(soloProyectado.color, 'verde', 'un atraso proyectado de 400 días no pinta');
   });
 
   // ── Garantías ─────────────────────────────────────────────────────────────
@@ -542,17 +937,17 @@ const SIN_GAR = G(0, 0);
     const lista = [gar('2026-12-01')];                     // vence en 10 días
     const de15 = nucleoGarantias(lista, HOY, 15), de5 = nucleoGarantias(lista, HOY);
     igual(de15.porVencer, 1, 'con 15 días entra'); igual(de5.porVencer, 0, 'con 5 no');
-    lanza(() => nucleoSemaforo({ evm: evmDe(), garantias: de15, pendientes: 0 }), 'conteo de 15 días', /aviso de 5 días.*diasAviso = 15/);
-    lanza(() => nucleoSemaforo({ evm: evmDe(), garantias: nucleoGarantias([], HOY, 15), pendientes: 0 }), 'conteo de 15 días sin ninguna garantía', /aviso de 5 días/);
-    lanza(() => nucleoSemaforo({ evm: evmDe(), garantias: nucleoGarantias(lista, HOY, 0), pendientes: 0 }), 'conteo de 0 días', /diasAviso = 0/);
-    lanza(() => nucleoSemaforo({ evm: evmDe(), garantias: { vencidas: 0, porVencer: 1 }, pendientes: 0 }), 'conteo a mano sin diasAviso', /diasAviso = undefined/);
+    lanza(() => semEjec({ evm: evmDe(), garantias: de15, pendientes: 0 }), 'conteo de 15 días', /aviso de 5 días.*diasAviso = 15/);
+    lanza(() => semEjec({ evm: evmDe(), garantias: nucleoGarantias([], HOY, 15), pendientes: 0 }), 'conteo de 15 días sin ninguna garantía', /aviso de 5 días/);
+    lanza(() => semEjec({ evm: evmDe(), garantias: nucleoGarantias(lista, HOY, 0), pendientes: 0 }), 'conteo de 0 días', /diasAviso = 0/);
+    lanza(() => semEjec({ evm: evmDe(), garantias: { vencidas: 0, porVencer: 1 }, pendientes: 0 }), 'conteo a mano sin diasAviso', /diasAviso = undefined/);
     // Con el oficial (por defecto, null o 5 explícito) pasa, y el proyecto queda verde: no hay amarillo de más
     for(const g of [de5, nucleoGarantias(lista, HOY, null), nucleoGarantias(lista, HOY, 5)]){
-      const s = nucleoSemaforo({ evm: evmDe(), garantias: g, pendientes: 0 });
+      const s = semEjec({ evm: evmDe(), garantias: g, pendientes: 0 });
       igual(s.color, 'verde', 'con el aviso oficial'); igual(s.motivos.length, 0, 'sin motivos');
     }
     // El texto del motivo sale del aviso del conteo, que es el de la constante
-    const s = nucleoSemaforo({ evm: evmDe(), garantias: nucleoGarantias([gar('2026-11-24')], HOY), pendientes: 0 });
+    const s = semEjec({ evm: evmDe(), garantias: nucleoGarantias([gar('2026-11-24')], HOY), pendientes: 0 });
     igual(s.motivos.join('|'), `1 garantía por vencer en ${NUCLEO_CARTERA.GARANTIA_AVISO_DIAS} días o menos`, 'texto del motivo');
   });
 
@@ -568,7 +963,7 @@ const SIN_GAR = G(0, 0);
   });
 
   await prueba('semáforo: el SPI del motivo se TRUNCA (0,8499 → «SPI 0,84»; 0,9499 → «SPI 0,94») y no contradice el umbral', () => {
-    const motivo = spi => { const s = nucleoSemaforo({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 }); return s.color + ':' + s.motivos.join('|'); };
+    const motivo = spi => { const s = semEjec({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 }); return s.color + ':' + s.motivos.join('|'); };
     igual(motivo(0.8499), 'rojo:SPI 0,84', '0,8499 (redondeado diría 0,85, que es amarillo)');
     igual(motivo(0.849999999), 'rojo:SPI 0,84', '0,849999999');
     igual(motivo(0.85), 'amarillo:SPI 0,85', '0,85 exacto');
@@ -578,76 +973,258 @@ const SIN_GAR = G(0, 0);
     igual(motivo(0.005), 'rojo:SPI 0,00', '0,005');
     // En todo el intervalo, el número escrito cae del mismo lado del umbral que el color
     for(let i = 0; i < 950; i++){
-      const spi = i / 1000 + 0.0003, s = nucleoSemaforo({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 });
+      const spi = i / 1000 + 0.0003, s = semEjec({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 });
       const escrito = Number(/^SPI (\d+,\d{2})$/.exec(s.motivos[0])[1].replace(',', '.'));
       assert(s.color === 'rojo' ? escrito < NUCLEO_CARTERA.SPI_ROJO : escrito >= NUCLEO_CARTERA.SPI_ROJO && escrito < NUCLEO_CARTERA.SPI_AMARILLO, `SPI ${spi}: ${s.color} con «${s.motivos[0]}»`);
     }
   });
 
   // ── Semáforo ──────────────────────────────────────────────────────────────
-  await prueba('semáforo: verde sin motivos; sin argumentos tampoco revienta', () => {
-    const s = nucleoSemaforo({ evm: evmDe(), garantias: SIN_GAR, pendientes: 0 });
-    igual(s.color, 'verde', 'color'); igual(s.motivos.length, 0, 'sin motivos');
-    igual(nucleoSemaforo({}).color, 'verde', 'objeto vacío'); igual(nucleoSemaforo({}).motivos.length, 0, 'objeto vacío: sin motivos');
-    igual(nucleoSemaforo().color, 'verde', 'sin argumentos');
-    igual(nucleoSemaforo({ evm: evmDe(), garantias: null, pendientes: null }).color, 'verde', 'garantías y pendientes nulos');
+  await prueba('semáforo: hay que PASAR el estado (undefined lanza: es un olvido del que llama)', () => {
+    const datos = { evm: evmDe(), garantias: SIN_GAR, pendientes: 0 };
+    lanza(() => nucleoSemaforo(datos), 'sin estado', /estado del proyecto/);
+    lanza(() => nucleoSemaforo({}), 'objeto vacío', /estado del proyecto/);
+    lanza(() => nucleoSemaforo(), 'sin argumentos', /estado del proyecto/);
+    lanza(() => nucleoSemaforo({ ...datos, estado: undefined }), 'estado undefined explícito', /estado del proyecto/);
+    // Lo que no es exactamente «ejecucion» no lleva color, pero tampoco lanza
+    for(const [que, estado] of Object.entries({ 'número': 1, 'true': true, 'objeto': { estado: 'ejecucion' } })){
+      igual(JSON.stringify(nucleoSemaforo({ ...datos, estado })), '{"color":null,"motivos":[]}', 'estado ' + que + ': sin color');
+    }
+    // Con el estado basta: lo demás tiene valores por defecto
+    const s = nucleoSemaforo({ estado: 'ejecucion' });
+    igual(s.color, 'verde', 'solo con el estado'); igual(s.motivos.length, 0, 'sin motivos');
+    igual(nucleoSemaforo({ estado: 'ejecucion', evm: evmDe(), garantias: null, pendientes: null }).color, 'verde', 'garantías y pendientes nulos');
+  });
+
+  await prueba('semáforo: estado null o vacío (proyecto sin estado registrado) → sin color, y el aviso va en «datos por completar»', () => {
+    const malo = evmDe({ spi: 0.1, atrasoFechaDias: 200, atrasoDias: 200, cronogramaVencido: true, ultimoFin: '2026-01-11', evPct: 5 });
+    igual(nucleoSemaforo({ estado: 'ejecucion', evm: malo, garantias: G(3, 2), pendientes: 40 }).color, 'rojo', 'en ejecución esos datos son rojo');
+    for(const [que, estado] of [['null', null], ['texto vacío', '']]){
+      const s = nucleoSemaforo({ estado, evm: malo, garantias: G(3, 2), pendientes: 40 });
+      igual(JSON.stringify(s), '{"color":null,"motivos":[]}', 'estado ' + que + ': sin color ni motivos, aunque los datos sean de rojo');
+      igual(nucleoSemaforo({ estado, evm: evmDe(), garantias: SIN_GAR, pendientes: 0 }).color, null, 'estado ' + que + ': tampoco verde');
+      igual(nucleoSemaforo({ estado }).color, null, 'estado ' + que + ': solo con el estado');
+      igual(nucleoDatosPorCompletar({ evm: malo, estado })[0], 'proyecto sin estado registrado', 'estado ' + que + ': aviso en datos por completar');
+    }
+    // El aviso de garantías equivocado se rechaza igual: es un error del que llama
+    lanza(() => nucleoSemaforo({ estado: null, evm: evmDe(), garantias: { vencidas: 0, porVencer: 0, diasAviso: 15 } }), 'sin estado con conteo de 15 días', /aviso de 5 días/);
+  });
+
+  await prueba('semáforo: solo «ejecucion» lleva color — planificación, pausado, finalizado y cancelado salen sin color pase lo que pase', () => {
+    const malo = evmDe({ spi: 0.1, atrasoFechaDias: 200, atrasoDias: 200, cronogramaVencido: true, ultimoFin: '2026-01-11', evPct: 5 });
+    // En ejecución, esos mismos datos son rojo por los cuatro motivos
+    const enEjecucion = nucleoSemaforo({ estado: 'ejecucion', evm: malo, garantias: G(3, 2), pendientes: 40 });
+    igual(enEjecucion.color, 'rojo', 'en ejecución: rojo');
+    igual(enEjecucion.motivos.slice(0, 4).join('|'), 'SPI 0,10|cronograma vencido el 2026-01-11 con 5,0 % de lo programado|3 garantías vencidas|atraso a la fecha de 200 días', 'en ejecución: los cuatro motivos de rojo');
+    for(const estado of SIN_COLOR){
+      const s = nucleoSemaforo({ estado, evm: malo, garantias: G(3, 2), pendientes: 40 });
+      igual(s.color, null, estado + ': sin color (null), aunque haya garantías vencidas, SPI 0,10 y 200 días de atraso');
+      igual(JSON.stringify(s), '{"color":null,"motivos":[]}', estado + ': sin motivos');
+      igual(nucleoSemaforo({ estado, evm: evmDe(), garantias: SIN_GAR, pendientes: 0 }).color, null, estado + ': tampoco verde cuando todo va bien');
+      igual(nucleoSemaforo({ estado }).color, null, estado + ': solo con el estado');
+    }
+    // Las garantías vencidas de un proyecto sin color siguen contadas (van como pendiente): el conteo no depende del estado
+    igual(nucleoGarantias([{ estado: 'vigente', vigencia_hasta: '2026-01-01' }], '2026-11-21').vencidas, 1, 'la garantía vencida se sigue contando');
+    // Cualquier otro texto tampoco lleva color; el único que lo lleva es la constante
+    igual(nucleoSemaforo({ estado: 'ZZZ otro', evm: malo, garantias: G(1, 0), pendientes: 9 }).color, null, 'estado desconocido: sin color');
+    igual(nucleoSemaforo({ estado: 'Ejecucion', evm: malo }).color, null, 'se compara exacto, sin normalizar mayúsculas');
+    igual(nucleoSemaforo({ estado: NUCLEO_CARTERA.ESTADO_CON_SEMAFORO, evm: evmDe() }).color, 'verde', 'el estado de la constante sí');
+    // El aviso de garantías equivocado se rechaza también sin color: es un error del que llama
+    lanza(() => nucleoSemaforo({ estado: 'pausado', evm: evmDe(), garantias: { vencidas: 0, porVencer: 0, diasAviso: 15 } }), 'pausado con conteo de 15 días', /aviso de 5 días/);
+  });
+
+  await prueba('semáforo: rojo por cronograma vencido sin haber terminado lo programado; NO si lo programado está terminado', () => {
+    // SPI 0,99 (verde) y 9 días de vencido: lo único que lo pone rojo es el cronograma vencido
+    const con = (prod, hoy = '2026-01-20', estado = 'trabajando') => nucleoEvmProyecto({ rubros: [rubro('r1', 1000, prod, estado)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy });
+    const e = con(990);
+    // El plan sube 10 puntos por día: el último día en que no superaba el 99 % es el día 9 (90 %) → 10-ene → 10 días
+    igual(e.cronogramaVencido, true, 'vencido'); casi(e.spi, 0.99, 'SPI 0,99'); igual(e.fechaGanada, '2026-01-10', 'fecha ganada'); igual(e.atrasoFechaDias, 10, 'atraso a la fecha 10 (no llega a 31)');
+    igual(e.obraProgramadaTerminada, false, 'lo programado no está terminado');
+    const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+    igual(s.color, 'rojo', 'rojo'); igual(s.motivos.join('|'), 'cronograma vencido el 2026-01-11 con 99,0 % de lo programado', 'motivo propio');
+    // El día del último fin todavía no está vencido
+    igual(semEjec({ evm: con(990, '2026-01-11'), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'el día del último fin: verde');
+    // Valor ganado 100: por producción completa o por rubro marcado terminado
+    for(const [que, evm] of [['producción completa', con(1000)], ['rubro terminado con 40 % de producción', con(400, '2026-01-20', 'terminado')], ['años después, completa', con(1000, '2029-01-20')]]){
+      igual(evm.cronogramaVencido, true, que + ': el cronograma venció'); casi(evm.evPct, 100, que + ': valor ganado 100'); igual(evm.obraProgramadaTerminada, true, que + ': lo programado está terminado');
+      const v = semEjec({ evm, garantias: SIN_GAR, pendientes: 0 });
+      igual(v.color, 'verde', que + ': NO es rojo'); igual(v.motivos.length, 0, que + ': sin motivos');
+    }
+    // Umbral de «lo programado está terminado» (OBRA_TERMINADA_PCT = 99,95 % del peso con cronograma), calculado por el núcleo
+    const fino = prod => nucleoEvmProyecto({ rubros: [rubro('r1', 100000, prod)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy: '2026-01-20' });
+    igual(fino(99960).obraProgramadaTerminada, true, '99,96 %: terminada'); igual(semEjec({ evm: fino(99960), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', '99,96 %: no es rojo');
+    igual(fino(99940).obraProgramadaTerminada, false, '99,94 %: sin terminar');
+    const s9994 = semEjec({ evm: fino(99940), garantias: SIN_GAR, pendientes: 0 });
+    igual(s9994.color, 'rojo', '99,94 %: rojo'); igual(s9994.motivos[0], 'cronograma vencido el 2026-01-11 con 99,9 % de lo programado', '99,94 %: el texto no dice 100');
+    // El semáforo se guía por obraProgramadaTerminada (no vuelve a comparar porcentajes) y escribe evPct / planFinalPct
+    const vencido = extra => semEjec({ evm: evmDe({ cronogramaVencido: true, ultimoFin: '2026-01-11', ...extra }), garantias: SIN_GAR, pendientes: 0 });
+    igual(vencido({ obraProgramadaTerminada: true }).color, 'verde', 'terminada: verde');
+    igual(vencido({ evPct: 0 }).color, 'rojo', '0 %'); igual(vencido({ evPct: 0 }).motivos.join('|'), 'cronograma vencido el 2026-01-11 con 0,0 % de lo programado', 'texto con 0 %');
+    igual(vencido({ evPct: 30, planFinalPct: 40 }).motivos.join('|'), 'cronograma vencido el 2026-01-11 con 75,0 % de lo programado', 'el porcentaje es sobre lo programado (30 de 40), no sobre el proyecto');
+    // Sin vencer, un valor ganado bajo no es este motivo
+    igual(semEjec({ evm: evmDe({ cronogramaVencido: false, evPct: 5 }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'no vencido');
+    // En los demás estados el cronograma vencido no pinta
+    for(const estado of SIN_COLOR) igual(nucleoSemaforo({ estado, evm: e, garantias: SIN_GAR, pendientes: 0 }).color, null, estado + ': cronograma vencido sin color');
+  });
+
+  await prueba('cronograma vencido con TODO lo programado terminado y un rubro sin cronograma a medias → NO es rojo por cronograma vencido', () => {
+    // r1 (50 %) con cronograma del 1 al 11-ene, terminado; r2 (50 %) sin cronograma, al 20 %. Hoy 1-mar.
+    const con = (r1, hoy = '2026-03-01') => nucleoEvmProyecto({ rubros: [r1, rubro('r2', 500, 100)], cronograma: [fila('r1', '2026-01-01', '2026-01-11')], lineaBaseActivaId: 'zzz-lb', hoy });
+    for(const [que, r1] of [['rubro marcado terminado', rubro('r1', 500, 300, 'terminado')], ['producción completa', rubro('r1', 500, 500)]]){
+      const e = con(r1);
+      igual(e.cronogramaVencido, true, que + ': el cronograma venció'); casi(e.evPct, 50, que + ': valor ganado en cronograma 50'); casi(e.planFinalPct, 50, que + ': peso con cronograma 50');
+      igual(e.obraProgramadaTerminada, true, que + ': lo programado está terminado'); casi(e.avancePct, 60, que + ': el avance principal es 60 %, no 100');
+      igual(e.rubrosSinCronograma, 1, que + ': un rubro sin cronograma'); casi(e.spi, 1, que + ': SPI 1');
+      igual(e.atrasoFechaDias, 0, que + ': sin atraso a la fecha'); igual(e.atrasoProyectadoDias, 0, que + ': sin atraso proyectado');
+      const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+      igual(s.color, 'verde', que + ': verde'); igual(s.motivos.length, 0, que + ': sin motivos');
+    }
+    // Contraprueba: con el rubro programado al 90 % sí es rojo, y el texto habla de lo programado (90 %), no del proyecto (45 %)
+    const e = con(rubro('r1', 500, 450));
+    casi(e.evPct, 45, 'contraprueba: valor ganado en cronograma'); igual(e.obraProgramadaTerminada, false, 'contraprueba: sin terminar');
+    igual(e.fechaGanada, '2026-01-10', 'contraprueba: el 45 % se preveía el día 9'); igual(e.atrasoFechaDias, 50, 'contraprueba: del 10-ene al 1-mar');
+    const s = semEjec({ evm: e, garantias: SIN_GAR, pendientes: 0 });
+    igual(s.color, 'rojo', 'contraprueba: rojo');
+    igual(s.motivos.join('|'), 'cronograma vencido el 2026-01-11 con 90,0 % de lo programado|atraso a la fecha de 50 días|SPI 0,90', 'contraprueba: motivos');
+  });
+
+  await prueba('propiedades (generador de semilla fija): atraso a la fecha acotado, 0 si el valor ganado alcanza el plan, y nunca crece con más valor ganado', () => {
+    const r = azar(20261121);
+    const entero = (a, b) => a + Math.floor(r() * (b - a + 1));
+    let medibles = 0, conAtraso = 0, enCero = 0, nulos = 0, topados = 0, vencidos = 0, mesetas = 0, hitosAlInicio = 0;
+    for(let caso = 0; caso < 600; caso++){
+      const n = entero(1, 6), rubros = [], cronograma = [];
+      for(let i = 0; i < n; i++){
+        const monto = entero(0, 9) === 0 ? 0 : entero(1, 5000);
+        const estado = ['planificado', 'trabajando', 'trabajando', 'suspendido', 'terminado'][entero(0, 4)];
+        rubros.push(rubro('r' + i, monto, Math.round(monto * r() * 1.2), estado));
+        if(entero(0, 4) === 0) continue;                               // uno de cada cinco, sin cronograma
+        // Inicios repartidos en año y medio (deja huecos = mesetas), duración 0 (hito) a 150 días, a veces invertida
+        const ini = nucleoSumarDias('2026-01-01', entero(0, 540)), fin = nucleoSumarDias(ini, entero(0, 5) === 0 ? 0 : entero(1, 150));
+        cronograma.push(entero(0, 7) === 0 ? fila('r' + i, fin, ini) : fila('r' + i, ini, fin));
+      }
+      const hoy = nucleoSumarDias('2025-11-01', entero(0, 1000));
+      const fechaInicioProyecto = entero(0, 2) === 0 ? nucleoSumarDias('2025-10-01', entero(0, 900)) : null;
+      const que = `caso ${caso} (hoy ${hoy}, inicio ${fechaInicioProyecto})`;
+      const datos = { rubros, cronograma, lineaBaseActivaId: 'zzz-lb', hoy, fechaInicioProyecto };
+      const e = nucleoEvmProyecto(datos);
+      igual(e.atrasoDias, e.atrasoFechaDias || 0, que + ': atrasoDias = atrasoFechaDias || 0');
+      assert(e.avancePct >= e.evPct - 1e-9 && e.avancePct <= 100 + 1e-9, que + ': evPct ≤ avancePct ≤ 100');
+      assert(e.planPct <= e.planFinalPct + 1e-9 && e.evPct <= e.planFinalPct + 1e-9, que + ': plan y valor ganado ≤ peso con cronograma');
+      if(!e.spiValido){
+        nulos++;
+        igual(e.atrasoFechaDias, null, que + ': sin SPI válido, atraso a la fecha null'); igual(e.atrasoProyectadoDias, null, que + ': sin SPI válido, proyectado null');
+        continue;
+      }
+      medibles++;
+      // 1. Acotado: entero, 0 ≤ atraso ≤ días desde el primer inicio (y desde el inicio del proyecto, si es posterior)
+      const desdeInicio = nucleoDiasEntre(e.primerInicio, hoy);
+      assert(Number.isInteger(e.atrasoFechaDias) && e.atrasoFechaDias >= 0 && e.atrasoFechaDias <= desdeInicio, `${que}: atraso ${e.atrasoFechaDias} fuera de 0..${desdeInicio}`);
+      if(fechaInicioProyecto && fechaInicioProyecto > e.primerInicio){
+        const tope = Math.max(0, nucleoDiasEntre(fechaInicioProyecto, hoy));
+        assert(e.atrasoFechaDias <= tope, `${que}: atraso ${e.atrasoFechaDias} mayor que el tope del inicio del proyecto (${tope})`);
+        if(e.fechaGanada && nucleoDiasEntre(e.fechaGanada, hoy) > tope) topados++;
+      }
+      // 2. Valor ganado ≥ plan → 0 en los dos atrasos; por debajo del plan, al menos un día (salvo tope)
+      if(e.evPct >= e.planPct){ enCero++; igual(e.atrasoFechaDias, 0, que + ': valor ganado ≥ plan → 0'); igual(e.fechaGanada, null, que + ': sin fecha ganada'); igual(e.atrasoProyectadoDias, 0, que + ': proyectado 0'); }
+      else if(e.atrasoFechaDias > 0){
+        conAtraso++;
+        // La fecha ganada es de verdad el ÚLTIMO día en que el plan no superaba el valor ganado
+        const planEn = f => nucleoEvmProyecto({ ...datos, hoy: f }).planPct;
+        // (salvo que un hito el mismo día del primer inicio ya ponga el plan por encima: ahí la fecha ganada
+        // es el primer inicio y el atraso son los días transcurridos desde él, que es el tope)
+        if(e.fechaGanada === e.primerInicio && planEn(e.primerInicio) > e.evPct + 1e-9){ hitosAlInicio++; if(!(fechaInicioProyecto && fechaInicioProyecto > e.primerInicio)) igual(e.atrasoFechaDias, desdeInicio, que + ': hito al inicio, el atraso es todo lo transcurrido'); }
+        else assert(planEn(e.fechaGanada) <= e.evPct + 1e-9, que + ': el plan de la fecha ganada no supera el valor ganado');
+        assert(planEn(nucleoSumarDias(e.fechaGanada, 1)) > e.evPct + 1e-9, que + ': el plan del día siguiente ya lo supera');
+        if(planEn(nucleoSumarDias(e.fechaGanada, -20)) > planEn(e.fechaGanada) - 1e-9 && e.fechaGanada > nucleoSumarDias(e.primerInicio, 20)) mesetas++;
+      }
+      // 3. Proyectado: null o entero ≥ 0; con el cronograma vencido y sin terminar, al menos los días pasados del fin
+      assert(e.atrasoProyectadoDias === null || (Number.isInteger(e.atrasoProyectadoDias) && e.atrasoProyectadoDias >= 0), que + ': proyectado null o entero ≥ 0');
+      if(e.atrasoProyectadoDias === null) assert(e.spi < NUCLEO_CARTERA.SPI_MINIMO_PROYECCION, que + ': proyectado null solo con SPI bajo');
+      if(e.cronogramaVencido && !e.obraProgramadaTerminada && e.atrasoProyectadoDias !== null){
+        vencidos++;
+        assert(e.atrasoProyectadoDias >= nucleoDiasEntre(e.ultimoFin, hoy), que + ': proyectado menor que los días pasados del fin');
+      }
+      // 4. Monotonía: con más valor ganado (más producción en un rubro, o un rubro que pasa a terminado) nunca hay MÁS atraso
+      let previo = e;
+      for(let paso = 0; paso < 4; paso++){
+        const i = entero(0, n - 1), mas = rubros.map(x => ({ ...x }));
+        if(entero(0, 3) === 0) mas[i].estado = 'terminado'; else mas[i].total_produccion += Math.round(mas[i].monto_contrato * r() * 0.4);
+        const sig = nucleoEvmProyecto({ ...datos, rubros: mas });
+        assert(sig.evPct >= previo.evPct - 1e-9, que + ': el valor ganado no baja');
+        assert(sig.atrasoFechaDias <= previo.atrasoFechaDias, `${que}: con más valor ganado el atraso sube de ${previo.atrasoFechaDias} a ${sig.atrasoFechaDias}`);
+        if(sig.atrasoProyectadoDias !== null && previo.atrasoProyectadoDias !== null) assert(sig.atrasoProyectadoDias <= previo.atrasoProyectadoDias, `${que}: con más valor ganado el proyectado sube de ${previo.atrasoProyectadoDias} a ${sig.atrasoProyectadoDias}`);
+        rubros.splice(0, n, ...mas); datos.rubros = rubros; previo = sig;
+      }
+      // …y con el mismo valor ganado, un día después nunca hay MENOS atraso a la fecha
+      const manana = nucleoEvmProyecto({ ...datos, hoy: nucleoSumarDias(hoy, 1) });
+      if(!(fechaInicioProyecto && fechaInicioProyecto > hoy)) assert(manana.atrasoFechaDias >= previo.atrasoFechaDias, `${que}: al día siguiente el atraso baja de ${previo.atrasoFechaDias} a ${manana.atrasoFechaDias}`);
+    }
+    // El generador cubre de verdad cada rama (los conteos son fijos: la semilla no cambia)
+    assert(medibles >= 300 && conAtraso >= 150 && enCero >= 20 && nulos >= 30 && topados >= 10 && vencidos >= 50 && mesetas >= 10 && hitosAlInicio >= 3,
+      `cobertura insuficiente: medibles ${medibles}, con atraso ${conAtraso}, en cero ${enCero}, nulos ${nulos}, topados ${topados}, vencidos ${vencidos}, mesetas ${mesetas}, hitos al inicio ${hitosAlInicio}`);
+    if(process.env.ZZZ_COBERTURA) console.log(`      cobertura: medibles ${medibles}, con atraso ${conAtraso}, en cero ${enCero}, nulos ${nulos}, topados ${topados}, vencidos ${vencidos}, mesetas ${mesetas}, hitos al inicio ${hitosAlInicio}`);
   });
 
   await prueba('semáforo: umbrales del SPI — < 0,85 rojo; 0,85 a < 0,95 amarillo; ≥ 0,95 verde', () => {
-    const color = spi => nucleoSemaforo({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 }).color;
+    const color = spi => semEjec({ evm: evmDe({ spi }), garantias: SIN_GAR, pendientes: 0 }).color;
     igual(color(0), 'rojo', '0'); igual(color(0.8499), 'rojo', '0,8499'); igual(color(0.85), 'amarillo', '0,85 exacto');
     igual(color(0.9), 'amarillo', '0,90'); igual(color(0.9499), 'amarillo', '0,9499'); igual(color(0.95), 'verde', '0,95 exacto');
     igual(color(1), 'verde', '1'); igual(color(1.4), 'verde', '1,4');
   });
 
   await prueba('semáforo: un SPI no válido (plan < 0,5 %) o nulo no decide el color', () => {
-    const noValido = nucleoSemaforo({ evm: evmDe({ spi: 0.1, spiValido: false }), garantias: SIN_GAR, pendientes: 0 });
+    const noValido = semEjec({ evm: evmDe({ spi: 0.1, spiValido: false }), garantias: SIN_GAR, pendientes: 0 });
     igual(noValido.color, 'verde', 'SPI 0,10 no válido'); igual(noValido.motivos.join('|'), 'plan a la fecha todavía menor al 0,5 %', 'motivo');
-    const nulo = nucleoSemaforo({ evm: evmDe({ spi: null, spiValido: false }), garantias: SIN_GAR, pendientes: 0 });
+    const nulo = semEjec({ evm: evmDe({ spi: null, spiValido: false }), garantias: SIN_GAR, pendientes: 0 });
     igual(nulo.color, 'verde', 'SPI nulo'); igual(nulo.motivos.length, 0, 'con cronograma que aún no empieza: sin motivo');
-    const sinCron = nucleoSemaforo({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: SIN_GAR, pendientes: 0 });
+    const sinCron = semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: SIN_GAR, pendientes: 0 });
     igual(sinCron.color, 'verde', 'sin cronograma'); igual(sinCron.motivos.join('|'), 'sin cronograma: no hay SPI', 'motivo de sin cronograma');
     // El SPI no válido tampoco estorba a las otras causas
-    igual(nucleoSemaforo({ evm: evmDe({ spi: 0.1, spiValido: false }), garantias: G(1, 0), pendientes: 0 }).color, 'rojo', 'garantía vencida con SPI no válido');
+    igual(semEjec({ evm: evmDe({ spi: 0.1, spiValido: false }), garantias: G(1, 0), pendientes: 0 }).color, 'rojo', 'garantía vencida con SPI no válido');
   });
 
   await prueba('semáforo: garantías — vencida = rojo, por vencer = amarillo, con el texto en singular y plural', () => {
-    const s1 = nucleoSemaforo({ evm: evmDe(), garantias: G(1, 0), pendientes: 0 });
+    const s1 = semEjec({ evm: evmDe(), garantias: G(1, 0), pendientes: 0 });
     igual(s1.color, 'rojo', 'una vencida'); igual(s1.motivos.join('|'), '1 garantía vencida', 'singular');
-    const s2 = nucleoSemaforo({ evm: evmDe(), garantias: G(2, 0), pendientes: 0 });
+    const s2 = semEjec({ evm: evmDe(), garantias: G(2, 0), pendientes: 0 });
     igual(s2.motivos.join('|'), '2 garantías vencidas', 'plural');
-    const s3 = nucleoSemaforo({ evm: evmDe(), garantias: G(0, 1), pendientes: 0 });
+    const s3 = semEjec({ evm: evmDe(), garantias: G(0, 1), pendientes: 0 });
     igual(s3.color, 'amarillo', 'una por vencer'); igual(s3.motivos.join('|'), '1 garantía por vencer en 5 días o menos', 'singular');
-    const s4 = nucleoSemaforo({ evm: evmDe(), garantias: G(0, 3), pendientes: 0 });
+    const s4 = semEjec({ evm: evmDe(), garantias: G(0, 3), pendientes: 0 });
     igual(s4.motivos.join('|'), '3 garantías por vencer en 5 días o menos', 'plural');
     // Sin cronograma también pinta por garantías
-    igual(nucleoSemaforo({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: G(0, 1), pendientes: 0 }).color, 'amarillo', 'sin cronograma y garantía por vencer');
+    igual(semEjec({ evm: evmDe({ spi: null, spiValido: false, sinCronograma: true }), garantias: G(0, 1), pendientes: 0 }).color, 'amarillo', 'sin cronograma y garantía por vencer');
   });
 
   await prueba('semáforo: pendientes — 5 sigue verde, 6 es amarillo', () => {
-    igual(nucleoSemaforo({ evm: evmDe(), garantias: SIN_GAR, pendientes: 5 }).color, 'verde', '5 pendientes');
-    const s = nucleoSemaforo({ evm: evmDe(), garantias: SIN_GAR, pendientes: 6 });
+    igual(semEjec({ evm: evmDe(), garantias: SIN_GAR, pendientes: 5 }).color, 'verde', '5 pendientes');
+    const s = semEjec({ evm: evmDe(), garantias: SIN_GAR, pendientes: 6 });
     igual(s.color, 'amarillo', '6 pendientes'); igual(s.motivos.join('|'), '6 pendientes (libro, observaciones y solicitudes)', 'motivo');
   });
 
-  await prueba('semáforo: atraso — 30 días no es rojo, 31 sí (aunque el SPI esté en verde)', () => {
-    igual(nucleoSemaforo({ evm: evmDe({ spi: 0.97, atrasoDias: 30 }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', '30 días');
-    const s = nucleoSemaforo({ evm: evmDe({ spi: 0.97, atrasoDias: 31 }), garantias: SIN_GAR, pendientes: 0 });
-    igual(s.color, 'rojo', '31 días'); igual(s.motivos.join('|'), 'atraso estimado de 31 días', 'motivo');
+  await prueba('semáforo: atraso a la fecha — 30 días no es rojo, 31 sí (aunque el SPI esté en verde)', () => {
+    igual(semEjec({ evm: evmDe({ spi: 0.97, atrasoFechaDias: 30 }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', '30 días');
+    igual(semEjec({ evm: evmDe({ spi: 0.97, atrasoFechaDias: NUCLEO_CARTERA.ATRASO_ROJO_DIAS }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'el umbral exacto');
+    const s = semEjec({ evm: evmDe({ spi: 0.97, atrasoFechaDias: 31 }), garantias: SIN_GAR, pendientes: 0 });
+    igual(s.color, 'rojo', '31 días'); igual(s.motivos.join('|'), 'atraso a la fecha de 31 días', 'motivo');
+    // Lo que cuenta es atrasoFechaDias: ni el alias suelto ni el proyectado
+    igual(semEjec({ evm: evmDe({ spi: 0.97, atrasoFechaDias: 0, atrasoDias: 99, atrasoProyectadoDias: 99 }), garantias: SIN_GAR, pendientes: 0 }).color, 'verde', 'atrasoDias y proyectado no deciden');
+    for(const estado of SIN_COLOR) igual(nucleoSemaforo({ estado, evm: evmDe({ spi: 0.97, atrasoFechaDias: 31 }) }).color, null, estado + ': 31 días sin color');
   });
 
   await prueba('semáforo: motivos — en rojo van primero los rojos y luego los amarillos; el SPI con coma decimal', () => {
-    const todo = nucleoSemaforo({ evm: evmDe({ spi: 0.5, atrasoDias: 44 }), garantias: G(1, 2), pendientes: 9 });
+    const todo = semEjec({ evm: evmDe({ spi: 0.5, atrasoFechaDias: 44, cronogramaVencido: true, ultimoFin: '2026-06-30', evPct: 41.26 }), garantias: G(1, 2), pendientes: 9 });
     igual(todo.color, 'rojo', 'color');
-    igual(todo.motivos.join('|'), 'SPI 0,50|1 garantía vencida|atraso estimado de 44 días|2 garantías por vencer en 5 días o menos|9 pendientes (libro, observaciones y solicitudes)', 'orden de los motivos');
-    const amarillo = nucleoSemaforo({ evm: evmDe({ spi: 0.91 }), garantias: G(0, 1), pendientes: 6 });
+    igual(todo.motivos.join('|'), 'SPI 0,50|cronograma vencido el 2026-06-30 con 41,3 % de lo programado|1 garantía vencida|atraso a la fecha de 44 días|2 garantías por vencer en 5 días o menos|9 pendientes (libro, observaciones y solicitudes)', 'orden de los motivos');
+    const amarillo = semEjec({ evm: evmDe({ spi: 0.91 }), garantias: G(0, 1), pendientes: 6 });
     igual(amarillo.color, 'amarillo', 'amarillo');
     igual(amarillo.motivos.join('|'), 'SPI 0,91|1 garantía por vencer en 5 días o menos|6 pendientes (libro, observaciones y solicitudes)', 'motivos del amarillo');
     // Rojo por garantía con SPI amarillo: el SPI se lista después, como motivo secundario, y una sola vez
-    const mixto = nucleoSemaforo({ evm: evmDe({ spi: 0.9 }), garantias: G(1, 0), pendientes: 0 });
+    const mixto = semEjec({ evm: evmDe({ spi: 0.9 }), garantias: G(1, 0), pendientes: 0 });
     igual(mixto.motivos.join('|'), '1 garantía vencida|SPI 0,90', 'rojo por garantía + SPI amarillo');
     // En verde no se arrastran motivos de alerta
-    igual(nucleoSemaforo({ evm: evmDe({ spi: 0.99 }), garantias: SIN_GAR, pendientes: 5 }).motivos.length, 0, 'verde sin motivos');
+    igual(semEjec({ evm: evmDe({ spi: 0.99 }), garantias: SIN_GAR, pendientes: 5 }).motivos.length, 0, 'verde sin motivos');
   });
 
   resumen();
