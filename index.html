@@ -4154,7 +4154,7 @@ function renderProyectosTabla(containerId, lista){
           <span style="font-size:12px;font-weight:600;color:${tiempoColor}">${tiempoIcon} ${tiempoLabel}</span>
           ${spi!==null?`<div style="font-size:10px;color:#676879">SPI: ${spi.toFixed(2)}</div>`:''}
         </td>
-        ${puedeEditar?`<td><button onclick="event.stopPropagation();abrirModalProyecto(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 10px;font-size:12px">✏️ Editar</button></td>`:''}
+        ${puedeEditar?`<td>${(!esAdminDeEmpresa() || p.empresa_id===currentPerfil.empresa_id)?`<button onclick="event.stopPropagation();abrirModalProyecto(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="btn" style="padding:4px 10px;font-size:12px">✏️ Editar</button>`:''}</td>`:''}
       </tr>`;
     }).join('')}
     </tbody>
@@ -4484,7 +4484,8 @@ function prepararEmpresaProyecto(proyecto){
   selEmp.value = proyecto?.empresa_id || gestoraPorDefecto();
   selEmp.disabled = !esAdminGlobal;
   // Emisor: vacío = la gestora; cualquier empresa activa (gestora o no), más la actual.
-  const emisores = empresasCatalogo().filter(e=>e.activa && e.sigla);
+  // Otra gestora como emisor solo la pone el admin global (la base lo impone: proyectos_guard_emisor)
+  const emisores = empresasCatalogo().filter(e=>e.activa && e.sigla && (esAdminGlobal || !e.es_gestora));
   const emActual = empresaPorId(proyecto?.emisor_empresa_id);
   if(emActual && !emisores.some(e=>e.id===emActual.id)) emisores.push(emActual);
   const selEmi = document.getElementById('pEmisor');
@@ -4687,7 +4688,8 @@ async function guardarProyecto(){
   }
   let error;
   if(id){
-    ({ error } = await sb.from('proyectos').update(data).eq('id',id));
+    const r = await sb.from('proyectos').update(data).eq('id',id).select('id');
+    error = r.error || (!r.data?.length ? { message: 'no tienes permiso para editar este proyecto' } : null);
   } else {
     const { data: nuevo, error: errIns } = await sb.from('proyectos')
       .insert({...data, created_by: currentUser?.id})
@@ -10703,12 +10705,9 @@ async function guardarPlantillaCalidad(){
   const btn = document.getElementById('btnGuardarPlantillaCalidad');
   btn.disabled=true; btn.textContent='Guardando...';
 
-  const data = {
-    nombre, descripcion: descripcion||null,
-    campos: _camposPlantillaActual,
-    empresa_id: currentPerfil?.empresa_id||null,
-    creado_por: currentUser?.id||null
-  };
+  // El catálogo de plantillas es común a todas las empresas: se crean sin empresa, y editar
+  // una no cambia su empresa ni su autor (antes cada edición la reasignaba al editor).
+  const data = { nombre, descripcion: descripcion||null, campos: _camposPlantillaActual };
 
   let error;
   if(id){
@@ -10716,7 +10715,7 @@ async function guardarPlantillaCalidad(){
     const r = await sb.from('formatos_calidad_plantillas').update(data).eq('id',id).select('id');
     error = r.error || (!r.data?.length ? { message: 'no tienes permiso para modificar plantillas del catálogo' } : null);
   } else {
-    ({ error } = await sb.from('formatos_calidad_plantillas').insert(data));
+    ({ error } = await sb.from('formatos_calidad_plantillas').insert({ ...data, empresa_id: null, creado_por: currentUser?.id||null }));
   }
 
   btn.disabled=false; btn.textContent='Guardar plantilla';

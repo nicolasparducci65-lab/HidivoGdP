@@ -10,7 +10,13 @@
 --   · proyecto_tiene_documentos_emitidos(uuid): planilla fuera de borrador,
 --     orden de cambio aprobada, acta de recepción, liquidación o expediente.
 --   · trg_proyectos_guard_codigo: un código ya asignado no se cambia ni se
---     borra si el proyecto tiene documentos emitidos.
+--     borra si el proyecto tiene documentos emitidos, y todo código que asigne
+--     alguien que no sea admin global debe empezar por la sigla de la gestora
+--     del proyecto (nadie ocupa códigos con la sigla de otra empresa).
+--   · trg_proyectos_guard_emisor: quien no es admin global solo puede poner
+--     como emisor a la propia gestora o a una empresa activa que no sea
+--     gestora (un emisor documental). Otra gestora como emisor, solo el admin
+--     global.
 --   · proyecto_siguiente_codigo(empresa, tipo, año): propone el siguiente
 --     correlativo de esa sigla y ese año (lo usará el alta de proyectos).
 --   · proyecto_emisor_historial: cada vez que cambia el emisor EFECTIVO de un
@@ -81,20 +87,51 @@ create or replace function public.proyectos_guard_codigo() returns trigger
   language plpgsql security definer
   set search_path to 'public', 'pg_temp'
 as $$
+declare v_sigla text;
 begin
-  if old.codigo is null or new.codigo is not distinct from old.codigo then return new; end if;
-  -- Exentos: service_role y sesión sin JWT (SQL Editor), para corregir errores.
+  if tg_op = 'UPDATE' and new.codigo is not distinct from old.codigo then return new; end if;
+  -- Exentos: service_role y sesión sin JWT (SQL Editor), para corregir errores y cargar el CSV.
   if auth.uid() is null or coalesce(auth.role(), '') = 'service_role' then return new; end if;
-  if proyecto_tiene_documentos_emitidos(old.id) then
+  if tg_op = 'UPDATE' and old.codigo is not null and proyecto_tiene_documentos_emitidos(old.id) then
     raise exception 'El código % no se puede cambiar: el proyecto ya tiene documentos emitidos.', old.codigo
       using errcode = '42501';
+  end if;
+  -- La sigla del código es la de la gestora del proyecto (en el alta, empresa_id ya viene
+  -- resuelta por trg_proyectos_a_gestora, que corre antes por orden alfabético).
+  if new.codigo is not null and not sst_es_admin_global() then
+    select sigla into v_sigla from empresas where id = new.empresa_id;
+    if v_sigla is null or split_part(new.codigo, '-', 1) <> v_sigla then
+      raise exception 'El código % no corresponde a la empresa gestora del proyecto (sigla %).', new.codigo, coalesce(v_sigla, 'sin definir')
+        using errcode = '23514';
+    end if;
   end if;
   return new;
 end $$;
 
 drop trigger if exists trg_proyectos_guard_codigo on public.proyectos;
-create trigger trg_proyectos_guard_codigo before update of codigo on public.proyectos
+create trigger trg_proyectos_guard_codigo before insert or update of codigo on public.proyectos
   for each row execute function public.proyectos_guard_codigo();
+
+-- Emisor documental: quien no es admin global no pone a OTRA gestora (ni a una empresa
+-- inactiva) como emisor de su proyecto.
+create or replace function public.proyectos_guard_emisor() returns trigger
+  language plpgsql security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if new.emisor_empresa_id is null then return new; end if;
+  if tg_op = 'UPDATE' and new.emisor_empresa_id is not distinct from old.emisor_empresa_id then return new; end if;
+  if auth.uid() is null or coalesce(auth.role(), '') = 'service_role' then return new; end if;
+  if sst_es_admin_global() then return new; end if;
+  if new.emisor_empresa_id = new.empresa_id then return new; end if;
+  if exists (select 1 from empresas e where e.id = new.emisor_empresa_id and e.activa and not e.es_gestora) then return new; end if;
+  raise exception 'Solo un administrador global puede poner como emisor a otra empresa gestora o a una empresa inactiva.'
+    using errcode = '42501';
+end $$;
+
+drop trigger if exists trg_proyectos_guard_emisor on public.proyectos;
+create trigger trg_proyectos_guard_emisor before insert or update of emisor_empresa_id on public.proyectos
+  for each row execute function public.proyectos_guard_emisor();
 
 revoke all on function public.proyecto_tiene_documentos_emitidos(uuid) from public;
 revoke all on function public.proyecto_siguiente_codigo(uuid, text, integer) from public;
@@ -143,7 +180,7 @@ commit;
 -- ── Verificación (solo lectura salvo el punto 3, que hace ROLLBACK) ─────────
 -- 1) Objetos creados:
 --   select tgname from pg_trigger where tgrelid = 'public.proyectos'::regclass and not tgisinternal order by 1;
---   -- incluye trg_proyectos_guard_codigo y trg_proyectos_anotar_emisor
+--   -- incluye trg_proyectos_guard_codigo, trg_proyectos_guard_emisor y trg_proyectos_anotar_emisor
 --   select relrowsecurity from pg_class where oid = 'public.proyecto_emisor_historial'::regclass;   -- true
 -- 2) Siguiente código de la gestora (sin códigos cargados devuelve HDV-FIS-2026-001):
 --   select public.proyecto_siguiente_codigo((select id from public.empresas where sigla = 'HDV'), 'fiscalizacion', 2026);
@@ -160,6 +197,8 @@ commit;
 -- ── Reversión ───────────────────────────────────────────────────────────────
 -- begin;
 --   drop trigger if exists trg_proyectos_anotar_emisor on public.proyectos;
+--   drop trigger if exists trg_proyectos_guard_emisor on public.proyectos;
+--   drop function if exists public.proyectos_guard_emisor();
 --   drop trigger if exists trg_proyectos_guard_codigo on public.proyectos;
 --   drop function if exists public.proyectos_anotar_emisor();
 --   drop function if exists public.proyectos_guard_codigo();
