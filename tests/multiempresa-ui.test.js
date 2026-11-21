@@ -212,9 +212,13 @@ const pausa = () => new Promise(r => setTimeout(r, 5));
     t.el('empNombre').value = 'Delta'; t.el('empSigla').value = 'd';
     await t.w.guardarEmpresa();
     assert(/La sigla debe tener/.test(t.toasts().at(-1).msg) && t.fixture.empresas.length === 4, 'sigla inválida: no guarda');
-    t.el('empSigla').value = 'del'; t.el('empRuc').value = '123';
-    await t.w.guardarEmpresa();
-    assert(/RUC/.test(t.toasts().at(-1).msg), 'RUC inválido: no guarda');
+    assert(t.el('empGestora').checked === false, 'en «Nueva empresa» la casilla Gestora no viene marcada');
+    t.el('empSigla').value = 'del';
+    for(const malo of ['123', '09933798960', '099337989600', '0993379896-001', '09933798960011']){
+      t.el('empRuc').value = malo;
+      await t.w.guardarEmpresa();
+      assert(/RUC/.test(t.toasts().at(-1).msg) && t.fixture.empresas.length === 4, 'RUC inválido «' + malo + '»: no guarda');
+    }
     t.el('empRuc').value = '0990000000009'; t.el('empRazon').value = 'Delta Construcciones S.A.'; t.el('empGestora').checked = true;
     await t.w.guardarEmpresa();
     const nueva = t.fixture.empresas.find(e => e.sigla === 'DEL');
@@ -228,6 +232,40 @@ const pausa = () => new Promise(r => setTimeout(r, 5));
     assert(/gestiona 2 proyecto/.test(t.w._confirmaciones.at(-1)), 'avisa de los proyectos que gestiona');
     assert(t.fixture.empresas.find(e => e.id === 'e-b').es_gestora === false && t.fixture.empresas.find(e => e.id === 'e-b').logo_data === 'data:image/png;base64,QkJC', 'guarda el cambio y conserva el logo');
     t.cerrar();
+  });
+
+  await prueba('RUC: validación de estructura, sin dígito verificador (el de HIDIVO no cumple módulo 11 y es válido)', async () => {
+    // Módulo 11 de sociedades (coeficientes 4,3,2,7,6,5,4,3,2): 0993379896001 da 1 y su décimo dígito es 6.
+    const mod11 = r => { const c = [4,3,2,7,6,5,4,3,2]; const s = c.reduce((a, k, i) => a + k * +r[i], 0); const d = 11 - (s % 11); return d === 11 ? 0 : d; };
+    assert(mod11('0993379896001') !== 6 && mod11('0990521786001') === 6, 'el RUC de HIDIVO no cumple módulo 11; el de CIPORT sí');
+    assert(!/mod(ulo)?\s*11|% ?11/i.test(extraerFuncion(src, 'guardarEmpresa')), 'guardarEmpresa no calcula dígito verificador');
+    const t = montar();
+    await t.w.cargarEmpresasAdmin();
+    for(const [sigla, ruc] of [['HDZ', '0993379896001'], ['CIZ', '0990521786001'], ['CED', '0912345678']]){
+      t.w.abrirFormEmpresa('nueva');
+      t.el('empNombre').value = 'Empresa ' + sigla; t.el('empSigla').value = sigla; t.el('empRuc').value = ruc;
+      await t.w.guardarEmpresa();
+      const fila = t.fixture.empresas.find(e => e.sigla === sigla);
+      assert(fila && fila.ruc === ruc && t.toasts().at(-1).tipo === 'success', 'RUC ' + ruc + ' aceptado y guardado tal cual: ' + JSON.stringify(t.toasts().at(-1)));
+      assert(fila.es_gestora === false, 'una empresa nueva no nace como gestora si no se marca');
+    }
+    t.cerrar();
+  });
+
+  await prueba('gestoras: no se puede dejar la plataforma sin ninguna; una segunda pide confirmación', async () => {
+    const una = montar({ empresas: EMPRESAS().filter(e => e.id !== 'e-b'), confirmar: false });
+    await una.w.cargarEmpresasAdmin();
+    una.w.abrirFormEmpresa('e-a'); una.el('empActiva').checked = false;
+    await una.w.guardarEmpresa();
+    assert(/al menos una empresa gestora activa/.test(una.toasts().at(-1).msg) && una.fixture.empresas.find(e => e.id === 'e-a').activa === true, 'la única gestora no se puede desactivar');
+    una.w.abrirFormEmpresa('nueva'); una.el('empNombre').value = 'Nueva'; una.el('empSigla').value = 'NUE'; una.el('empGestora').checked = true;
+    await una.w.guardarEmpresa();
+    assert(/2 gestoras activas/.test(una.w._confirmaciones.at(-1)) && !una.fixture.empresas.some(e => e.sigla === 'NUE'), 'segunda gestora: avisa y, si se cancela, no guarda');
+    una.w.abrirFormEmpresa('nueva'); una.el('empNombre').value = 'Emisora'; una.el('empSigla').value = 'EMI';
+    const antes = una.w._confirmaciones.length;
+    await una.w.guardarEmpresa();
+    assert(una.fixture.empresas.some(e => e.sigla === 'EMI' && e.es_gestora === false) && una.w._confirmaciones.length === antes, 'una empresa solo emisora se crea sin aviso');
+    una.cerrar();
   });
 
   resumen();

@@ -15465,7 +15465,7 @@ function renderFormEmpresa(){
       </div>
     </div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;margin:4px 0 14px">
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="empGestora" ${e ? (e.es_gestora?'checked':'') : 'checked'} style="width:15px;height:15px"/> Gestora: administra proyectos en la plataforma</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="empGestora" ${e && e.es_gestora ? 'checked' : ''} style="width:15px;height:15px"/> Gestora: administra proyectos en la plataforma</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="empActiva" ${!e || e.activa ? 'checked' : ''} style="width:15px;height:15px"/> Activa</label>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -15523,7 +15523,14 @@ async function guardarEmpresa(){
   };
   if(!fila.nombre){ toast('El nombre es obligatorio','error'); return; }
   if(!/^[A-Z0-9]{2,5}$/.test(fila.sigla)){ toast('La sigla debe tener de 2 a 5 letras mayúsculas o números','error'); return; }
-  if(fila.ruc && !/^[0-9]{10,13}$/.test(fila.ruc)){ toast('El RUC debe tener 13 dígitos (o 10 si es cédula)','error'); return; }
+  // Solo estructura: 13 dígitos (10 si es cédula). No se comprueba el dígito verificador (módulo 11):
+  // el SRI dejó de garantizarlo y hay RUC válidos de sociedades recientes que no lo cumplen.
+  if(fila.ruc && !/^([0-9]{10}|[0-9]{13})$/.test(fila.ruc)){ toast('El RUC debe tener 13 dígitos (10 si es cédula), sin espacios ni guiones','error'); return; }
+  // Gestoras activas tal como quedarían al guardar
+  const quedarian = gestorasActivas().filter(g=>g.id !== e?.id).length + (fila.es_gestora && fila.activa ? 1 : 0);
+  if(quedarian === 0){ toast('Debe quedar al menos una empresa gestora activa: sin ella nadie puede crear proyectos','error'); return; }
+  if(quedarian >= 2 && !(e && e.es_gestora && e.activa)
+     && !confirm(`Con ${quedarian} gestoras activas, quien no tenga una empresa asignada en su perfil dejará de poder crear proyectos hasta que se la asignes (hoy la gestora se toma sola porque hay una única).\n\nUna empresa que solo emite documentos NO debe marcarse como gestora.\n\n¿Continuar?`)) return;
   if(_empresaLogoPendiente !== undefined) fila.logo_data = _empresaLogoPendiente || null;
   if(e){
     const gestiona = proyectos.filter(p=>p.empresa_id===e.id).length;
@@ -15925,6 +15932,10 @@ async function cambiarRolUsuario(id, rolActual, empresaActual){
   const cambio = { rol: elegido.rol || null };
   if(elegido.rol === 'admin_empresa'){
     if(!elegido.empresa){ toast('Elige la empresa que va a administrar','error'); return; }
+    // El rol solo tiene respaldo en la base cuando está aplicado su SQL (funciones y políticas del
+    // admin de empresa). Sin él, el usuario vería la interfaz de administrador sin los permisos.
+    const { error: errRol } = await sb.rpc('sst_empresa_admin');
+    if(errRol){ toast('Todavía no se puede nombrar administradores de empresa: falta aplicar en la base el SQL de ese rol.','error'); return; }
     cambio.empresa_id = elegido.empresa;
   }
   const { error } = await sb.from('perfiles').update(cambio).eq('id', id);

@@ -27,12 +27,15 @@ const PROYECTOS = [
   { id: 'pb2', nombre: 'B dos', empresa_id: 'e-b', created_at: '2026-03-01' }
 ];
 
-function montar(perfil, { miembros = [], visibles = PROYECTOS } = {}){
+function montar(perfil, { miembros = [], visibles = PROYECTOS, sinSqlDelRol = false } = {}){
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://hidivo.test/HidivoGdP/', runScripts: 'outside-only' });
   const w = dom.window;
   // El fixture de proyectos hace de RLS: solo trae lo que la base dejaría ver a este usuario.
   const fixture = { proyectos: visibles.map(p => ({ ...p })), proyecto_miembros: miembros, perfiles: [{ id: 'u9', nombre: 'Otro', rol: null, empresa_id: null }] };
   w.sb = crearSb(fixture);
+  // RPC sst_empresa_admin: existe solo con el SQL del rol aplicado (10_admin_empresa.sql)
+  w._rpc = [];
+  w.sb.rpc = async fn => { w._rpc.push(fn); return sinSqlDelRol ? { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.sst_empresa_admin' } } : { data: null, error: null }; };
   w._toasts = []; w._accesos = []; w._recargas = 0; w.console = console;
   w.eval(CODIGO);
   w._fijar({ ...perfil, rolGlobal: perfil.rol }, { id: perfil.id }, []);
@@ -109,6 +112,21 @@ const ADMIN_B = { id: 'u1', rol: 'admin_empresa', empresa_id: 'e-b' };
     p = t.w.cambiarRolUsuario('u9', '', '');
     d.querySelector('#_rolCancelar').click(); await p;
     assert(t.w._recargas === 2 && !d.querySelector('#_rolGuardar'), 'cancelar no guarda y cierra el diálogo');
+    t.cerrar();
+  });
+
+  await prueba('sin el SQL del rol en la base no se puede nombrar un admin de empresa (sí un admin global)', async () => {
+    const t = montar({ id: 'u0', rol: 'admin', empresa_id: null }, { sinSqlDelRol: true });
+    const d = t.w.document;
+    let p = t.w.cambiarRolUsuario('u9', '', '');
+    [...d.querySelectorAll('input[name="_rolGlobal"]')][2].checked = true; d.querySelector('#_rolEmpresa').value = 'e-b';
+    d.querySelector('#_rolGuardar').click(); await p;
+    assert(t.fixture.perfiles[0].rol === null && t.fixture.perfiles[0].empresa_id === null, 'el perfil no cambia: ' + JSON.stringify(t.fixture.perfiles[0]));
+    assert(/falta aplicar en la base el SQL de ese rol/.test(t.w._toasts.at(-1).msg) && t.w._rpc.join() === 'sst_empresa_admin', 'avisa y consultó la función del rol');
+    p = t.w.cambiarRolUsuario('u9', '', '');
+    [...d.querySelectorAll('input[name="_rolGlobal"]')][1].checked = true;
+    d.querySelector('#_rolGuardar').click(); await p;
+    assert(t.fixture.perfiles[0].rol === 'admin' && t.w._rpc.length === 1, 'nombrar admin global no depende de ese SQL');
     t.cerrar();
   });
 
