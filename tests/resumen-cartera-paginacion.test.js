@@ -77,7 +77,8 @@ function fixtureGrande(){
 
 // Ejecuta la función completa: el import de supabase-js se sustituye por un createClient que
 // devuelve el cliente simulado; Deno.serve entrega el manejador; fetch queda registrado.
-async function invocar(sb, { secreto = 'zzz-secreto' } = {}){
+// `destinatarios` es el secreto RESUMEN_CARTERA_DESTINATARIOS (sin él: solo admins).
+async function invocar(sb, { secreto = 'zzz-secreto', destinatarios } = {}){
   const peticiones = [];
   let manejador = null;
   const ctx = {
@@ -85,7 +86,7 @@ async function invocar(sb, { secreto = 'zzz-secreto' } = {}){
     Response, URL,
     __sb: sb,
     Deno: {
-      env: { get: k => ({ ANTHROPIC_API_KEY: 'zzz-clave', SUPABASE_URL: 'https://zzz.test', SUPABASE_SERVICE_ROLE_KEY: 'zzz-servicio', SUPABASE_ANON_KEY: 'zzz-anon', CRON_SECRET: 'zzz-secreto' })[k] },
+      env: { get: k => ({ ANTHROPIC_API_KEY: 'zzz-clave', SUPABASE_URL: 'https://zzz.test', SUPABASE_SERVICE_ROLE_KEY: 'zzz-servicio', SUPABASE_ANON_KEY: 'zzz-anon', CRON_SECRET: 'zzz-secreto', RESUMEN_CARTERA_DESTINATARIOS: destinatarios })[k] },
       serve: h => { manejador = h; }
     },
     fetch: async (url, opciones) => {
@@ -160,7 +161,7 @@ async function invocar(sb, { secreto = 'zzz-secreto' } = {}){
   await prueba('función completa: con 2.500 rubros y tope de 1.000 el resumen usa todas las filas', async () => {
     const fx = fixtureGrande();
     const sb = crearSb(fx, { maxFilas: 1000 });
-    const r = await invocar(sb);
+    const r = await invocar(sb, { destinatarios: 'equipo' });
     igual(r.status, 200, 'estado HTTP'); igual(r.cuerpo.ok, true, 'ok'); igual(r.cuerpo.entregados, 1, 'una notificación entregada');
     igual(JSON.stringify(r.cuerpo.errores), '[]', 'sin errores');
     const ia = r.peticiones.find(p => p.url.includes('api.anthropic.com'));
@@ -179,9 +180,39 @@ async function invocar(sb, { secreto = 'zzz-secreto' } = {}){
     const fx = fixtureGrande();
     fx.perfiles = [];
     for(let i = 0; i < 1500; i++) fx.proyecto_miembros.push({ id: id4('zzz-m', i), usuario_id: id4('zzz-u', i), proyecto_id: 'zzz-p1', rol: 'fiscalizador' });
-    const r = await invocar(crearSb(fx, { maxFilas: 1000 }));
+    const r = await invocar(crearSb(fx, { maxFilas: 1000 }), { destinatarios: 'equipo' });
     igual(r.status, 200, 'estado HTTP'); igual(r.cuerpo.entregados, 1500, 'los 1.500 fiscalizadores reciben el resumen (cortado serían 1.000)');
-    igual(r.cuerpo.grupos, 1, 'un solo grupo (mismo conjunto de proyectos)');
+    igual(r.cuerpo.grupos, 1, 'un solo grupo (mismo conjunto de proyectos)'); igual(r.cuerpo.destinatarios, 'equipo', 'modo equipo');
+  });
+
+  await prueba('destinatarios: sin el secreto (o con otro valor) solo reciben los admins y proyecto_miembros ni se lee', async () => {
+    for(const valor of [undefined, '', 'admins', 'todos']){
+      const fx = fixtureGrande();
+      for(let i = 0; i < 30; i++) fx.proyecto_miembros.push({ id: id4('zzz-m', i), usuario_id: id4('zzz-u', i), proyecto_id: 'zzz-p1', rol: 'fiscalizador' });
+      const sb = crearSb(fx, { maxFilas: 1000 });
+      const r = await invocar(sb, { destinatarios: valor });
+      const que = 'valor ' + JSON.stringify(valor) + ': ';
+      igual(r.status, 200, que + 'estado HTTP'); igual(r.cuerpo.destinatarios, 'admins', que + 'modo');
+      igual(r.cuerpo.entregados, 1, que + 'una sola notificación'); igual(r.cuerpo.grupos, 1, que + 'un grupo');
+      igual(fx.notificaciones.map(n => n.perfil_id).join(','), 'zzz-adm', que + 'la notificación es del admin');
+      const push = r.peticiones.filter(p => p.url.includes('/functions/v1/enviar-push'));
+      igual(push.length, 1, que + 'un push'); igual(JSON.stringify(push[0].cuerpo.usuarioIds), '["zzz-adm"]', que + 'el push va solo al admin');
+      assert(!sb.llamadas.some(l => l.tabla === 'proyecto_miembros'), que + 'proyecto_miembros no se lee');
+    }
+    // «equipo» se reconoce con espacios y mayúsculas
+    const fx = fixtureGrande();
+    for(let i = 0; i < 30; i++) fx.proyecto_miembros.push({ id: id4('zzz-m', i), usuario_id: id4('zzz-u', i), proyecto_id: 'zzz-p1', rol: 'fiscalizador' });
+    const r = await invocar(crearSb(fx, { maxFilas: 1000 }), { destinatarios: ' Equipo ' });
+    igual(r.cuerpo.destinatarios, 'equipo', 'modo equipo'); igual(r.cuerpo.entregados, 31, 'admin y 30 fiscalizadores');
+  });
+
+  await prueba('destinatarios: solo admins y ningún admin → no se envía nada ni se llama al modelo', async () => {
+    const fx = fixtureGrande();
+    fx.perfiles = [];
+    for(let i = 0; i < 30; i++) fx.proyecto_miembros.push({ id: id4('zzz-m', i), usuario_id: id4('zzz-u', i), proyecto_id: 'zzz-p1', rol: 'fiscalizador' });
+    const r = await invocar(crearSb(fx, { maxFilas: 1000 }));
+    igual(r.status, 200, 'estado HTTP'); igual(r.cuerpo.mensaje, 'Sin destinatarios', 'mensaje'); igual(r.cuerpo.destinatarios, 'admins', 'modo');
+    igual(r.peticiones.length, 0, 'sin llamada al modelo ni push'); igual(fx.notificaciones.length, 0, 'sin notificaciones');
   });
 
   await prueba('función completa: un error al leer cualquiera de las ocho tablas responde 500 con su nombre, sin resumen', async () => {
@@ -189,7 +220,7 @@ async function invocar(sb, { secreto = 'zzz-secreto' } = {}){
       const fx = fixtureGrande();
       const sb = crearSb(fx, { maxFilas: 1000 }), from = sb.from;
       sb.from = t => t === tabla ? consultaQueFalla('ZZZ fallo de ' + tabla) : from(t);
-      const r = await invocar(sb);
+      const r = await invocar(sb, { destinatarios: 'equipo' });
       igual(r.status, 500, tabla + ': estado HTTP');
       assert(typeof r.cuerpo.error === 'string' && r.cuerpo.error.includes(tabla) && r.cuerpo.error.includes('ZZZ fallo de ' + tabla), tabla + ': el error nombra la tabla: ' + JSON.stringify(r.cuerpo));
       igual(r.peticiones.length, 0, tabla + ': no se llamó al modelo ni a enviar-push');

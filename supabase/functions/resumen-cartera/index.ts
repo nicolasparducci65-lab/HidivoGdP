@@ -11,6 +11,8 @@
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY,
 //           ANTHROPIC_API_KEY, CRON_SECRET
+// Opcional: RESUMEN_CARTERA_DESTINATARIOS = 'equipo' para enviarlo también a los
+//           fiscalizadores; sin él (o con otro valor) solo lo reciben los admins.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -101,9 +103,14 @@ Deno.serve(async (req) => {
     // ── Destinatarios: admins (cartera completa) y fiscalizadores (sus proyectos) ──
     // Las lecturas van paginadas; si alguna falla, leerPaginado lanza y la función responde 500
     // con el nombre de la tabla (catch del final), sin enviar un resumen incompleto.
+    // Mientras no esté la fase 2 (mismas reglas que el Panel Cartera) el resumen va SOLO a los
+    // admins globales, lo dispare el cron o «Generar ahora». Se abre a los fiscalizadores con el
+    // secreto RESUMEN_CARTERA_DESTINATARIOS=equipo (cualquier otro valor, o ninguno: solo admins);
+    // en modo solo admins proyecto_miembros ni se lee.
+    const soloAdmins = (Deno.env.get('RESUMEN_CARTERA_DESTINATARIOS') || '').trim().toLowerCase() !== 'equipo';
     const [admins, miembrosFis] = await Promise.all([
       leerPaginado(sb, 'perfiles', 'id', q => q.eq('rol', 'admin')),
-      leerPaginado(sb, 'proyecto_miembros', 'usuario_id,proyecto_id', q => q.eq('rol', 'fiscalizador').in('proyecto_id', ids))
+      soloAdmins ? Promise.resolve([]) : leerPaginado(sb, 'proyecto_miembros', 'usuario_id,proyecto_id', q => q.eq('rol', 'fiscalizador').in('proyecto_id', ids))
     ]);
 
     const proyectosPorUsuario = new Map<string, Set<string>>();
@@ -115,7 +122,8 @@ Deno.serve(async (req) => {
     });
     // Sin proyectos activos → no se envía nada
     for (const [uid, set] of proyectosPorUsuario) if (!set.size) proyectosPorUsuario.delete(uid);
-    if (!proyectosPorUsuario.size) return json({ ok: true, mensaje: 'Sin destinatarios' });
+    const destinatarios = soloAdmins ? 'admins' : 'equipo';
+    if (!proyectosPorUsuario.size) return json({ ok: true, mensaje: 'Sin destinatarios', destinatarios });
 
     // ── Indicadores por proyecto (mismos criterios que cargarCartera del frontend) ──
     const hoyStr = hoyEcuador();
@@ -289,7 +297,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, proyectos: activos.length, grupos: grupos.size, entregados, errores });
+    return json({ ok: true, proyectos: activos.length, grupos: grupos.size, entregados, destinatarios, errores });
 
   } catch (err) {
     console.error('resumen-cartera:', err);
