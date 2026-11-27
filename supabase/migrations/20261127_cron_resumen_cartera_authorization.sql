@@ -1,4 +1,6 @@
 -- ============================================================================
+-- APLICADA en producción el 27-nov-2026 (06:14 de Ecuador), después de
+-- desplegar la función resumen-cartera versión 8 (commit 0c76d3b).
 -- Cron «resumen-cartera-diario»: añade la cabecera Authorization a la llamada,
 -- con la clave leída de Vault en cada corrida.
 -- SIN APLICAR. Solo guarda un secreto en Vault y cambia el comando de ESE job
